@@ -3,7 +3,6 @@
 import type { Event, Message, ProposedUpdate } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { ProposedUpdatesQueue } from './proposed-updates-queue'
-import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { formatDistanceToNow } from '@/lib/utils'
 import { MessageCircle } from 'lucide-react'

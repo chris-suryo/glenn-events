@@ -20,7 +20,7 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
     { data: pendingUpdates },
   ] = await Promise.all([
     supabase.from('events').select('*').eq('id', eventId).single(),
-    supabase.from('tasks').select('*').eq('event_id', eventId).eq('status', 'open').order('created_at'),
+    supabase.from('tasks').select('*').eq('event_id', eventId).eq('status', 'todo').order('created_at'),
     supabase.from('vendors').select('*').eq('event_id', eventId).order('created_at'),
     supabase.from('budget_items').select('*').eq('event_id', eventId).order('created_at'),
     supabase.from('risks').select('*').eq('event_id', eventId).eq('status', 'open').order('created_at'),
@@ -44,7 +44,6 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       event={event as Event}
       openTasks={(tasks ?? []) as Task[]}
       vendors={(vendors ?? []) as Vendor[]}
-      budgetItems={(budgetItems ?? []) as BudgetItem[]}
       openRisks={(risks ?? []) as Risk[]}
       pendingUpdates={(pendingUpdates ?? []) as ProposedUpdate[]}
       totalBudgetEstimated={totalBudgetEstimated}

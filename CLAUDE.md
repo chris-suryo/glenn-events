@@ -30,7 +30,7 @@ It is NOT a ticketing, RSVP, seating chart, vendor marketplace, or general event
 ## Architecture Decisions
 
 1. **Server Components by default** — opt into `"use client"` only for interactive islands (inputs, approve/reject buttons, dropdowns).
-2. **`@supabase/ssr`** for cookie-based auth. Middleware at `middleware.ts` protects all `(app)` routes.
+2. **`@supabase/ssr`** for cookie-based auth. Auth proxy at `proxy.ts` protects all `(app)` routes (Next.js 16 renamed `middleware.ts` → `proxy.ts`).
 3. **No service role key in app routes** — server actions use the authenticated user context + RLS. Service role is dev-scripts only (`scripts/`).
 4. **Approval flow via fetch to API routes** — mutations go through `/api/updates/[id]/approve` and `/api/updates/[id]/reject`, which use the user session.
 5. **Mock AI first** — `/api/events/[eventId]/extract-updates` is deterministic keyword-matching. Real model wired later.
@@ -70,7 +70,7 @@ lib/
   validators/  — Zod schemas (ExtractUpdatesSchema)
 
 supabase/migrations/  — SQL migration files
-scripts/              — seed.ts (dev only)
+scripts/              — seed-demo.ts (dev only)
 ```
 
 ## Coding Standards
@@ -124,11 +124,10 @@ See `supabase/migrations/001_init.sql` for full schema + RLS.
 ## Implementation Phases
 
 - **Phase 1** Done — Project shell, branding, route stubs, CLAUDE.md
-- **Phase 2** — Supabase schema (17 tables), RLS, auth middleware, DB helpers
-- **Phase 3** — Dashboard, Create Event, Command Center, seed demo data
-- **Phase 4** — Mock AI extraction endpoint
-- **Phase 5** — Approval flow (approve/reject API routes + UI)
-- **Phase 6** — Polish, loading skeletons, empty states, build clean
+- **Phase 2** Done — Supabase schema (17 tables), RLS, API stubs, seed script, cleanup
+- **Phase 3** — Mock AI extraction endpoint (keyword-matched, deterministic)
+- **Phase 4** — Approval flow (approve/reject writes to destination tables)
+- **Phase 5** — Polish, loading skeletons, empty states, build clean
 
 ## Environment Variables
 

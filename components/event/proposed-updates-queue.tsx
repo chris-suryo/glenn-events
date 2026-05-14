@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ProposedUpdate, UpdateType } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { CheckCircle2, XCircle, Loader2, ClipboardList } from 'lucide-react'
 import { toast } from 'sonner'
@@ -54,7 +53,7 @@ async function reviewUpdate(updateId: string, action: 'approve' | 'reject') {
   }
 }
 
-export function ProposedUpdatesQueue({ updates, eventId }: ProposedUpdatesQueueProps) {
+export function ProposedUpdatesQueue({ updates }: ProposedUpdatesQueueProps) {
   const router = useRouter()
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
   const [isPendingBulk, startBulkTransition] = useTransition()

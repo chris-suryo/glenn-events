@@ -1,6 +1,6 @@
 'use client'
 
-import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate } from '@/lib/types'
+import type { Event, Task, Vendor, Risk, ProposedUpdate } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { EventBriefPanel } from './event-brief-panel'
 import { ProposedUpdatesBadge } from './proposed-updates-badge'
@@ -12,7 +12,6 @@ interface CommandCenterProps {
   event: Event
   openTasks: Task[]
   vendors: Vendor[]
-  budgetItems: BudgetItem[]
   openRisks: Risk[]
   pendingUpdates: ProposedUpdate[]
   totalBudgetEstimated: number
@@ -26,7 +25,6 @@ export function CommandCenter({
   event,
   openTasks,
   vendors,
-  budgetItems,
   openRisks,
   pendingUpdates,
   totalBudgetEstimated,
