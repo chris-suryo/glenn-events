@@ -73,8 +73,8 @@
   --chart-3: oklch(0.7 0.1 150);
   --chart-4: oklch(0.65 0.18 30);
   --chart-5: oklch(0.55 0.2 310);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.97 0.005 260);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.975 0.008 260);
   --sidebar-foreground: oklch(0.13 0.01 260);
   --sidebar-primary: oklch(0.46 0.22 264);
   --sidebar-primary-foreground: oklch(0.99 0 0);
@@ -124,5 +124,9 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    letter-spacing: -0.01em;
+  }
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
   }
 }

@@ -1,12 +1,12 @@
 'use client'
 
-import type { Event, Task, Vendor, Risk, ProposedUpdate } from '@/lib/types'
+import type { Event, Task, Vendor, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { EventBriefPanel } from './event-brief-panel'
 import { ProposedUpdatesBadge } from './proposed-updates-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertTriangle, CheckCircle2, DollarSign, Users } from 'lucide-react'
+import { AlertTriangle, Calendar, CheckCircle2, DollarSign, HelpCircle, Scale, Users } from 'lucide-react'
 
 interface CommandCenterProps {
   event: Event
@@ -14,6 +14,9 @@ interface CommandCenterProps {
   vendors: Vendor[]
   openRisks: Risk[]
   pendingUpdates: ProposedUpdate[]
+  openQuestions: OpenQuestion[]
+  pendingDecisions: Decision[]
+  upcomingTimeline: TimelineItem[]
   totalBudgetEstimated: number
 }
 
@@ -27,18 +30,21 @@ export function CommandCenter({
   vendors,
   openRisks,
   pendingUpdates,
+  openQuestions,
+  pendingDecisions,
+  upcomingTimeline,
   totalBudgetEstimated,
 }: CommandCenterProps) {
   const confirmedVendors = vendors.filter((v) => v.status === 'confirmed')
-  const vendorBlockers = vendors.filter((v) => v.status === 'prospecting' || v.status === 'contacted')
+  const vendorBlockers = vendors.filter((v) => v.status === 'prospect' || v.status === 'contacted')
 
   return (
     <div className="flex flex-col h-full">
       {/* Header strip */}
-      <div className="border-b px-6 py-4 flex items-center justify-between shrink-0">
+      <div className="border-b px-6 py-4 flex items-center justify-between shrink-0 bg-card/50">
         <div>
-          <h1 className="text-lg font-semibold leading-tight">{event.name}</h1>
-          <div className="flex items-center gap-3 mt-1">
+          <h1 className="text-base font-semibold leading-tight tracking-tight">{event.name}</h1>
+          <div className="flex items-center gap-2.5 mt-1 flex-wrap">
             {event.event_date && (
               <span className="text-xs text-muted-foreground">
                 {new Date(event.event_date).toLocaleDateString('en-US', {
@@ -58,9 +64,13 @@ export function CommandCenter({
                 {event.attendee_target}
               </span>
             )}
-            <Badge variant="secondary" className="text-xs capitalize">
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize
+              ${event.status === 'active' ? 'bg-emerald-50 text-emerald-700' :
+                event.status === 'planning' ? 'bg-sky-50 text-sky-700' :
+                event.status === 'completed' ? 'bg-slate-100 text-slate-600' :
+                'bg-slate-100 text-slate-500'}`}>
               {event.status}
-            </Badge>
+            </span>
           </div>
         </div>
         {pendingUpdates.length > 0 && (
@@ -79,54 +89,64 @@ export function CommandCenter({
           <EventBriefPanel event={event} />
 
           {/* Stats row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="border">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <Card className="border shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+              <CardContent className="pt-4 pb-3.5">
+                <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
+                  <CheckCircle2 className="h-3 w-3" />
                   <span className="text-xs font-medium">Open tasks</span>
                 </div>
-                <p className="text-2xl font-semibold">{openTasks.length}</p>
+                <p className="text-2xl font-semibold tracking-tight">{openTasks.length}</p>
               </CardContent>
             </Card>
 
-            <Card className="border">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Users className="h-3.5 w-3.5" />
-                  <span className="text-xs font-medium">Vendors confirmed</span>
+            <Card className="border shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+              <CardContent className="pt-4 pb-3.5">
+                <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
+                  <Users className="h-3 w-3" />
+                  <span className="text-xs font-medium">Vendors</span>
                 </div>
-                <p className="text-2xl font-semibold">
+                <p className="text-2xl font-semibold tracking-tight">
                   {confirmedVendors.length}
                   <span className="text-sm text-muted-foreground font-normal ml-1">/ {vendors.length}</span>
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="border">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <DollarSign className="h-3.5 w-3.5" />
-                  <span className="text-xs font-medium">Budget committed</span>
+            <Card className="border shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+              <CardContent className="pt-4 pb-3.5">
+                <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
+                  <DollarSign className="h-3 w-3" />
+                  <span className="text-xs font-medium">Budget</span>
                 </div>
-                <p className="text-2xl font-semibold">{formatCurrency(totalBudgetEstimated)}</p>
+                <p className="text-2xl font-semibold tracking-tight">{formatCurrency(totalBudgetEstimated)}</p>
                 {event.budget_target && (
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    of {formatCurrency(event.budget_target)} target
+                    of {formatCurrency(event.budget_target)}
                   </p>
                 )}
               </CardContent>
             </Card>
 
-            <Card className={`border ${openRisks.length > 0 ? 'border-destructive/30' : ''}`}>
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <AlertTriangle className={`h-3.5 w-3.5 ${openRisks.length > 0 ? 'text-destructive' : ''}`} />
-                  <span className="text-xs font-medium">Open risks</span>
+            <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${openRisks.length > 0 ? 'border-rose-200 bg-rose-50/40' : ''}`}>
+              <CardContent className="pt-4 pb-3.5">
+                <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
+                  <AlertTriangle className={`h-3 w-3 ${openRisks.length > 0 ? 'text-rose-500' : ''}`} />
+                  <span className="text-xs font-medium">Risks</span>
                 </div>
-                <p className={`text-2xl font-semibold ${openRisks.length > 0 ? 'text-destructive' : ''}`}>
+                <p className={`text-2xl font-semibold tracking-tight ${openRisks.length > 0 ? 'text-rose-600' : ''}`}>
                   {openRisks.length}
                 </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+              <CardContent className="pt-4 pb-3.5">
+                <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
+                  <HelpCircle className="h-3 w-3" />
+                  <span className="text-xs font-medium">Questions</span>
+                </div>
+                <p className="text-2xl font-semibold tracking-tight">{openQuestions.length}</p>
               </CardContent>
             </Card>
           </div>
@@ -217,6 +237,79 @@ export function CommandCenter({
                 ))}
               </CardContent>
             </Card>
+          )}
+
+          {/* Open questions */}
+          {openQuestions.length > 0 && (
+            <Card className="border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  Open questions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2">
+                {openQuestions.slice(0, 5).map((q) => (
+                  <p key={q.id} className="text-sm text-muted-foreground leading-snug">
+                    · {q.question}
+                  </p>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Pending decisions + upcoming timeline in a 2-col grid */}
+          {(pendingDecisions.length > 0 || upcomingTimeline.length > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {pendingDecisions.length > 0 && (
+                <Card className="border">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Scale className="h-4 w-4 text-muted-foreground" />
+                      Unresolved decisions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 space-y-2">
+                    {pendingDecisions.slice(0, 4).map((d) => (
+                      <div key={d.id}>
+                        <p className="text-sm leading-snug">{d.title}</p>
+                        {d.description && (
+                          <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{d.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {upcomingTimeline.length > 0 && (
+                <Card className="border">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      Upcoming
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 space-y-2">
+                    {upcomingTimeline.map((item) => (
+                      <div key={item.id} className="flex items-start gap-2.5">
+                        <Badge variant="outline" className="text-xs capitalize shrink-0 mt-0.5">
+                          {item.type}
+                        </Badge>
+                        <div>
+                          <p className="text-sm leading-snug">{item.title}</p>
+                          {item.starts_at && (
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(item.starts_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
 
         </div>

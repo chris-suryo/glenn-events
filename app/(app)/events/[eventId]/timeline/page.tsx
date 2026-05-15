@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { TimelineItem } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
 import { Calendar } from 'lucide-react'
 
 interface PageProps {
@@ -22,26 +21,27 @@ export default async function TimelinePage({ params }: PageProps) {
   const list = (items ?? []) as TimelineItem[]
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-4">
+    <div className="p-6 max-w-3xl mx-auto space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">Timeline</h2>
-        <p className="text-sm text-muted-foreground">{list.length} item{list.length !== 1 ? 's' : ''}</p>
+        <h2 className="text-lg font-semibold tracking-tight">Timeline</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">{list.length} item{list.length !== 1 ? 's' : ''}</p>
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed py-12 text-center">
+        <div className="rounded-xl border-2 border-dashed py-14 flex flex-col items-center gap-3 text-center">
+          <Calendar className="h-8 w-8 text-muted-foreground/25" />
           <p className="text-sm text-muted-foreground">No timeline items yet. Tell Glenn about key dates and milestones.</p>
         </div>
       ) : (
-        <div className="relative space-y-3 pl-6">
+        <div className="relative space-y-2.5 pl-6">
           <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
           {list.map((item) => (
             <div key={item.id} className="relative">
-              <div className="absolute -left-4 mt-1.5 h-2 w-2 rounded-full bg-primary" />
-              <div className="rounded-lg border p-3.5">
+              <div className="absolute -left-4 mt-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
+              <div className="rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)]">
                 <div className="flex items-start gap-2">
                   <div className="flex-1">
-                    <p className="text-sm font-medium">{item.title}</p>
+                    <p className="text-sm font-medium tracking-tight">{item.title}</p>
                     {item.description && <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>}
                     {item.starts_at && (
                       <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground">
@@ -53,7 +53,9 @@ export default async function TimelinePage({ params }: PageProps) {
                       </div>
                     )}
                   </div>
-                  <Badge variant="outline" className="text-xs capitalize shrink-0">{item.type}</Badge>
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize bg-slate-100 text-slate-600 shrink-0">
+                    {item.type}
+                  </span>
                 </div>
               </div>
             </div>

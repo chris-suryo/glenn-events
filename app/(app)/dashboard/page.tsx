@@ -2,17 +2,16 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Plus, CalendarDays, MapPin, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Event } from '@/lib/types'
 
-function statusVariant(status: Event['status']): 'default' | 'secondary' | 'outline' | 'destructive' {
+function statusPill(status: Event['status']) {
   switch (status) {
-    case 'active': return 'default'
-    case 'draft': return 'secondary'
-    case 'completed': return 'outline'
-    case 'cancelled': return 'destructive'
+    case 'active': return 'bg-emerald-50 text-emerald-700'
+    case 'planning': return 'bg-sky-50 text-sky-700'
+    case 'completed': return 'bg-slate-100 text-slate-600'
+    case 'archived': return 'bg-slate-100 text-slate-400'
   }
 }
 
@@ -60,15 +59,15 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {eventList.map((event) => (
             <Link key={event.id} href={`/events/${event.id}`} className="block group">
-              <Card className="h-full border hover:border-primary/40 hover:shadow-sm transition-all">
+              <Card className="h-full border hover:border-primary/30 hover:shadow-[0px_0px_0px_1px_rgba(0,0,0,0.06),0px_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-base font-semibold leading-snug group-hover:text-primary transition-colors">
+                    <CardTitle className="text-base font-semibold leading-snug tracking-tight group-hover:text-primary transition-colors">
                       {event.name}
                     </CardTitle>
-                    <Badge variant={statusVariant(event.status)} className="shrink-0 capitalize text-xs">
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize shrink-0 ${statusPill(event.status)}`}>
                       {event.status}
-                    </Badge>
+                    </span>
                   </div>
                   {event.description && (
                     <CardDescription className="line-clamp-2 text-xs mt-1">

@@ -35,7 +35,7 @@ export interface Event {
   location: string | null
   attendee_target: number | null
   budget_target: number | null
-  status: 'draft' | 'active' | 'completed' | 'cancelled'
+  status: 'planning' | 'active' | 'completed' | 'archived'
   created_by: string
   created_at: string
   updated_at: string
@@ -62,8 +62,8 @@ export interface AiRun {
   id: string
   event_id: string
   source_message_id: string | null
-  status: 'pending' | 'completed' | 'failed'
-  input_text: string
+  status: 'pending_review' | 'completed' | 'failed'
+  input_text: string | null
   output_json: Json | null
   created_by: string
   created_at: string
@@ -85,7 +85,8 @@ export interface TaskPayload {
   description: string | null
   due_date: string | null
   priority: 'low' | 'medium' | 'high'
-  status: 'open'
+  status: 'todo'
+  owner_name: string | null
 }
 
 export interface VendorPayload {
@@ -94,7 +95,7 @@ export interface VendorPayload {
   contact_name: string | null
   email: string | null
   phone: string | null
-  status: 'prospecting' | 'contacted' | 'confirmed' | 'cancelled'
+  status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
   estimated_cost: number | null
   notes: string | null
 }
@@ -104,7 +105,8 @@ export interface BudgetItemPayload {
   description: string
   estimated_cost: number | null
   actual_cost: number | null
-  status: 'estimated' | 'confirmed' | 'paid'
+  status: 'estimated' | 'committed' | 'paid'
+  vendor_name: string | null
 }
 
 export interface TimelineItemPayload {
@@ -112,13 +114,13 @@ export interface TimelineItemPayload {
   description: string | null
   starts_at: string | null
   ends_at: string | null
-  type: 'milestone' | 'task' | 'deadline'
+  type: 'milestone' | 'task' | 'deadline' | 'planning'
 }
 
 export interface DecisionPayload {
   title: string
   description: string | null
-  status: 'open' | 'decided'
+  status: 'pending' | 'decided'
   decision: string | null
 }
 
@@ -126,13 +128,14 @@ export interface RiskPayload {
   title: string
   description: string | null
   severity: 'low' | 'medium' | 'high'
-  status: 'open' | 'mitigated' | 'closed'
+  status: 'open' | 'monitoring' | 'resolved'
   mitigation: string | null
 }
 
 export interface OpenQuestionPayload {
   question: string
   status: 'open'
+  owner_name: string | null
 }
 
 export type UpdatePayload =
@@ -151,8 +154,8 @@ export interface ProposedUpdate {
   source_message_id: string | null
   update_type: UpdateType
   payload_json: UpdatePayload
-  confidence: number
-  status: 'pending' | 'approved' | 'rejected'
+  confidence: number | null
+  status: 'pending' | 'approved' | 'rejected' | 'applied' | 'failed'
   rationale: string | null
   created_at: string
   reviewed_by: string | null
@@ -168,8 +171,9 @@ export interface Task {
   description: string | null
   owner_user_id: string | null
   due_date: string | null
-  status: 'open' | 'in_progress' | 'done'
+  status: 'todo' | 'in_progress' | 'done' | 'blocked'
   priority: 'low' | 'medium' | 'high'
+  proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
   ai_generated: boolean
@@ -185,9 +189,10 @@ export interface Vendor {
   contact_name: string | null
   email: string | null
   phone: string | null
-  status: 'prospecting' | 'contacted' | 'confirmed' | 'cancelled'
+  status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
   estimated_cost: number | null
   notes: string | null
+  proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
   ai_generated: boolean
@@ -202,8 +207,9 @@ export interface BudgetItem {
   description: string
   estimated_cost: number | null
   actual_cost: number | null
-  status: 'estimated' | 'confirmed' | 'paid'
+  status: 'estimated' | 'committed' | 'paid'
   vendor_id: string | null
+  proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
   ai_generated: boolean
@@ -219,7 +225,8 @@ export interface TimelineItem {
   starts_at: string | null
   ends_at: string | null
   owner_user_id: string | null
-  type: 'milestone' | 'task' | 'deadline'
+  type: 'milestone' | 'task' | 'deadline' | 'planning'
+  proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
   ai_generated: boolean
@@ -232,10 +239,11 @@ export interface Decision {
   event_id: string
   title: string
   description: string | null
-  status: 'open' | 'decided'
+  status: 'pending' | 'decided'
   decision: string | null
   owner_user_id: string | null
   decided_at: string | null
+  proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
   ai_generated: boolean
@@ -249,8 +257,9 @@ export interface Risk {
   title: string
   description: string | null
   severity: 'low' | 'medium' | 'high'
-  status: 'open' | 'mitigated' | 'closed'
+  status: 'open' | 'monitoring' | 'resolved'
   mitigation: string | null
+  proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
   ai_generated: boolean
@@ -264,8 +273,10 @@ export interface OpenQuestion {
   question: string
   owner_user_id: string | null
   status: 'open' | 'answered'
+  proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
+  ai_generated: boolean
   created_at: string
   updated_at: string
 }

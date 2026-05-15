@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate } from '@/lib/types'
+import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem } from '@/lib/types'
 import { CommandCenter } from '@/components/event/command-center'
 
 interface PageProps {
@@ -11,6 +11,8 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
   const { eventId } = await params
   const supabase = await createClient()
 
+  const now = new Date().toISOString()
+
   const [
     { data: event },
     { data: tasks },
@@ -18,6 +20,9 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
     { data: budgetItems },
     { data: risks },
     { data: pendingUpdates },
+    { data: openQuestions },
+    { data: pendingDecisions },
+    { data: upcomingTimeline },
   ] = await Promise.all([
     supabase.from('events').select('*').eq('id', eventId).single(),
     supabase.from('tasks').select('*').eq('event_id', eventId).eq('status', 'todo').order('created_at'),
@@ -30,6 +35,25 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       .eq('event_id', eventId)
       .eq('status', 'pending')
       .order('created_at'),
+    supabase
+      .from('open_questions')
+      .select('*')
+      .eq('event_id', eventId)
+      .eq('status', 'open')
+      .order('created_at'),
+    supabase
+      .from('decisions')
+      .select('*')
+      .eq('event_id', eventId)
+      .eq('status', 'pending')
+      .order('created_at'),
+    supabase
+      .from('timeline_items')
+      .select('*')
+      .eq('event_id', eventId)
+      .gte('starts_at', now)
+      .order('starts_at', { ascending: true })
+      .limit(5),
   ])
 
   if (!event) notFound()
@@ -46,6 +70,9 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       vendors={(vendors ?? []) as Vendor[]}
       openRisks={(risks ?? []) as Risk[]}
       pendingUpdates={(pendingUpdates ?? []) as ProposedUpdate[]}
+      openQuestions={(openQuestions ?? []) as OpenQuestion[]}
+      pendingDecisions={(pendingDecisions ?? []) as Decision[]}
+      upcomingTimeline={(upcomingTimeline ?? []) as TimelineItem[]}
       totalBudgetEstimated={totalBudgetEstimated}
     />
   )

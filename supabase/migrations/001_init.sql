@@ -3,37 +3,8 @@
 -- ============================================================
 -- Apply via: Supabase Dashboard > SQL Editor, or `supabase db push`
 -- ============================================================
-
-
--- ============================================================
--- Helper functions
--- ============================================================
-
-create or replace function is_org_member(org_id uuid)
-returns boolean
-language sql
-security definer
-stable
-as $$
-  select exists (
-    select 1 from organization_members
-    where organization_id = org_id
-      and user_id = auth.uid()
-  );
-$$;
-
-create or replace function is_event_member(evt_id uuid)
-returns boolean
-language sql
-security definer
-stable
-as $$
-  select exists (
-    select 1 from event_members
-    where event_id = evt_id
-      and user_id = auth.uid()
-  );
-$$;
+-- Note: is_org_member / is_event_member are created after membership tables
+-- exist (SQL functions validate referenced relations at creation time).
 
 
 -- ============================================================
@@ -99,13 +70,7 @@ create table organizations (
 
 alter table organizations enable row level security;
 
-create policy "Org members can view their org"
-  on organizations for select
-  using (is_org_member(id));
-
-create policy "Authenticated users can create orgs"
-  on organizations for insert
-  with check (auth.uid() is not null);
+-- RLS policies for organizations / memberships / events: see block after event_members.
 
 
 -- ============================================================
@@ -122,14 +87,6 @@ create table organization_members (
 );
 
 alter table organization_members enable row level security;
-
-create policy "Org members can view memberships"
-  on organization_members for select
-  using (is_org_member(organization_id));
-
-create policy "Users can add themselves to an org they created"
-  on organization_members for insert
-  with check (auth.uid() = user_id);
 
 
 -- ============================================================
@@ -154,18 +111,6 @@ create table events (
 
 alter table events enable row level security;
 
-create policy "Event members can view their event"
-  on events for select
-  using (is_event_member(id));
-
-create policy "Org members can create events"
-  on events for insert
-  with check (is_org_member(organization_id));
-
-create policy "Event members can update their event"
-  on events for update
-  using (is_event_member(id));
-
 
 -- ============================================================
 -- event_members
@@ -181,6 +126,72 @@ create table event_members (
 );
 
 alter table event_members enable row level security;
+
+
+-- ============================================================
+-- Helper functions (membership tables must exist first)
+-- ============================================================
+
+create or replace function is_org_member(org_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from organization_members
+    where organization_id = org_id
+      and user_id = auth.uid()
+  );
+$$;
+
+create or replace function is_event_member(evt_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from event_members
+    where event_id = evt_id
+      and user_id = auth.uid()
+  );
+$$;
+
+
+-- ============================================================
+-- RLS: organizations, memberships, events (use helpers above)
+-- ============================================================
+
+create policy "Org members can view their org"
+  on organizations for select
+  using (is_org_member(id));
+
+create policy "Authenticated users can create orgs"
+  on organizations for insert
+  with check (auth.uid() is not null);
+
+create policy "Org members can view memberships"
+  on organization_members for select
+  using (is_org_member(organization_id));
+
+create policy "Users can add themselves to an org they created"
+  on organization_members for insert
+  with check (auth.uid() = user_id);
+
+create policy "Event members can view their event"
+  on events for select
+  using (is_event_member(id));
+
+create policy "Org members can create events"
+  on events for insert
+  with check (is_org_member(organization_id));
+
+create policy "Event members can update their event"
+  on events for update
+  using (is_event_member(id));
 
 create policy "Event members can view memberships"
   on event_members for select

@@ -6,8 +6,9 @@ export async function POST(
 ) {
   const { id } = await params
 
-  // Phase 4 will implement: look up proposed_update, insert into destination
-  // table, set status = 'applied', write activity_log.
+  // Phase 5 will implement: use createClient() from @/lib/supabase/server,
+  // verify caller is an event_member, look up proposed_update, insert into
+  // the destination table, set status = 'applied', write activity_log.
   return NextResponse.json(
     { error: 'Approval flow not implemented yet', updateId: id },
     { status: 501 }

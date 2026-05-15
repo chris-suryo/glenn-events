@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Sparkles, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -63,43 +62,41 @@ export function GlennInput({ eventId }: GlennInputProps) {
   }
 
   return (
-    <Card className="border-2 border-primary/20 bg-background shadow-sm">
-      <CardContent className="pt-4 pb-4">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="flex items-start gap-2.5">
-            <div className="mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary shrink-0">
-              <Sparkles className="h-3 w-3 text-primary-foreground" />
-            </div>
-            <Textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={placeholder}
-              className="resize-none border-0 shadow-none focus-visible:ring-0 p-0 text-sm leading-relaxed min-h-[72px]"
-              disabled={isPending}
-            />
+    <div className="rounded-xl border border-primary/20 bg-card shadow-[0px_0px_0px_1px_rgba(0,0,0,0.04),0px_2px_6px_rgba(0,0,0,0.06)]">
+      <form onSubmit={handleSubmit} className="p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary shadow-[0px_0px_0px_2px_rgba(255,255,255,0.9)_inset] shrink-0">
+            <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
-          <div className="flex items-center justify-between pl-7">
-            <p className="text-xs text-muted-foreground">
-              Dump messy notes, emails, or updates — Glenn will extract the structure.
-            </p>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={!text.trim() || isPending}
-              className="shrink-0"
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  Processing…
-                </>
-              ) : (
-                'Tell Glenn'
-              )}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={placeholder}
+            className="resize-none border-0 shadow-none focus-visible:ring-0 p-0 text-sm leading-relaxed min-h-[80px] bg-transparent"
+            disabled={isPending}
+          />
+        </div>
+        <div className="flex items-center justify-between pl-9">
+          <p className="text-xs text-muted-foreground">
+            Dump messy notes, emails, or updates — Glenn extracts the structure.
+          </p>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!text.trim() || isPending}
+            className="shrink-0 shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]"
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                Processing…
+              </>
+            ) : (
+              'Tell Glenn'
+            )}
+          </Button>
+        </div>
+      </form>
+    </div>
   )
 }

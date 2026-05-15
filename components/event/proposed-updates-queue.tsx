@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ProposedUpdate, UpdateType } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { CheckCircle2, XCircle, Loader2, ClipboardList } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -24,13 +23,23 @@ const TYPE_LABELS: Record<UpdateType, string> = {
 }
 
 const TYPE_COLORS: Record<UpdateType, string> = {
-  task: 'bg-blue-50 text-blue-700 border-blue-200',
-  vendor: 'bg-purple-50 text-purple-700 border-purple-200',
-  budget_item: 'bg-green-50 text-green-700 border-green-200',
-  timeline_item: 'bg-orange-50 text-orange-700 border-orange-200',
+  task: 'bg-sky-50 text-sky-700 border-sky-200',
+  vendor: 'bg-violet-50 text-violet-700 border-violet-200',
+  budget_item: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  timeline_item: 'bg-amber-50 text-amber-700 border-amber-200',
   decision: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-  risk: 'bg-red-50 text-red-700 border-red-200',
-  open_question: 'bg-slate-50 text-slate-700 border-slate-200',
+  risk: 'bg-rose-50 text-rose-700 border-rose-200',
+  open_question: 'bg-slate-50 text-slate-600 border-slate-200',
+}
+
+const TYPE_STRIPE: Record<UpdateType, string> = {
+  task: 'border-l-sky-400',
+  vendor: 'border-l-violet-400',
+  budget_item: 'border-l-emerald-400',
+  timeline_item: 'border-l-amber-400',
+  decision: 'border-l-yellow-400',
+  risk: 'border-l-rose-500',
+  open_question: 'border-l-slate-400',
 }
 
 function getUpdateTitle(update: ProposedUpdate): string {
@@ -128,49 +137,50 @@ export function ProposedUpdatesQueue({ updates }: ProposedUpdatesQueueProps) {
         const summary = getUpdateSummary(update)
 
         return (
-          <Card key={update.id} className="border">
-            <CardContent className="p-3 space-y-2.5">
-              <div className="flex items-start gap-2">
-                <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium shrink-0 ${TYPE_COLORS[update.update_type]}`}>
-                  {TYPE_LABELS[update.update_type]}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium leading-snug">{title}</p>
-                  {summary && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{summary}</p>
-                  )}
-                </div>
+          <div
+            key={update.id}
+            className={`rounded-lg border border-l-[3px] bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.06)] p-3 space-y-2.5 ${TYPE_STRIPE[update.update_type]}`}
+          >
+            <div className="flex items-start gap-2">
+              <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium shrink-0 ${TYPE_COLORS[update.update_type]}`}>
+                {TYPE_LABELS[update.update_type]}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-snug">{title}</p>
+                {summary && (
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{summary}</p>
+                )}
               </div>
+            </div>
 
-              {update.rationale && (
-                <p className="text-xs text-muted-foreground italic border-l-2 border-muted pl-2">{update.rationale}</p>
-              )}
+            {update.rationale && (
+              <p className="text-xs text-muted-foreground italic border-l-2 border-muted pl-2">{update.rationale}</p>
+            )}
 
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  className="flex-1 h-7 text-xs"
-                  disabled={isProcessing}
-                  onClick={() => handleSingle(update.id, 'approve')}
-                >
-                  {isProcessing ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <><CheckCircle2 className="h-3 w-3 mr-1" />Apply</>
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 h-7 text-xs"
-                  disabled={isProcessing}
-                  onClick={() => handleSingle(update.id, 'reject')}
-                >
-                  <XCircle className="h-3 w-3 mr-1" />Reject
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="flex-1 h-7 text-xs"
+                disabled={isProcessing}
+                onClick={() => handleSingle(update.id, 'approve')}
+              >
+                {isProcessing ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <><CheckCircle2 className="h-3 w-3 mr-1" />Apply</>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 h-7 text-xs"
+                disabled={isProcessing}
+                onClick={() => handleSingle(update.id, 'reject')}
+              >
+                <XCircle className="h-3 w-3 mr-1" />Reject
+              </Button>
+            </div>
+          </div>
         )
       })}
     </div>

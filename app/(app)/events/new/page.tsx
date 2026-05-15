@@ -76,7 +76,7 @@ export default function NewEventPage() {
         location: form.location.trim() || null,
         attendee_target: form.attendee_target ? parseInt(form.attendee_target) : null,
         budget_target: form.budget_target ? parseFloat(form.budget_target) : null,
-        status: 'active',
+        status: 'planning',
         created_by: user.id,
       })
       .select()

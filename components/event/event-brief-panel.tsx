@@ -32,23 +32,23 @@ export function EventBriefPanel({ event }: EventBriefPanelProps) {
   const brief = generateBrief(event)
 
   return (
-    <Card className="border bg-accent/30">
+    <Card className="border bg-primary/[0.03]">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5 text-primary" />
-          Current event brief
+        <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <Sparkles className="h-3 w-3 text-primary" />
+          Event brief
         </CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground leading-relaxed">
           {brief.split('**').map((part, i) =>
             i % 2 === 1
-              ? <strong key={i} className="text-foreground font-medium">{part}</strong>
+              ? <strong key={i} className="text-foreground font-semibold">{part}</strong>
               : part
           )}
         </p>
         {event.description && (
-          <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{event.description}</p>
+          <p className="text-sm text-muted-foreground mt-2 leading-relaxed border-t pt-2">{event.description}</p>
         )}
       </CardContent>
     </Card>

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import {
   LayoutDashboard,
   CalendarDays,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GlennLogo } from './glenn-logo'
+import { createClient } from '@/lib/supabase/client'
 
 const topNav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -32,9 +34,9 @@ function NavItem({ href, label, icon: Icon, active }: NavItemProps) {
     <Link
       href={href}
       className={cn(
-        'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+        'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150',
         active
-          ? 'bg-accent text-accent-foreground'
+          ? 'bg-primary/10 text-primary'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground'
       )}
     >
@@ -42,11 +44,6 @@ function NavItem({ href, label, icon: Icon, active }: NavItemProps) {
       {label}
     </Link>
   )
-}
-
-interface EventNavProps {
-  eventId: string
-  eventName: string
 }
 
 const eventSubNav = [
@@ -60,17 +57,28 @@ const eventSubNav = [
   { href: '/risks', label: 'Risks' },
 ]
 
-function EventNav({ eventId, eventName }: EventNavProps) {
+function EventNav({ eventId }: { eventId: string }) {
   const pathname = usePathname()
   const base = `/events/${eventId}`
+  const [eventName, setEventName] = useState<string>('')
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase
+      .from('events')
+      .select('name')
+      .eq('id', eventId)
+      .single()
+      .then(({ data }) => { if (data) setEventName(data.name) })
+  }, [eventId])
 
   return (
     <div className="mt-1">
-      <div className="flex items-center gap-1 px-3 py-1.5 text-xs text-muted-foreground">
-        <ChevronRight className="h-3 w-3" />
-        <span className="font-medium truncate">{eventName}</span>
+      <div className="flex items-center gap-1 px-3 py-1.5 text-xs text-muted-foreground/70">
+        <ChevronRight className="h-3 w-3 shrink-0" />
+        <span className="font-medium truncate tracking-tight">{eventName || '…'}</span>
       </div>
-      <div className="mt-0.5 space-y-0.5 pl-3">
+      <div className="mt-0.5 space-y-px pl-3">
         {eventSubNav.map(({ href, label }) => {
           const fullHref = `${base}${href}`
           const active = href === ''
@@ -82,9 +90,9 @@ function EventNav({ eventId, eventName }: EventNavProps) {
               key={fullHref}
               href={fullHref}
               className={cn(
-                'flex items-center rounded-md px-3 py-1.5 text-sm transition-colors',
+                'flex items-center rounded-md px-3 py-1.5 text-sm transition-all duration-150',
                 active
-                  ? 'bg-accent text-accent-foreground font-medium'
+                  ? 'bg-primary/10 text-primary font-medium'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               )}
             >
@@ -97,16 +105,13 @@ function EventNav({ eventId, eventName }: EventNavProps) {
   )
 }
 
-interface AppSidebarProps {
-  eventId?: string
-  eventName?: string
-}
-
-export function AppSidebar({ eventId, eventName }: AppSidebarProps) {
+export function AppSidebar() {
   const pathname = usePathname()
+  const match = pathname.match(/^\/events\/([^/]+)/)
+  const currentEventId = match?.[1]
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r bg-sidebar px-3 py-4 shrink-0">
+    <aside className="flex h-full w-56 flex-col border-r bg-sidebar px-3 py-5 shrink-0">
       <div className="mb-6 px-1">
         <GlennLogo size="sm" />
       </div>
@@ -122,9 +127,7 @@ export function AppSidebar({ eventId, eventName }: AppSidebarProps) {
           />
         ))}
 
-        {eventId && eventName && (
-          <EventNav eventId={eventId} eventName={eventName} />
-        )}
+        {currentEventId && <EventNav eventId={currentEventId} />}
       </nav>
 
       <nav className="flex flex-col gap-0.5 border-t pt-3">

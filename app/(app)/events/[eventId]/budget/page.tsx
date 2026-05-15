@@ -32,57 +32,59 @@ export default async function BudgetPage({ params }: PageProps) {
     <div className="p-6 max-w-3xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Budget</h2>
-          <p className="text-sm text-muted-foreground">{budgetList.length} line item{budgetList.length !== 1 ? 's' : ''}</p>
+          <h2 className="text-lg font-semibold tracking-tight">Budget</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">{budgetList.length} line item{budgetList.length !== 1 ? 's' : ''}</p>
         </div>
         {ev.budget_target && (
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Target</p>
-            <p className="text-lg font-semibold">{fmt(ev.budget_target)}</p>
+            <p className="text-lg font-semibold tracking-tight">{fmt(ev.budget_target)}</p>
           </div>
         )}
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-lg border p-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg border bg-card p-4 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
           <p className="text-xs text-muted-foreground">Total estimated</p>
-          <p className="text-xl font-semibold mt-1">{fmt(totalEstimated)}</p>
+          <p className="text-xl font-semibold mt-1 tracking-tight">{fmt(totalEstimated)}</p>
         </div>
-        <div className="rounded-lg border p-4">
+        <div className="rounded-lg border bg-card p-4 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
           <p className="text-xs text-muted-foreground">Total actual</p>
-          <p className="text-xl font-semibold mt-1">{fmt(totalActual)}</p>
+          <p className="text-xl font-semibold mt-1 tracking-tight">{fmt(totalActual)}</p>
         </div>
       </div>
 
       {budgetList.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed py-12 text-center">
+        <div className="rounded-xl border-2 border-dashed py-14 text-center">
           <p className="text-sm text-muted-foreground">No budget items yet. Tell Glenn about your costs.</p>
         </div>
       ) : (
-        <div className="rounded-lg border overflow-hidden">
+        <div className="rounded-lg border overflow-hidden shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Item</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Category</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">Estimated</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">Actual</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Status</th>
+              <tr className="border-b bg-muted/40">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Item</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Category</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Estimated</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actual</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
               </tr>
             </thead>
             <tbody>
               {budgetList.map((item) => (
-                <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30">
+                <tr key={item.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="font-medium">{item.description}</p>
+                    <p className="font-medium tracking-tight">{item.description}</p>
                     {item.ai_generated && <Badge variant="outline" className="text-xs mt-0.5">AI</Badge>}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{item.category}</td>
-                  <td className="px-4 py-3 text-right">{fmt(item.estimated_cost)}</td>
-                  <td className="px-4 py-3 text-right">{fmt(item.actual_cost)}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{item.category}</td>
+                  <td className="px-4 py-3 text-right font-medium">{fmt(item.estimated_cost)}</td>
+                  <td className="px-4 py-3 text-right text-muted-foreground">{fmt(item.actual_cost)}</td>
                   <td className="px-4 py-3">
-                    <Badge variant="secondary" className="text-xs capitalize">{item.status}</Badge>
+                    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize bg-slate-100 text-slate-600">
+                      {item.status}
+                    </span>
                   </td>
                 </tr>
               ))}

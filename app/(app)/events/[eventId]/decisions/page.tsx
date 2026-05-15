@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Decision } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
@@ -19,34 +18,35 @@ export default async function DecisionsPage({ params }: PageProps) {
   if (!event) notFound()
 
   const list = (decisions ?? []) as Decision[]
-  const open = list.filter((d) => d.status === 'open')
+  const pending = list.filter((d) => d.status === 'pending')
   const decided = list.filter((d) => d.status === 'decided')
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">Decisions</h2>
-        <p className="text-sm text-muted-foreground">{open.length} open · {decided.length} decided</p>
+        <h2 className="text-lg font-semibold tracking-tight">Decisions</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">{pending.length} pending · {decided.length} decided</p>
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed py-12 text-center">
+        <div className="rounded-xl border-2 border-dashed py-14 text-center">
           <p className="text-sm text-muted-foreground">No decisions tracked yet. Tell Glenn about things that need a decision.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {list.map((dec) => (
-            <div key={dec.id} className="rounded-lg border p-3.5 space-y-1.5">
+            <div key={dec.id} className="rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)]">
               <div className="flex items-start gap-2">
-                <p className="text-sm font-medium flex-1">{dec.title}</p>
-                <Badge variant={dec.status === 'open' ? 'secondary' : 'default'} className="text-xs capitalize shrink-0">
+                <p className="text-sm font-medium flex-1 tracking-tight">{dec.title}</p>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize shrink-0
+                  ${dec.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                   {dec.status}
-                </Badge>
+                </span>
               </div>
               {dec.description && <p className="text-xs text-muted-foreground">{dec.description}</p>}
               {dec.decision && (
-                <div className="rounded-md bg-accent/50 px-3 py-2">
-                  <p className="text-xs font-medium text-accent-foreground">Decision: {dec.decision}</p>
+                <div className="rounded-md bg-primary/[0.05] border border-primary/10 px-3 py-2">
+                  <p className="text-xs font-medium text-primary">Decision: {dec.decision}</p>
                 </div>
               )}
             </div>

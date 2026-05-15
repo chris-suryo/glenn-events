@@ -1,5 +1,7 @@
 # Glenn Events — CLAUDE.md
 
+Always read **`docs/PRODUCT_SOUL.md`** before making **product** or **architecture** decisions (north star, core workflow, MVP phases, command center priorities, trust and approval).
+
 ## Product Vision
 
 Glenn Events is an **agentic event operations workspace** for small event teams.
@@ -125,9 +127,14 @@ See `supabase/migrations/001_init.sql` for full schema + RLS.
 
 - **Phase 1** Done — Project shell, branding, route stubs, CLAUDE.md
 - **Phase 2** Done — Supabase schema (17 tables), RLS, API stubs, seed script, cleanup
-- **Phase 3** — Mock AI extraction endpoint (keyword-matched, deterministic)
-- **Phase 4** — Approval flow (approve/reject writes to destination tables)
-- **Phase 5** — Polish, loading skeletons, empty states, build clean
+- **Phase 3** Done — Real-data runtime, command center, open questions, RLS tighten, status alignment
+- **Phase 3.5** Done — UI vibe pass (premium design tokens, sidebar, Glenn input, proposed updates queue, all tab pages)
+- **Phase 4** Done — Mock AI extraction: `lib/ai/mock-extract.ts`, full `extract-updates` route, message/ai_run/proposed_updates/activity_log writes
+- **Phase 5** Next — Approve/reject writes to destination tables (tasks, vendors, budget_items, etc.)
+- **Phase 6** — Polish, loading skeletons, empty states, real LLM wiring
+
+> **Before continuing:** read `docs/PRODUCT_SOUL.md` and `docs/NEXT_STEPS_PHASE_5.md`.
+> Phase 5 is next. Do not add new features before approve/reject is complete.
 
 ## Environment Variables
 

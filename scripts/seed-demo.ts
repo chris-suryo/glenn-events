@@ -4,16 +4,24 @@
  *
  * Usage:
  *   cp .env.example .env.local   # fill in your values
- *   npx tsx scripts/seed-demo.ts
+ *   npm run seed
+ *   # or: npx tsx scripts/seed-demo.ts
  *
  * Required env vars:
  *   NEXT_PUBLIC_SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  *   SEED_USER_EMAIL
  *   SEED_USER_PASSWORD
+ *
+ * Env files: unlike `next dev`, plain `tsx` does not load `.env.local`.
+ * We load `.env` then `.env.local` so `npm run seed` picks up your keys.
  */
 
+import { config as loadEnv } from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
+
+loadEnv({ path: '.env' })
+loadEnv({ path: '.env.local', override: true })
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -174,7 +182,7 @@ async function run() {
       category: 'Venue',
       description: 'Charles Hotel ballroom rental',
       estimated_cost: 6500,
-      status: 'confirmed',
+      status: 'committed',
       vendor_id: vendorMap['Venue'] ?? null,
     },
     {
@@ -198,7 +206,7 @@ async function run() {
       category: 'Photography',
       description: 'Event photography — 4-hour package',
       estimated_cost: 1500,
-      status: 'confirmed',
+      status: 'committed',
       vendor_id: vendorMap['Photography'] ?? null,
     },
     {
@@ -458,7 +466,7 @@ async function run() {
   console.log(`   User:  ${SEED_EMAIL}`)
   console.log('')
   console.log('   Sign in at http://localhost:3000/login')
-  console.log(`   Password: ${SEED_PASSWORD}`)
+  console.log('   Use the password from SEED_USER_PASSWORD in your env file.')
 }
 
 run().catch((err) => {

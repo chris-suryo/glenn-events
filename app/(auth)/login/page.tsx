@@ -48,19 +48,19 @@ export default function LoginPage() {
 
   return (
     <div className="w-full max-w-sm space-y-8">
-      <div className="flex flex-col items-center gap-3">
+      <div className="flex flex-col items-center gap-2">
         <GlennLogo />
-        <p className="text-sm text-muted-foreground">
-          Your AI event operations workspace
+        <p className="text-sm text-muted-foreground tracking-tight">
+          AI-powered event operations
         </p>
       </div>
 
-      <Card className="border shadow-sm">
+      <Card className="border shadow-[0px_0px_0px_1px_rgba(0,0,0,0.06),0px_4px_16px_rgba(0,0,0,0.07)]">
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-semibold">
+          <CardTitle className="text-base font-semibold tracking-tight">
             {isSignUp ? 'Create your account' : 'Sign in to Glenn'}
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-sm">
             {isSignUp
               ? 'Start building your event plan of record.'
               : 'Continue to your event workspace.'}
@@ -69,7 +69,7 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-xs font-medium">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -81,7 +81,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-xs font-medium">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -101,7 +101,7 @@ export default function LoginPage() {
               <p className="text-sm text-primary">{message}</p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]" disabled={loading}>
               {loading
                 ? isSignUp
                   ? 'Creating account…'
@@ -116,7 +116,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => { setIsSignUp(!isSignUp); setError(null); setMessage(null) }}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               {isSignUp
                 ? 'Already have an account? Sign in'
@@ -127,7 +127,7 @@ export default function LoginPage() {
       </Card>
 
       <p className="text-center text-xs text-muted-foreground">
-        Glenn Events · AI-powered event operations
+        Glenn Events · Calm, operational, trustworthy.
       </p>
     </div>
   )

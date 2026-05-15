@@ -38,10 +38,10 @@ supabase db push
 ### 4. (Optional) Seed demo data
 
 ```bash
-npx tsx scripts/seed.ts
+npm run seed
 ```
 
-This creates a demo user and the "Q3 Client Networking Dinner" event with sample data.
+Requires `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and optional `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` in `.env.local` (or `.env`). The seed script loads those files automatically (unlike raw `tsx`, which does not).
 
 ### 5. Run dev server
 
@@ -57,6 +57,7 @@ Open [http://localhost:3000](http://localhost:3000).
 |---|---|
 | Dev server | `npm run dev` |
 | Production build | `npm run build` |
+| Seed demo data | `npm run seed` |
 | Type check | `npx tsc --noEmit` |
 | Lint | `npm run lint` |
 
