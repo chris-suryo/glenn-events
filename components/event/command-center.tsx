@@ -1,12 +1,12 @@
 'use client'
 
-import type { Event, Task, Vendor, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem } from '@/lib/types'
+import type { Event, Task, Vendor, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { EventBriefPanel } from './event-brief-panel'
 import { ProposedUpdatesBadge } from './proposed-updates-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertTriangle, Calendar, CheckCircle2, DollarSign, HelpCircle, Scale, Users } from 'lucide-react'
+import { AlertTriangle, Calendar, CheckCircle2, DollarSign, HelpCircle, Scale, Users, Activity } from 'lucide-react'
 
 interface CommandCenterProps {
   event: Event
@@ -18,6 +18,29 @@ interface CommandCenterProps {
   pendingDecisions: Decision[]
   upcomingTimeline: TimelineItem[]
   totalBudgetEstimated: number
+  recentActivity: ActivityLog[]
+}
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  proposed_updates_created: 'Glenn proposed updates',
+  proposed_update_applied:  'Update applied',
+  proposed_update_rejected: 'Update rejected',
+}
+
+function activityDot(action: string) {
+  if (action === 'proposed_update_applied')  return 'bg-emerald-500'
+  if (action === 'proposed_update_rejected') return 'bg-rose-400'
+  return 'bg-indigo-400'
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1)  return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)  return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
 }
 
 function formatCurrency(n: number) {
@@ -34,6 +57,7 @@ export function CommandCenter({
   pendingDecisions,
   upcomingTimeline,
   totalBudgetEstimated,
+  recentActivity,
 }: CommandCenterProps) {
   const confirmedVendors = vendors.filter((v) => v.status === 'confirmed')
   const vendorBlockers = vendors.filter((v) => v.status === 'prospect' || v.status === 'contacted')
@@ -310,6 +334,33 @@ export function CommandCenter({
                 </Card>
               )}
             </div>
+          )}
+
+          {/* Recent activity */}
+          {recentActivity.length > 0 && (
+            <Card className="border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-muted-foreground" />
+                  Recent activity
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2.5">
+                {recentActivity.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-2.5">
+                    <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${activityDot(entry.action)}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm leading-snug">
+                        {ACTIVITY_LABELS[entry.action] ?? entry.action}
+                      </p>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {timeAgo(entry.created_at)}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           )}
 
         </div>

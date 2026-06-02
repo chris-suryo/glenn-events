@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem } from '@/lib/types'
+import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
 import { CommandCenter } from '@/components/event/command-center'
 
 interface PageProps {
@@ -23,6 +23,7 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
     { data: openQuestions },
     { data: pendingDecisions },
     { data: upcomingTimeline },
+    { data: recentActivity },
   ] = await Promise.all([
     supabase.from('events').select('*').eq('id', eventId).single(),
     supabase.from('tasks').select('*').eq('event_id', eventId).eq('status', 'todo').order('created_at'),
@@ -54,6 +55,13 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       .gte('starts_at', now)
       .order('starts_at', { ascending: true })
       .limit(5),
+    supabase
+      .from('activity_log')
+      .select('*')
+      .eq('event_id', eventId)
+      .in('action', ['proposed_updates_created', 'proposed_update_applied', 'proposed_update_rejected'])
+      .order('created_at', { ascending: false })
+      .limit(8),
   ])
 
   if (!event) notFound()
@@ -74,6 +82,7 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       pendingDecisions={(pendingDecisions ?? []) as Decision[]}
       upcomingTimeline={(upcomingTimeline ?? []) as TimelineItem[]}
       totalBudgetEstimated={totalBudgetEstimated}
+      recentActivity={(recentActivity ?? []) as ActivityLog[]}
     />
   )
 }

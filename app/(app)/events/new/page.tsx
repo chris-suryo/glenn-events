@@ -40,6 +40,17 @@ export default function NewEventPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
+    // profiles row is required for organizations.created_by and organization_members FKs
+    const { error: profileErr } = await supabase.from('profiles').upsert(
+      { id: user.id, email: user.email ?? null },
+      { onConflict: 'id' }
+    )
+    if (profileErr) {
+      setError('Could not sync your profile. Try signing out and back in, or apply migration 003_profiles_insert_policy.sql.')
+      setLoading(false)
+      return
+    }
+
     // Ensure user has an organization (create one if not)
     let orgId: string
     const { data: memberships } = await supabase

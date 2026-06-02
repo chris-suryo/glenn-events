@@ -110,11 +110,40 @@ export async function POST(
       }
     }
 
-    // 5. Activity log (best-effort — don't fail the request if this errors)
+    // 5. Assistant message summarising what Glenn found (best-effort)
     const countByType: Record<string, number> = {}
     for (const item of extracted) {
       countByType[item.update_type] = (countByType[item.update_type] ?? 0) + 1
     }
+
+    const TYPE_LABELS: Record<string, [string, string]> = {
+      task:          ['task',          'tasks'],
+      vendor:        ['vendor',        'vendors'],
+      budget_item:   ['budget item',   'budget items'],
+      timeline_item: ['timeline item', 'timeline items'],
+      decision:      ['decision',      'decisions'],
+      risk:          ['risk',          'risks'],
+      open_question: ['open question', 'open questions'],
+    }
+
+    const summaryParts = Object.entries(countByType)
+      .filter(([, n]) => n > 0)
+      .map(([type, n]) => {
+        const [singular, plural] = TYPE_LABELS[type] ?? [type, type + 's']
+        return `${n} ${n === 1 ? singular : plural}`
+      })
+
+    const assistantContent = extracted.length === 0
+      ? "I reviewed your notes but didn't find any new structured updates to propose."
+      : `I found ${extracted.length} proposed update${extracted.length !== 1 ? 's' : ''}: ${summaryParts.join(', ')}. Review and apply them in the queue.`
+
+    // actor_user_id set to the submitting user — Glenn has no separate profile in MVP
+    await supabase.from('messages').insert({
+      event_id: eventId,
+      user_id:  user.id,
+      role:     'assistant',
+      content:  assistantContent,
+    })
 
     await supabase.from('activity_log').insert({
       event_id: eventId,

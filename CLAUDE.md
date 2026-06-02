@@ -130,11 +130,12 @@ See `supabase/migrations/001_init.sql` for full schema + RLS.
 - **Phase 3** Done — Real-data runtime, command center, open questions, RLS tighten, status alignment
 - **Phase 3.5** Done — UI vibe pass (premium design tokens, sidebar, Glenn input, proposed updates queue, all tab pages)
 - **Phase 4** Done — Mock AI extraction: `lib/ai/mock-extract.ts`, full `extract-updates` route, message/ai_run/proposed_updates/activity_log writes
-- **Phase 5** Next — Approve/reject writes to destination tables (tasks, vendors, budget_items, etc.)
-- **Phase 6** — Polish, loading skeletons, empty states, real LLM wiring
+- **Phase 5** Done — Approve/reject writes to destination tables (tasks, vendors, budget_items, timeline_items, decisions, risks, open_questions)
+- **Phase 6** Done — Demo polish: approve hardening (optimistic lock), open_question owner_name, Recent Activity on command center, idempotent seed + seed:reset, MVP demo script
+- **Phase 7** Next — Real LLM wiring, loading skeletons, empty state polish
 
-> **Before continuing:** read `docs/PRODUCT_SOUL.md` and `docs/NEXT_STEPS_PHASE_5.md`.
-> Phase 5 is next. Do not add new features before approve/reject is complete.
+> **MVP loop is complete.** Read `docs/PRODUCT_SOUL.md` and `docs/MVP_DEMO_SCRIPT.md` before continuing.
+> Phase 7 is next. Do not add email, SMS, RSVP, payments, ticketing, or marketplace features.
 
 ## Environment Variables
 

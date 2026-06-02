@@ -2,10 +2,13 @@
  * Dev-only seed script for Glenn Events.
  * Creates a demo user + "Q3 Client Networking Dinner" event with full fixture data.
  *
+ * Idempotent: if the event already exists for this user, the script exits early.
+ * To wipe and re-seed from scratch, set SEED_RESET=true:
+ *
  * Usage:
  *   cp .env.example .env.local   # fill in your values
- *   npm run seed
- *   # or: npx tsx scripts/seed-demo.ts
+ *   npm run seed              # safe to run multiple times
+ *   npm run seed:reset        # deletes existing event + data, then re-seeds
  *
  * Required env vars:
  *   NEXT_PUBLIC_SUPABASE_URL
@@ -27,6 +30,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const SEED_EMAIL = process.env.SEED_USER_EMAIL ?? 'demo@example.com'
 const SEED_PASSWORD = process.env.SEED_USER_PASSWORD ?? 'change-this-password'
+const SEED_RESET = process.env.SEED_RESET === 'true'
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
@@ -76,29 +80,65 @@ async function run() {
     { onConflict: 'id' }
   )
 
-  // ── 3. Create organization ───────────────────────────────────────────────
-  console.log('  Creating organization...')
-  const { data: org } = await supabase
-    .from('organizations')
-    .insert({ name: 'Demo Organization', created_by: userId })
-    .select()
+  // ── 3. Find or create organization ──────────────────────────────────────
+  let orgId: string
+
+  const { data: existingMembership } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', userId)
+    .limit(1)
     .single()
 
-  if (!org) { console.error('Failed to create org'); process.exit(1) }
+  if (existingMembership) {
+    orgId = existingMembership.organization_id
+    console.log(`  Using existing organization: ${orgId}`)
+  } else {
+    console.log('  Creating organization...')
+    const { data: org } = await supabase
+      .from('organizations')
+      .insert({ name: 'Demo Organization', created_by: userId })
+      .select()
+      .single()
+    if (!org) { console.error('Failed to create org'); process.exit(1) }
+    orgId = org.id
+    await supabase.from('organization_members').upsert(
+      { organization_id: orgId, user_id: userId, role: 'owner' },
+      { onConflict: 'organization_id,user_id' }
+    )
+  }
 
-  await supabase.from('organization_members').upsert(
-    { organization_id: org.id, user_id: userId, role: 'owner' },
-    { onConflict: 'organization_id,user_id' }
-  )
-
-  // ── 4. Create event ───────────────────────────────────────────────────────
-  console.log('  Creating event: Q3 Client Networking Dinner...')
+  // ── 4. Find or create event (idempotent) ─────────────────────────────────
   const eventDate = new Date('2025-09-27T18:00:00-04:00').toISOString()
 
+  // Check if already seeded
+  const { data: existingEvent } = await supabase
+    .from('events')
+    .select('id')
+    .eq('organization_id', orgId)
+    .eq('name', 'Q3 Client Networking Dinner')
+    .limit(1)
+    .single()
+
+  if (existingEvent && !SEED_RESET) {
+    console.log(`\n✅ Already seeded! Event ID: ${existingEvent.id}`)
+    console.log('   Run `npm run seed:reset` to wipe and re-seed from scratch.')
+    console.log(`   Sign in at http://localhost:3000/login`)
+    return
+  }
+
+  if (existingEvent && SEED_RESET) {
+    console.log(`  Resetting: deleting existing event ${existingEvent.id} and all related data...`)
+    // Cascade deletes handle all child rows (vendors, tasks, etc.)
+    await supabase.from('events').delete().eq('id', existingEvent.id)
+    console.log('  Reset complete.')
+  }
+
+  console.log('  Creating event: Q3 Client Networking Dinner...')
   const { data: event } = await supabase
     .from('events')
     .insert({
-      organization_id: org.id,
+      organization_id: orgId,
       name: 'Q3 Client Networking Dinner',
       description:
         'Annual Q3 client appreciation dinner for top accounts. Focus on relationship-building, product previews, and celebrating the quarter.',
