@@ -10,7 +10,10 @@ export async function proxy(request: NextRequest) {
   // Pass through static assets and public routes without touching Supabase
   const isPublic =
     pathname === '/login' ||
+    pathname === '/forgot-password' ||
+    pathname === '/update-password' ||
     pathname === '/' ||
+    pathname.startsWith('/auth/') ||
     pathname.startsWith('/api/')
 
   // If env vars are missing, allow public routes through and block protected ones

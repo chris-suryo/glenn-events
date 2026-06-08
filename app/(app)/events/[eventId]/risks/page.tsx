@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Risk } from '@/lib/types'
 import { AlertTriangle } from 'lucide-react'
+import { RiskStatusButton } from '@/components/event/risk-status-button'
+import { AiSourceBadge } from '@/components/event/ai-source-badge'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
@@ -48,15 +50,22 @@ export default async function RisksPage({ params }: PageProps) {
                       'bg-slate-100 text-slate-600'}`}>
                     {risk.severity}
                   </span>
-                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize bg-slate-100 text-slate-500">
-                    {risk.status}
-                  </span>
+                  <RiskStatusButton
+                    riskId={risk.id}
+                    eventId={eventId}
+                    currentStatus={risk.status}
+                  />
                 </div>
               </div>
               {risk.description && <p className="text-xs text-muted-foreground pl-6">{risk.description}</p>}
               {risk.mitigation && (
                 <div className="pl-6 mt-1">
                   <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground/70">Mitigation:</span> {risk.mitigation}</p>
+                </div>
+              )}
+              {risk.ai_generated && (
+                <div className="pl-6">
+                  <AiSourceBadge eventId={eventId} sourceMessageId={risk.source_message_id} />
                 </div>
               )}
             </div>

@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Task } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
 import { CheckCircle2 } from 'lucide-react'
 import { TaskRowActions } from '@/components/event/task-row-actions'
+import { TaskAssignButton, type EventMember } from '@/components/event/task-assign-button'
+import { AiSourceBadge } from '@/components/event/ai-source-badge'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
@@ -17,18 +18,32 @@ export default async function TasksPage({ params, searchParams }: PageProps) {
 
   const statusFilter = filter === 'done' ? 'done' : filter === 'all' ? undefined : 'todo'
 
-  const [{ data: event }, { data: tasks }] = await Promise.all([
+  const [{ data: event }, { data: tasks }, { data: members }] = await Promise.all([
     supabase.from('events').select('id, name').eq('id', eventId).single(),
     (() => {
       const q = supabase.from('tasks').select('*').eq('event_id', eventId).order('created_at')
       return statusFilter ? q.eq('status', statusFilter) : q
     })(),
+    supabase
+      .from('event_members')
+      .select('user_id, profiles(full_name, avatar_url)')
+      .eq('event_id', eventId),
   ])
 
   if (!event) notFound()
 
   const taskList = (tasks ?? []) as Task[]
   const activeFilter = filter === 'done' ? 'done' : filter === 'all' ? 'all' : 'open'
+
+  // Flatten the profile join into EventMember shape
+  const eventMembers: EventMember[] = (members ?? []).map((m) => {
+    const profile = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles
+    return {
+      user_id: m.user_id,
+      full_name: (profile as { full_name?: string | null } | null)?.full_name ?? null,
+      avatar_url: (profile as { avatar_url?: string | null } | null)?.avatar_url ?? null,
+    }
+  })
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-5">
@@ -78,7 +93,7 @@ export default async function TasksPage({ params, searchParams }: PageProps) {
                     {task.priority}
                   </span>
                   {task.ai_generated && (
-                    <Badge variant="outline" className="text-xs">AI</Badge>
+                    <AiSourceBadge eventId={eventId} sourceMessageId={task.source_message_id} />
                   )}
                 </div>
                 {task.description && <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>}
@@ -87,6 +102,15 @@ export default async function TasksPage({ params, searchParams }: PageProps) {
                     Due {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>
                 )}
+              </div>
+              {/* Assign to team member */}
+              <div className="shrink-0 mt-0.5">
+                <TaskAssignButton
+                  taskId={task.id}
+                  eventId={eventId}
+                  currentOwnerId={task.owner_user_id}
+                  members={eventMembers}
+                />
               </div>
             </div>
           ))}

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { mockExtract, groupExtracted } from '@/lib/ai/mock-extract'
+import { llmExtract } from '@/lib/ai/llm-extract'
 
 export async function POST(
   request: NextRequest,
@@ -27,6 +28,21 @@ export async function POST(
   }
 
   const { input_text } = parsed.data
+
+  // Rate limit — max 20 AI extractions per user per hour (DB-backed, no extra dependencies)
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const { count: recentRuns } = await supabase
+    .from('ai_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('created_by', user.id)
+    .gte('created_at', oneHourAgo)
+
+  if ((recentRuns ?? 0) >= 20) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. You can submit up to 20 updates per hour. Try again shortly.' },
+      { status: 429 }
+    )
+  }
 
   // Event access — RLS-safe: only returns row if user is event member
   const { data: event } = await supabase
@@ -57,8 +73,10 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
     }
 
-    // 2. Run deterministic mock extraction
-    const extracted = mockExtract(input_text)
+    // 2. Run extraction — real LLM if API key set, deterministic mock otherwise
+    const extracted = process.env.ANTHROPIC_API_KEY
+      ? await llmExtract(input_text)
+      : mockExtract(input_text)
     const grouped = groupExtracted(extracted)
 
     const outputJson = {

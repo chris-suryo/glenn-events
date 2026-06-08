@@ -1,21 +1,13 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Vendor } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Users } from 'lucide-react'
+import { VendorStatusButton } from '@/components/event/vendor-status-button'
+import { AiSourceBadge } from '@/components/event/ai-source-badge'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
-}
-
-function statusPill(status: Vendor['status']) {
-  switch (status) {
-    case 'confirmed': return 'bg-emerald-50 text-emerald-700'
-    case 'contacted': return 'bg-sky-50 text-sky-700'
-    case 'prospect': return 'bg-slate-100 text-slate-600'
-    case 'declined': return 'bg-rose-50 text-rose-700'
-  }
 }
 
 export default async function VendorsPage({ params }: PageProps) {
@@ -53,9 +45,11 @@ export default async function VendorsPage({ params }: PageProps) {
                     <p className="text-sm font-semibold tracking-tight">{vendor.name}</p>
                     {vendor.category && <p className="text-xs text-muted-foreground">{vendor.category}</p>}
                   </div>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize shrink-0 ${statusPill(vendor.status)}`}>
-                    {vendor.status}
-                  </span>
+                  <VendorStatusButton
+                    vendorId={vendor.id}
+                    eventId={eventId}
+                    currentStatus={vendor.status}
+                  />
                 </div>
                 {vendor.estimated_cost && (
                   <p className="text-xs text-muted-foreground">
@@ -63,7 +57,9 @@ export default async function VendorsPage({ params }: PageProps) {
                   </p>
                 )}
                 {vendor.notes && <p className="text-xs text-muted-foreground line-clamp-2">{vendor.notes}</p>}
-                {vendor.ai_generated && <Badge variant="outline" className="text-xs">AI</Badge>}
+                {vendor.ai_generated && (
+                  <AiSourceBadge eventId={eventId} sourceMessageId={vendor.source_message_id} />
+                )}
               </CardContent>
             </Card>
           ))}

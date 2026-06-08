@@ -35,7 +35,7 @@ It is NOT a ticketing, RSVP, seating chart, vendor marketplace, or general event
 2. **`@supabase/ssr`** for cookie-based auth. Auth proxy at `proxy.ts` protects all `(app)` routes (Next.js 16 renamed `middleware.ts` → `proxy.ts`).
 3. **No service role key in app routes** — server actions use the authenticated user context + RLS. Service role is dev-scripts only (`scripts/`).
 4. **Approval flow via fetch to API routes** — mutations go through `/api/updates/[id]/approve` and `/api/updates/[id]/reject`, which use the user session.
-5. **Mock AI first** — `/api/events/[eventId]/extract-updates` is deterministic keyword-matching. Real model wired later.
+5. **Real LLM extraction live** — `extract-updates` route uses `claude-haiku-4-5` via `lib/ai/llm-extract.ts` if `ANTHROPIC_API_KEY` is set; falls back to `lib/ai/mock-extract.ts` if not. Tool-use schema uses grouped arrays per type (separate `tasks[]`, `vendors[]`, etc.) — avoids discriminated-union complexity.
 6. **`payload_json` is strongly typed** — each `proposed_updates` row has a `payload_json` that maps 1:1 to the destination table insert shape. This makes the approval flow straightforward.
 
 ## Folder Structure
@@ -84,6 +84,11 @@ scripts/              — seed-demo.ts (dev only)
 - **No premature abstraction** — three similar lines > a helper that adds complexity.
 - **Empty states on all list views** — every data list has a friendly empty state.
 - **Loading skeletons** — add `loading.tsx` files for routes that fetch data.
+- **New auth routes need `isPublic` entry** — add any new `/(auth)/` or `/auth/` routes to the `isPublic` array in `proxy.ts` or they'll redirect to `/login`.
+- **`@base-ui/react` has no `asChild`** — `DropdownMenuTrigger` must be styled directly via `className`; never wrap in a `<button>` child. Applies to all `@base-ui/react` primitives.
+- **Supabase join shape is ambiguous** — `.select('user_id, profiles(full_name)')` may return `profiles` as an object or `[object]`. Always guard: `const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles`.
+- **`OpenQuestion.status` is `'open' | 'answered'`** — not 'resolved'. Budget item vendor references are stored as `(Vendor reference: [name])` suffix in `description`; parse with `/\(Vendor reference: ([^)]+)\)/`.
+- **`express-rate-limit` in package.json is unused** — it's Express-only and incompatible with Next.js App Router. Rate limit via DB count: `.select('id', { count: 'exact', head: true }).gte('created_at', oneHourAgo)`.
 
 ## Core UI Principles
 
@@ -108,6 +113,9 @@ scripts/              — seed-demo.ts (dev only)
 | Decisions | `/events/[id]/decisions` | Decision log |
 | Risks | `/events/[id]/risks` | Risk register |
 | Settings | `/settings` | Account |
+| Forgot Password | `/forgot-password` | Sends Supabase reset email |
+| Update Password | `/update-password` | Sets new password after email link |
+| Open Questions | `/events/[id]/open-questions` | Question log with resolve actions |
 
 ## Database Tables (summary)
 
@@ -132,10 +140,10 @@ See `supabase/migrations/001_init.sql` for full schema + RLS.
 - **Phase 4** Done — Mock AI extraction: `lib/ai/mock-extract.ts`, full `extract-updates` route, message/ai_run/proposed_updates/activity_log writes
 - **Phase 5** Done — Approve/reject writes to destination tables (tasks, vendors, budget_items, timeline_items, decisions, risks, open_questions)
 - **Phase 6** Done — Demo polish: approve hardening (optimistic lock), open_question owner_name, Recent Activity on command center, idempotent seed + seed:reset, MVP demo script
-- **Phase 7** Next — Real LLM wiring, loading skeletons, empty state polish
+- **Phase 7** Done — Real LLM (Anthropic tool-use), rate limiting, inline CRUD (vendors/budget/risks/decisions/open-questions), task assignment with member avatars, Google OAuth button, AI source traceability badges, Timeline calendar view, password reset flow, Sentry setup, `docs/DEPLOYMENT.md`
 
-> **MVP loop is complete.** Read `docs/PRODUCT_SOUL.md` and `docs/MVP_DEMO_SCRIPT.md` before continuing.
-> Phase 7 is next. Do not add email, SMS, RSVP, payments, ticketing, or marketplace features.
+> **Production-ready foundation complete.** `ANTHROPIC_API_KEY` is set and extraction uses real Claude.
+> Do not add email, SMS, RSVP, payments, ticketing, or marketplace features.
 
 ## Environment Variables
 

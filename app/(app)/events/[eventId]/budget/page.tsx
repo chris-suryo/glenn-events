@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { BudgetItem, Event } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
+import { BudgetStatusButton } from '@/components/event/budget-status-button'
+import { AiSourceBadge } from '@/components/event/ai-source-badge'
+import Link from 'next/link'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
@@ -75,16 +77,31 @@ export default async function BudgetPage({ params }: PageProps) {
               {budgetList.map((item) => (
                 <tr key={item.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="font-medium tracking-tight">{item.description}</p>
-                    {item.ai_generated && <Badge variant="outline" className="text-xs mt-0.5">AI</Badge>}
+                    <p className="font-medium tracking-tight">{item.description.replace(/\s*\(Vendor reference:[^)]+\)/, '')}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      {item.ai_generated && (
+                        <AiSourceBadge eventId={eventId} sourceMessageId={item.source_message_id} />
+                      )}
+                      {/* Vendor cross-link — extracted from "(Vendor reference: Name)" suffix */}
+                      {/\(Vendor reference: ([^)]+)\)/.test(item.description) && (
+                        <Link
+                          href={`/events/${eventId}/vendors`}
+                          className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-primary hover:border-primary/30 transition-colors"
+                        >
+                          {item.description.match(/\(Vendor reference: ([^)]+)\)/)?.[1]}
+                        </Link>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{item.category}</td>
                   <td className="px-4 py-3 text-right font-medium">{fmt(item.estimated_cost)}</td>
                   <td className="px-4 py-3 text-right text-muted-foreground">{fmt(item.actual_cost)}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize bg-slate-100 text-slate-600">
-                      {item.status}
-                    </span>
+                    <BudgetStatusButton
+                      itemId={item.id}
+                      eventId={eventId}
+                      currentStatus={item.status}
+                    />
                   </td>
                 </tr>
               ))}

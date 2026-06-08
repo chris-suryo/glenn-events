@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Decision } from '@/lib/types'
+import { DecisionResolveButton } from '@/components/event/decision-resolve-button'
+import { AiSourceBadge } from '@/components/event/ai-source-badge'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
@@ -49,6 +51,14 @@ export default async function DecisionsPage({ params }: PageProps) {
                   <p className="text-xs font-medium text-primary">Decision: {dec.decision}</p>
                 </div>
               )}
+              <div className="flex items-center gap-2 flex-wrap">
+                {dec.ai_generated && (
+                  <AiSourceBadge eventId={eventId} sourceMessageId={dec.source_message_id} />
+                )}
+                {dec.status === 'pending' && (
+                  <DecisionResolveButton decisionId={dec.id} eventId={eventId} />
+                )}
+              </div>
             </div>
           ))}
         </div>

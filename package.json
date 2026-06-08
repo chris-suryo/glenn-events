@@ -12,7 +12,9 @@
     "seed:reset": "SEED_RESET=true tsx scripts/seed-demo.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
     "@base-ui/react": "^1.4.1",
+    "@sentry/nextjs": "^10.56.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
     "class-variance-authority": "^0.7.1",
@@ -29,6 +31,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.15.11",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

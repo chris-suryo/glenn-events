@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -21,11 +21,11 @@ export function GlennInput({ eventId }: GlennInputProps) {
   const router = useRouter()
   const [text, setText] = useState('')
   const [isPending, startTransition] = useTransition()
-  // useMemo with empty deps: evaluated once on mount (client-only), no hydration mismatch
-  const placeholder = useMemo(
-    () => PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)],
-    []
-  )
+  // Start with index 0 so server and client SSR agree, then randomize after mount
+  const [placeholder, setPlaceholder] = useState(PLACEHOLDERS[0])
+  useEffect(() => {
+    setPlaceholder(PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)])
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

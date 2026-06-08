@@ -55,6 +55,7 @@ const eventSubNav = [
   { href: '/timeline', label: 'Timeline' },
   { href: '/decisions', label: 'Decisions' },
   { href: '/risks', label: 'Risks' },
+  { href: '/open-questions', label: 'Questions' },
 ]
 
 function EventNav({ eventId }: { eventId: string }) {
