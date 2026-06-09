@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { ExtractedItem } from './mock-extract'
+import type { EventStateContext } from '@/lib/types'
 
 const anthropic = new Anthropic()
 
@@ -206,6 +207,100 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
   },
 }
 
+// ─── Event state context → prompt section ────────────────────────────────────
+
+function buildEventStateSection(ctx: EventStateContext): string {
+  const lines: string[] = ['', '---', '', '## Current Event State', '']
+
+  lines.push(`Event: ${ctx.event.name}`)
+  if (ctx.event.event_type) lines.push(`Type: ${ctx.event.event_type}`)
+  if (ctx.event.event_date) lines.push(`Date: ${ctx.event.event_date}`)
+  if (ctx.event.location) lines.push(`Location: ${ctx.event.location}`)
+  if (ctx.event.attendee_target !== null)
+    lines.push(`Attendee target: ${ctx.event.attendee_target}`)
+  if (ctx.event.budget_target !== null)
+    lines.push(`Budget target: $${ctx.event.budget_target}`)
+
+  if (ctx.existing_tasks.length > 0) {
+    lines.push('', '### Existing tasks (open/in-progress):')
+    for (const t of ctx.existing_tasks) {
+      const snippet = t.description ? ` — ${t.description.slice(0, 60)}` : ''
+      lines.push(`- [${t.status}, ${t.priority}] ${t.title}${snippet}`)
+    }
+  }
+
+  if (ctx.existing_vendors.length > 0) {
+    lines.push('', '### Existing vendors:')
+    for (const v of ctx.existing_vendors) {
+      const cost = v.estimated_cost !== null ? ` ($${v.estimated_cost})` : ''
+      const contact = v.contact_name ? `, contact: ${v.contact_name}` : ''
+      const notes = v.notes ? ` — ${v.notes.slice(0, 60)}` : ''
+      lines.push(
+        `- ${v.name} [${v.category ?? 'uncategorized'}, ${v.status}${cost}${contact}]${notes}`,
+      )
+    }
+  }
+
+  if (ctx.existing_budget_items.length > 0) {
+    lines.push('', '### Existing budget items:')
+    for (const b of ctx.existing_budget_items) {
+      const cost = b.estimated_cost !== null ? ` ($${b.estimated_cost})` : ''
+      lines.push(`- ${b.description} [${b.category}, ${b.status}${cost}]`)
+    }
+  }
+
+  if (ctx.existing_risks.length > 0) {
+    lines.push('', '### Open risks:')
+    for (const r of ctx.existing_risks) {
+      const detail = r.description ? ` — ${r.description.slice(0, 60)}` : ''
+      lines.push(`- [${r.severity}] ${r.title}${detail}`)
+    }
+  }
+
+  if (ctx.existing_open_questions.length > 0) {
+    lines.push('', '### Open questions:')
+    for (const q of ctx.existing_open_questions) {
+      lines.push(`- ${q.question}`)
+    }
+  }
+
+  if (ctx.pending_proposed_updates.length > 0) {
+    lines.push('', '### Already queued for review (not yet approved):')
+    for (const u of ctx.pending_proposed_updates) {
+      lines.push(`- [${u.update_type}] ${u.label}`)
+    }
+  }
+
+  if (ctx.recent_ai_run_summaries.length > 0) {
+    lines.push('', '### Recent extraction summaries:')
+    ctx.recent_ai_run_summaries.forEach((s, i) => {
+      const bullets = s.understood_summary.slice(0, 2)
+      if (bullets.length > 0) {
+        lines.push(`Run ${i + 1}: ${bullets.join(' | ')}`)
+      }
+    })
+  }
+
+  lines.push(
+    '',
+    '### Deduplication rules (apply before proposing anything):',
+    'Compare the new message against the current event state above before creating suggestions.',
+    'Do NOT propose items that already exist in the plan or are already queued for review above.',
+    'If the user provides new details for an existing item, mention it in your summary only.',
+    'Only create a new proposed update if the schema can safely represent it without duplicating.',
+    'Do NOT restate facts as tasks. Tasks must be real human actions someone needs to take.',
+    'Vendors: one suggestion per real vendor. Budget: one per real cost, quote, receipt, or line.',
+    'Risks: only actual execution concerns. Open questions: only if blocking event execution.',
+    'Never invent dates, names, costs, contacts, statuses, or confirmations.',
+    'Use evidence-sensitive language in summaries: Confirmed / Inferred / Needs confirmation.',
+    'If unsure whether something is a duplicate, do NOT create a duplicate action.',
+    'Mention the uncertainty in your summary instead.',
+    'Only create an open question if the missing information is actually blocking execution.',
+  )
+
+  return lines.join('\n')
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RawTask {
@@ -276,13 +371,18 @@ function normalizeSummary(value: unknown): string[] {
 export async function llmExtract(
   inputText: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  eventStateContext?: EventStateContext,
 ): Promise<LLMResult> {
+  const systemPrompt = eventStateContext
+    ? SYSTEM_PROMPT + buildEventStateSection(eventStateContext)
+    : SYSTEM_PROMPT
+
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 4096,
     tools: [EXTRACTION_TOOL],
     tool_choice: { type: 'tool', name: 'extract_event_updates' },
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [
       ...history,
       { role: 'user', content: inputText },

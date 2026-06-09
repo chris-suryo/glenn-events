@@ -150,6 +150,7 @@ export type UpdatePayload =
 export interface AiRunReviewOutput {
   understood_summary?: string[]
   recommended_summary?: string[]
+  deduped_count?: number
   tasks?: TaskPayload[]
   vendors?: VendorPayload[]
   budget_items?: BudgetItemPayload[]
@@ -315,4 +316,54 @@ export interface GroupedProposedUpdates {
   decisions: ProposedUpdate[]
   risks: ProposedUpdate[]
   open_questions: ProposedUpdate[]
+}
+
+// ─── Event State Context (injected into LLM prompt and app-side dedupe) ──────
+
+export interface EventStateContext {
+  event: {
+    name: string
+    event_type: string | null
+    event_date: string | null
+    location: string | null
+    attendee_target: number | null
+    budget_target: number | null
+  }
+  existing_tasks: Array<{
+    title: string
+    status: 'todo' | 'in_progress'
+    priority: 'low' | 'medium' | 'high'
+    description: string | null
+  }>
+  existing_vendors: Array<{
+    name: string
+    category: string | null
+    status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
+    estimated_cost: number | null
+    contact_name: string | null
+    notes: string | null
+  }>
+  existing_budget_items: Array<{
+    category: string
+    description: string
+    estimated_cost: number | null
+    status: 'estimated' | 'committed' | 'paid'
+  }>
+  existing_risks: Array<{
+    title: string
+    severity: 'low' | 'medium' | 'high'
+    description: string | null
+    mitigation: string | null
+  }>
+  existing_open_questions: Array<{
+    question: string
+  }>
+  pending_proposed_updates: Array<{
+    update_type: UpdateType
+    label: string
+  }>
+  recent_ai_run_summaries: Array<{
+    understood_summary: string[]
+    recommended_summary: string[]
+  }>
 }

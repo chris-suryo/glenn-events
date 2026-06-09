@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { mockExtract, groupExtracted, summarizeExtracted } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
+import { dedupeExtractedItems } from '@/lib/ai/dedupe'
+import type { EventStateContext, UpdateType } from '@/lib/types'
 
 export async function POST(
   request: NextRequest,
@@ -47,7 +49,7 @@ export async function POST(
   // Event access — RLS-safe: only returns row if user is event member
   const { data: event } = await supabase
     .from('events')
-    .select('id')
+    .select('id, name, event_type, event_date, location, attendee_target, budget_target')
     .eq('id', eventId)
     .single()
 
@@ -56,6 +58,146 @@ export async function POST(
   }
 
   try {
+    // 0. Fetch compact event state for LLM context and app-side dedupe (parallel, all RLS-safe)
+    const [
+      { data: existingTaskRows },
+      { data: existingVendorRows },
+      { data: existingBudgetRows },
+      { data: existingRiskRows },
+      { data: existingQuestionRows },
+      { data: pendingUpdateRows },
+      { data: recentAiRunRows },
+    ] = await Promise.all([
+      supabase
+        .from('tasks')
+        .select('title, status, priority, description')
+        .eq('event_id', eventId)
+        .in('status', ['todo', 'in_progress'])
+        .order('created_at', { ascending: false })
+        .limit(15),
+      supabase
+        .from('vendors')
+        .select('name, category, status, estimated_cost, contact_name, notes')
+        .eq('event_id', eventId)
+        .order('created_at', { ascending: false })
+        .limit(10),
+      supabase
+        .from('budget_items')
+        .select('category, description, estimated_cost, status')
+        .eq('event_id', eventId)
+        .order('created_at', { ascending: false })
+        .limit(10),
+      supabase
+        .from('risks')
+        .select('title, severity, description, mitigation')
+        .eq('event_id', eventId)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(8),
+      supabase
+        .from('open_questions')
+        .select('question')
+        .eq('event_id', eventId)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(8),
+      supabase
+        .from('proposed_updates')
+        .select('update_type, payload_json')
+        .eq('event_id', eventId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(15),
+      supabase
+        .from('ai_runs')
+        .select('output_json')
+        .eq('event_id', eventId)
+        .order('created_at', { ascending: false })
+        .limit(3),
+    ])
+
+    // Derive a display label from a pending proposed_update's payload
+    function pendingLabel(updateType: string, payloadJson: unknown): string {
+      if (typeof payloadJson !== 'object' || payloadJson === null) return '(unknown)'
+      const p = payloadJson as Record<string, unknown>
+      let field: unknown
+      switch (updateType) {
+        case 'task':          field = p['title']; break
+        case 'vendor':        field = p['name']; break
+        case 'budget_item':   field = p['description']; break
+        case 'risk':          field = p['title']; break
+        case 'open_question': field = p['question']; break
+        case 'decision':      field = p['title']; break
+        case 'timeline_item': field = p['title']; break
+        default:              field = null
+      }
+      return typeof field === 'string' && field.trim().length > 0 ? field : '(unknown)'
+    }
+
+    // Parse ai_run output_json for summary bullets (same pattern as page.tsx)
+    function stringArray(val: unknown): string[] {
+      if (!Array.isArray(val)) return []
+      return val.filter((s): s is string => typeof s === 'string').slice(0, 4)
+    }
+
+    const eventStateContext: EventStateContext = {
+      event: {
+        name: (event.name as string) ?? '',
+        event_type: (event.event_type as string | null) ?? null,
+        event_date: (event.event_date as string | null) ?? null,
+        location: (event.location as string | null) ?? null,
+        attendee_target: (event.attendee_target as number | null) ?? null,
+        budget_target: (event.budget_target as number | null) ?? null,
+      },
+      existing_tasks: (existingTaskRows ?? []).map((t) => ({
+        title: t.title as string,
+        status: t.status as 'todo' | 'in_progress',
+        priority: t.priority as 'low' | 'medium' | 'high',
+        description: (t.description as string | null) ?? null,
+      })),
+      existing_vendors: (existingVendorRows ?? []).map((v) => ({
+        name: v.name as string,
+        category: (v.category as string | null) ?? null,
+        status: v.status as 'prospect' | 'contacted' | 'confirmed' | 'declined',
+        estimated_cost: (v.estimated_cost as number | null) ?? null,
+        contact_name: (v.contact_name as string | null) ?? null,
+        notes: (v.notes as string | null) ?? null,
+      })),
+      existing_budget_items: (existingBudgetRows ?? []).map((b) => ({
+        category: b.category as string,
+        description: b.description as string,
+        estimated_cost: (b.estimated_cost as number | null) ?? null,
+        status: b.status as 'estimated' | 'committed' | 'paid',
+      })),
+      existing_risks: (existingRiskRows ?? []).map((r) => ({
+        title: r.title as string,
+        severity: r.severity as 'low' | 'medium' | 'high',
+        description: (r.description as string | null) ?? null,
+        mitigation: (r.mitigation as string | null) ?? null,
+      })),
+      existing_open_questions: (existingQuestionRows ?? []).map((q) => ({
+        question: q.question as string,
+      })),
+      pending_proposed_updates: (pendingUpdateRows ?? []).map((u) => ({
+        update_type: u.update_type as UpdateType,
+        label: pendingLabel(u.update_type as string, u.payload_json),
+      })),
+      recent_ai_run_summaries: (recentAiRunRows ?? [])
+        .map((run) => {
+          const o =
+            typeof run.output_json === 'object' && run.output_json !== null
+              ? (run.output_json as Record<string, unknown>)
+              : {}
+          return {
+            understood_summary: stringArray(o['understood_summary']),
+            recommended_summary: stringArray(o['recommended_summary']),
+          }
+        })
+        .filter(
+          (s) => s.understood_summary.length > 0 || s.recommended_summary.length > 0,
+        ),
+    }
+
     // 1. Save user message
     const { data: message, error: msgErr } = await supabase
       .from('messages')
@@ -87,16 +229,16 @@ export async function POST(
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
     // 3. Run extraction — real LLM if API key set, deterministic mock otherwise
-    let extracted: ReturnType<typeof mockExtract>
-    let assistantContent: string
+    let rawExtracted: ReturnType<typeof mockExtract>
+    let assistantContent = ''
     let understoodSummary: string[]
     let recommendedSummary: string[]
 
     if (process.env.ANTHROPIC_API_KEY) {
-      const result = await llmExtract(input_text, conversationHistory)
-      extracted = result.items
+      const result = await llmExtract(input_text, conversationHistory, eventStateContext)
+      rawExtracted = result.items
       assistantContent = result.responseMessage
-      const fallbackSummary = summarizeExtracted(input_text, extracted)
+      const fallbackSummary = summarizeExtracted(input_text, rawExtracted)
       understoodSummary = result.understoodSummary.length > 0
         ? result.understoodSummary
         : fallbackSummary.understoodSummary
@@ -104,14 +246,28 @@ export async function POST(
         ? result.recommendedSummary
         : fallbackSummary.recommendedSummary
     } else {
-      extracted = mockExtract(input_text)
-      const summary = summarizeExtracted(input_text, extracted)
+      rawExtracted = mockExtract(input_text)
+      const summary = summarizeExtracted(input_text, rawExtracted)
       understoodSummary = summary.understoodSummary
       recommendedSummary = summary.recommendedSummary
-      // Fallback response for mock mode
+    }
+
+    // 3b. App-side dedupe — runs for both LLM and mock paths
+    const dedupeResult = dedupeExtractedItems(rawExtracted, eventStateContext)
+    const extracted = dedupeResult.kept
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      // Fallback response for mock mode (uses deduped count)
       assistantContent = extracted.length === 0
         ? "Got it — I saved your note. I didn't see anything that needs to update the event plan yet, but you can tell me about vendors, tasks, costs, deadlines, risks, or decisions anytime."
         : `Got it — I found ${extracted.length} thing${extracted.length !== 1 ? 's' : ''} to add to the plan. Review the suggestions on the right and click Apply on anything that looks right.`
+    }
+
+    // When all extracted items were deduped, override the assistant message for both paths.
+    // The LLM's responseMessage references proposals that no longer exist in the queue.
+    if (extracted.length === 0 && dedupeResult.deduped_count > 0) {
+      assistantContent =
+        "I reviewed this and didn't add new suggestions — these items already appear to be tracked in the plan or queued for review."
     }
 
     const grouped = groupExtracted(extracted)
@@ -119,6 +275,7 @@ export async function POST(
     const outputJson = {
       understood_summary: understoodSummary,
       recommended_summary: recommendedSummary,
+      deduped_count: dedupeResult.deduped_count,
       tasks: grouped.tasks.map((i) => i.payload),
       vendors: grouped.vendors.map((i) => i.payload),
       budget_items: grouped.budget_items.map((i) => i.payload),
@@ -181,7 +338,10 @@ export async function POST(
       action: 'proposed_updates_created',
       entity_type: 'ai_run',
       entity_id: aiRun.id,
-      metadata_json: { total: extracted.length },
+      metadata_json: {
+        total: extracted.length,
+        deduped_count: dedupeResult.deduped_count,
+      },
     })
 
     return NextResponse.json({
