@@ -30,7 +30,7 @@ export default async function TimelinePage({ params }: PageProps) {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-5">
+    <div className="h-full overflow-y-auto p-6 max-w-3xl mx-auto space-y-5">
       <div>
         <h2 className="text-lg font-semibold tracking-tight">Timeline</h2>
         <p className="text-sm text-muted-foreground mt-0.5">{list.length} item{list.length !== 1 ? 's' : ''}</p>

@@ -31,7 +31,7 @@ export default async function BudgetPage({ params }: PageProps) {
   const totalActual = budgetList.reduce((s, i) => s + (i.actual_cost ?? 0), 0)
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-5">
+    <div className="h-full overflow-y-auto p-6 max-w-3xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Budget</h2>

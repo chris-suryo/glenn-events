@@ -47,16 +47,14 @@ function NavItem({ href, label, icon: Icon, active }: NavItemProps) {
 }
 
 const eventSubNav = [
-  { href: '', label: 'Command Center' },
-  { href: '/chat', label: 'Chat' },
-  { href: '/tasks', label: 'Tasks' },
-  { href: '/vendors', label: 'Vendors' },
-  { href: '/budget', label: 'Budget' },
-  { href: '/timeline', label: 'Timeline' },
-  { href: '/decisions', label: 'Decisions' },
-  { href: '/risks', label: 'Risks' },
-  { href: '/open-questions', label: 'Questions' },
+  { href: '',          label: 'Command Center' },
+  { href: '/chat',     label: 'Ask Glenn' },
+  { href: '/plan',     label: 'Plan' },
+  { href: '/activity', label: 'Activity' },
 ]
+
+// Sub-routes that live under the Plan umbrella — Plan stays active when on any of these
+const PLAN_SUB_ROUTES = ['/tasks', '/vendors', '/budget', '/timeline', '/decisions', '/risks', '/open-questions']
 
 function EventNav({ eventId }: { eventId: string }) {
   const pathname = usePathname()
@@ -84,7 +82,9 @@ function EventNav({ eventId }: { eventId: string }) {
           const fullHref = `${base}${href}`
           const active = href === ''
             ? pathname === base || pathname === `${base}/`
-            : pathname.startsWith(fullHref)
+            : href === '/plan'
+              ? pathname.startsWith(`${base}/plan`) || PLAN_SUB_ROUTES.some((r) => pathname.startsWith(`${base}${r}`))
+              : pathname.startsWith(fullHref)
 
           return (
             <Link

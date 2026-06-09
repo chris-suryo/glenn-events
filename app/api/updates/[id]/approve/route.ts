@@ -1,10 +1,106 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildDestinationRow } from '@/lib/ai/apply-proposed-update'
-import type { ProposedUpdate } from '@/lib/types'
+import type { ProposedUpdate, UpdatePayload, UpdateType } from '@/lib/types'
+import { z } from 'zod'
+
+const ApproveRequestSchema = z.object({
+  payload_json: z.unknown().optional(),
+}).strict()
+
+const TaskPayloadSchema = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().trim().nullable(),
+  due_date: z.string().trim().nullable(),
+  priority: z.enum(['low', 'medium', 'high']),
+  status: z.literal('todo'),
+  owner_name: z.string().trim().nullable(),
+})
+
+const VendorPayloadSchema = z.object({
+  name: z.string().trim().min(1),
+  category: z.string().trim().nullable(),
+  contact_name: z.string().trim().nullable(),
+  email: z.string().trim().nullable(),
+  phone: z.string().trim().nullable(),
+  status: z.enum(['prospect', 'contacted', 'confirmed', 'declined']),
+  estimated_cost: z.number().nonnegative().nullable(),
+  notes: z.string().trim().nullable(),
+})
+
+const BudgetItemPayloadSchema = z.object({
+  category: z.string().trim().min(1),
+  description: z.string().trim().min(1),
+  estimated_cost: z.number().nonnegative().nullable(),
+  actual_cost: z.number().nonnegative().nullable(),
+  status: z.enum(['estimated', 'committed', 'paid']),
+  vendor_name: z.string().trim().nullable(),
+})
+
+const TimelineItemPayloadSchema = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().trim().nullable(),
+  starts_at: z.string().trim().nullable(),
+  ends_at: z.string().trim().nullable(),
+  type: z.enum(['milestone', 'task', 'deadline', 'planning']),
+})
+
+const DecisionPayloadSchema = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().trim().nullable(),
+  status: z.enum(['pending', 'decided']),
+  decision: z.string().trim().nullable(),
+})
+
+const RiskPayloadSchema = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().trim().nullable(),
+  severity: z.enum(['low', 'medium', 'high']),
+  status: z.enum(['open', 'monitoring', 'resolved']),
+  mitigation: z.string().trim().nullable(),
+})
+
+const OpenQuestionPayloadSchema = z.object({
+  question: z.string().trim().min(1),
+  status: z.literal('open'),
+  owner_name: z.string().trim().nullable(),
+})
+
+function validatePayloadForType(updateType: UpdateType, payload: unknown): UpdatePayload | null {
+  switch (updateType) {
+    case 'task': {
+      const parsed = TaskPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
+    case 'vendor': {
+      const parsed = VendorPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
+    case 'budget_item': {
+      const parsed = BudgetItemPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
+    case 'timeline_item': {
+      const parsed = TimelineItemPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
+    case 'decision': {
+      const parsed = DecisionPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
+    case 'risk': {
+      const parsed = RiskPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
+    case 'open_question': {
+      const parsed = OpenQuestionPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
+  }
+}
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
@@ -38,10 +134,29 @@ export async function POST(
     )
   }
 
+  const requestBody = await request.json().catch(() => null)
+  const parsedRequest = ApproveRequestSchema.safeParse(requestBody ?? {})
+  if (!parsedRequest.success) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  const editedPayload =
+    parsedRequest.data.payload_json === undefined
+      ? null
+      : validatePayloadForType(typedUpdate.update_type, parsedRequest.data.payload_json)
+
+  if (parsedRequest.data.payload_json !== undefined && !editedPayload) {
+    return NextResponse.json({ error: 'Invalid edited suggestion' }, { status: 400 })
+  }
+
+  const updateForApply: ProposedUpdate = editedPayload
+    ? { ...typedUpdate, payload_json: editedPayload }
+    : typedUpdate
+
   // 4. Build destination row
   let applyResult: ReturnType<typeof buildDestinationRow>
   try {
-    applyResult = buildDestinationRow(typedUpdate)
+    applyResult = buildDestinationRow(updateForApply)
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Unsupported update type' },
@@ -66,13 +181,18 @@ export async function POST(
   // 6. Atomically mark applied — only succeeds if still 'pending'.
   //    If 0 rows are returned, a concurrent request already applied it;
   //    the destination row above is a duplicate. Log but don't fail.
+  const proposalUpdate: Record<string, unknown> = {
+    status:      'applied',
+    reviewed_by: user.id,
+    reviewed_at: new Date().toISOString(),
+  }
+  if (editedPayload) {
+    proposalUpdate.payload_json = editedPayload
+  }
+
   const { data: claimed, error: updateErr } = await supabase
     .from('proposed_updates')
-    .update({
-      status:      'applied',
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
-    })
+    .update(proposalUpdate)
     .eq('id', id)
     .eq('status', 'pending')   // optimistic lock — only applies if still pending
     .select('id')

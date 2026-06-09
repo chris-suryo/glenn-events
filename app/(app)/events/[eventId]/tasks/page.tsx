@@ -46,7 +46,7 @@ export default async function TasksPage({ params, searchParams }: PageProps) {
   })
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-5">
+    <div className="h-full overflow-y-auto p-6 max-w-3xl mx-auto space-y-5">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Tasks</h2>

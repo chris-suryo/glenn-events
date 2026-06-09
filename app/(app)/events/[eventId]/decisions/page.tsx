@@ -24,7 +24,7 @@ export default async function DecisionsPage({ params }: PageProps) {
   const decided = list.filter((d) => d.status === 'decided')
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-5">
+    <div className="h-full overflow-y-auto p-6 max-w-3xl mx-auto space-y-5">
       <div>
         <h2 className="text-lg font-semibold tracking-tight">Decisions</h2>
         <p className="text-sm text-muted-foreground mt-0.5">{pending.length} pending · {decided.length} decided</p>

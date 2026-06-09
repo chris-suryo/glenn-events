@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,81 +35,38 @@ export default function NewEventPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/login'); return }
-
-    // profiles row is required for organizations.created_by and organization_members FKs
-    const { error: profileErr } = await supabase.from('profiles').upsert(
-      { id: user.id, email: user.email ?? null },
-      { onConflict: 'id' }
-    )
-    if (profileErr) {
-      setError('Could not sync your profile. Try signing out and back in, or apply migration 003_profiles_insert_policy.sql.')
-      setLoading(false)
-      return
-    }
-
-    // Ensure user has an organization (create one if not)
-    let orgId: string
-    const { data: memberships } = await supabase
-      .from('organization_members')
-      .select('organization_id')
-      .eq('user_id', user.id)
-      .limit(1)
-
-    if (memberships && memberships.length > 0) {
-      orgId = memberships[0].organization_id
-    } else {
-      const { data: org, error: orgErr } = await supabase
-        .from('organizations')
-        .insert({ name: 'My Organization', created_by: user.id })
-        .select()
-        .single()
-      if (orgErr || !org) { setError('Could not create organization.'); setLoading(false); return }
-      orgId = org.id
-      await supabase.from('organization_members').insert({
-        organization_id: orgId,
-        user_id: user.id,
-        role: 'owner',
+    try {
+      const res = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:            form.name.trim(),
+          description:     form.description.trim() || undefined,
+          event_type:      form.event_type.trim()  || undefined,
+          event_date:      form.event_date          || undefined,
+          location:        form.location.trim()     || undefined,
+          attendee_target: form.attendee_target ? parseInt(form.attendee_target) : undefined,
+          budget_target:   form.budget_target   ? parseFloat(form.budget_target) : undefined,
+        }),
       })
-    }
 
-    const { data: event, error: eventErr } = await supabase
-      .from('events')
-      .insert({
-        organization_id: orgId,
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        event_type: form.event_type.trim() || null,
-        event_date: form.event_date || null,
-        location: form.location.trim() || null,
-        attendee_target: form.attendee_target ? parseInt(form.attendee_target) : null,
-        budget_target: form.budget_target ? parseFloat(form.budget_target) : null,
-        status: 'planning',
-        created_by: user.id,
-      })
-      .select()
-      .single()
+      const data = await res.json()
 
-    if (eventErr || !event) {
-      setError(eventErr?.message ?? 'Could not create event.')
+      if (!res.ok) {
+        setError(data.error ?? 'Could not create event.')
+        setLoading(false)
+        return
+      }
+
+      router.push(`/events/${data.id}`)
+    } catch {
+      setError('Network error. Please try again.')
       setLoading(false)
-      return
     }
-
-    // Add creator as event member
-    await supabase.from('event_members').insert({
-      event_id: event.id,
-      user_id: user.id,
-      role: 'owner',
-    })
-
-    router.push(`/events/${event.id}`)
   }
 
   return (
-    <div className="p-6 max-w-xl mx-auto space-y-6">
+    <div className="h-full overflow-y-auto p-6 max-w-xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/dashboard" className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'inline-flex items-center')}>
           <ArrowLeft className="h-4 w-4 mr-1" />

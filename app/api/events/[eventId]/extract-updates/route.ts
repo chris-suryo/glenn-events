@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { ExtractUpdatesSchema } from '@/lib/validators/extract'
-import { mockExtract, groupExtracted } from '@/lib/ai/mock-extract'
+import { mockExtract, groupExtracted, summarizeExtracted } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
 
 export async function POST(
@@ -73,13 +73,52 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to save message' }, { status: 500 })
     }
 
-    // 2. Run extraction — real LLM if API key set, deterministic mock otherwise
-    const extracted = process.env.ANTHROPIC_API_KEY
-      ? await llmExtract(input_text)
-      : mockExtract(input_text)
+    // 2. Fetch recent conversation history for multi-turn context (last 10 messages = ~5 turns)
+    const { data: historyRows } = await supabase
+      .from('messages')
+      .select('role, content')
+      .eq('event_id', eventId)
+      .neq('id', message.id)             // exclude the message we just saved
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    const conversationHistory = (historyRows ?? [])
+      .reverse()                          // chronological order for the LLM
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
+    // 3. Run extraction — real LLM if API key set, deterministic mock otherwise
+    let extracted: ReturnType<typeof mockExtract>
+    let assistantContent: string
+    let understoodSummary: string[]
+    let recommendedSummary: string[]
+
+    if (process.env.ANTHROPIC_API_KEY) {
+      const result = await llmExtract(input_text, conversationHistory)
+      extracted = result.items
+      assistantContent = result.responseMessage
+      const fallbackSummary = summarizeExtracted(input_text, extracted)
+      understoodSummary = result.understoodSummary.length > 0
+        ? result.understoodSummary
+        : fallbackSummary.understoodSummary
+      recommendedSummary = result.recommendedSummary.length > 0
+        ? result.recommendedSummary
+        : fallbackSummary.recommendedSummary
+    } else {
+      extracted = mockExtract(input_text)
+      const summary = summarizeExtracted(input_text, extracted)
+      understoodSummary = summary.understoodSummary
+      recommendedSummary = summary.recommendedSummary
+      // Fallback response for mock mode
+      assistantContent = extracted.length === 0
+        ? "Got it — I saved your note. I didn't see anything that needs to update the event plan yet, but you can tell me about vendors, tasks, costs, deadlines, risks, or decisions anytime."
+        : `Got it — I found ${extracted.length} thing${extracted.length !== 1 ? 's' : ''} to add to the plan. Review the suggestions on the right and click Apply on anything that looks right.`
+    }
+
     const grouped = groupExtracted(extracted)
 
     const outputJson = {
+      understood_summary: understoodSummary,
+      recommended_summary: recommendedSummary,
       tasks: grouped.tasks.map((i) => i.payload),
       vendors: grouped.vendors.map((i) => i.payload),
       budget_items: grouped.budget_items.map((i) => i.payload),
@@ -89,7 +128,7 @@ export async function POST(
       open_questions: grouped.open_questions.map((i) => i.payload),
     }
 
-    // 3. Save ai_run
+    // 4. Save ai_run
     const { data: aiRun, error: runErr } = await supabase
       .from('ai_runs')
       .insert({
@@ -108,7 +147,7 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to create AI run' }, { status: 500 })
     }
 
-    // 4. Insert proposed_updates
+    // 5. Insert proposed_updates
     if (extracted.length > 0) {
       const rows = extracted.map((item) => ({
         event_id: eventId,
@@ -128,34 +167,7 @@ export async function POST(
       }
     }
 
-    // 5. Assistant message summarising what Glenn found (best-effort)
-    const countByType: Record<string, number> = {}
-    for (const item of extracted) {
-      countByType[item.update_type] = (countByType[item.update_type] ?? 0) + 1
-    }
-
-    const TYPE_LABELS: Record<string, [string, string]> = {
-      task:          ['task',          'tasks'],
-      vendor:        ['vendor',        'vendors'],
-      budget_item:   ['budget item',   'budget items'],
-      timeline_item: ['timeline item', 'timeline items'],
-      decision:      ['decision',      'decisions'],
-      risk:          ['risk',          'risks'],
-      open_question: ['open question', 'open questions'],
-    }
-
-    const summaryParts = Object.entries(countByType)
-      .filter(([, n]) => n > 0)
-      .map(([type, n]) => {
-        const [singular, plural] = TYPE_LABELS[type] ?? [type, type + 's']
-        return `${n} ${n === 1 ? singular : plural}`
-      })
-
-    const assistantContent = extracted.length === 0
-      ? "I reviewed your notes but didn't find any new structured updates to propose."
-      : `I found ${extracted.length} proposed update${extracted.length !== 1 ? 's' : ''}: ${summaryParts.join(', ')}. Review and apply them in the queue.`
-
-    // actor_user_id set to the submitting user — Glenn has no separate profile in MVP
+    // 6. Save Glenn's conversational response as an assistant message
     await supabase.from('messages').insert({
       event_id: eventId,
       user_id:  user.id,
@@ -169,12 +181,15 @@ export async function POST(
       action: 'proposed_updates_created',
       entity_type: 'ai_run',
       entity_id: aiRun.id,
-      metadata_json: { total: extracted.length, by_type: countByType },
+      metadata_json: { total: extracted.length },
     })
 
     return NextResponse.json({
       message_id: message.id,
       ai_run_id: aiRun.id,
+      assistant_message: assistantContent,
+      understood_summary: understoodSummary,
+      recommended_summary: recommendedSummary,
       grouped: {
         tasks: grouped.tasks,
         vendors: grouped.vendors,

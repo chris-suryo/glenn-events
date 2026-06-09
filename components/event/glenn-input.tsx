@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -9,60 +9,95 @@ import { toast } from 'sonner'
 
 interface GlennInputProps {
   eventId: string
+  /** Called immediately when the user submits, with the raw text — before the API responds. */
+  onUserMessage?: (text: string) => void
+  /** Called when the user submits text — before the API responds. */
+  onPendingChange?: (pending: boolean) => void
+  /** Called with Glenn's reply text when the API responds successfully.
+   *  When provided, the caller owns router.refresh(); GlennInput won't call it. */
+  onGlennReply?: (text: string) => void
 }
 
 const PLACEHOLDERS = [
-  'Tell Glenn what changed… e.g. "Venue confirmed for Sep 27, deposit $4,500 due by Jun 1. AV vendor still not confirmed — follow up this week."',
-  'Tell Glenn what changed… e.g. "Headcount updated to 90. Caterer quote came in at $12k which is over budget."',
-  'Tell Glenn what changed… e.g. "Photography confirmed with Studio Lane. Need to finalize run of show by Aug 15."',
+  'Tell Glenn what\'s going on… e.g. "Venue confirmed for Sep 27, deposit $4,500 due Jun 1. AV still unconfirmed."',
+  'What changed since last time? e.g. "Headcount bumped to 90. Caterer quote came in at $12k — over budget."',
+  'Dump your notes here… e.g. "Studio Lane confirmed for photos. Run of show needs to be locked by Aug 15."',
 ]
 
-export function GlennInput({ eventId }: GlennInputProps) {
+const CHIPS = [
+  { label: 'Vendor update',   prompt: 'Vendor update: ' },
+  { label: 'Budget change',   prompt: 'Budget update: ' },
+  { label: 'New deadline',    prompt: 'New deadline: ' },
+  { label: 'Risk or blocker', prompt: 'Risk: ' },
+  { label: 'Decision made',   prompt: 'Decision: ' },
+]
+
+export function GlennInput({ eventId, onUserMessage, onPendingChange, onGlennReply }: GlennInputProps) {
   const router = useRouter()
   const [text, setText] = useState('')
   const [isPending, startTransition] = useTransition()
-  // Start with index 0 so server and client SSR agree, then randomize after mount
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [placeholder, setPlaceholder] = useState(PLACEHOLDERS[0])
   useEffect(() => {
+    // Intentional post-hydration randomization — avoids server/client mismatch
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPlaceholder(PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)])
   }, [])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!text.trim()) return
+  async function submit() {
+    if (!text.trim() || isPending) return
+    const input = text.trim()
+    setText('')
+    onUserMessage?.(input)
+    onPendingChange?.(true)
 
     startTransition(async () => {
       try {
         const res = await fetch(`/api/events/${eventId}/extract-updates`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input_text: text.trim() }),
+          body: JSON.stringify({ input_text: input }),
         })
 
         const data = await res.json()
+        onPendingChange?.(false)
 
         if (!res.ok) {
           toast.error(data.error ?? 'Something went wrong. Please try again.')
           return
         }
 
-        const totalCount = Object.values(data.grouped ?? {}).reduce(
-          (sum: number, arr) => sum + (arr as unknown[]).length,
-          0
-        )
-
-        toast.success(
-          totalCount > 0
-            ? `Glenn found ${totalCount} proposed update${totalCount !== 1 ? 's' : ''}. Review before applying.`
-            : 'Glenn processed your update. No new items were extracted.'
-        )
-
-        setText('')
-        router.refresh()
+        if (onGlennReply) {
+          // ChatView owns the refresh; deliver the reply for streaming
+          onGlennReply(data.assistant_message ?? '')
+        } else {
+          // Standalone usage (Command Center) — route to Ask Glenn where the
+          // reply and suggestions are visible. The /chat page loads fresh DB data.
+          router.push(`/events/${eventId}/chat`)
+        }
       } catch {
+        onPendingChange?.(false)
         toast.error('Network error. Please try again.')
       }
     })
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    submit()
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter without Shift sends the message
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      submit()
+    }
+  }
+
+  function handleChip(prompt: string) {
+    setText(prompt)
+    textareaRef.current?.focus()
   }
 
   return (
@@ -73,27 +108,49 @@ export function GlennInput({ eventId }: GlennInputProps) {
             <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
           <Textarea
+            ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className="resize-none border-0 shadow-none focus-visible:ring-0 p-0 text-sm leading-relaxed min-h-[80px] bg-transparent"
             disabled={isPending}
           />
         </div>
+
+        {/* Example chips — only shown when textarea is empty */}
+        {!text && (
+          <div className="flex flex-wrap gap-1.5 pl-9">
+            {CHIPS.map((chip) => (
+              <button
+                key={chip.label}
+                type="button"
+                disabled={isPending}
+                onClick={() => handleChip(chip.prompt)}
+                className="text-xs px-2.5 py-1 rounded-full border border-muted-foreground/20 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors disabled:opacity-40"
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center justify-between pl-9">
           <p className="text-xs text-muted-foreground">
-            Dump messy notes, emails, or updates — Glenn extracts the structure.
+            Dump messy notes, emails, updates — Glenn extracts the structure.{' '}
+            <span className="opacity-60">Enter to send · Shift+Enter for newline</span>
           </p>
           <Button
             type="submit"
             size="sm"
             disabled={!text.trim() || isPending}
+            suppressHydrationWarning
             className="shrink-0 shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]"
           >
             {isPending ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Processing…
+                Sending…
               </>
             ) : (
               'Tell Glenn'

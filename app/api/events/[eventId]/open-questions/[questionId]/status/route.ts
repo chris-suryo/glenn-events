@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 const Schema = z.object({
   status: z.enum(['open', 'answered']),
+  answer: z.string().trim().optional(),
 })
 
 export async function PATCH(
@@ -25,7 +26,10 @@ export async function PATCH(
   // RLS on open_questions ensures user is an event member
   const { error } = await supabase
     .from('open_questions')
-    .update({ status: parsed.data.status })
+    .update({
+      status: parsed.data.status,
+      ...(parsed.data.answer !== undefined ? { answer: parsed.data.answer || null } : {}),
+    })
     .eq('id', questionId)
 
   if (error) {

@@ -24,7 +24,7 @@ export default async function RisksPage({ params }: PageProps) {
   const open = list.filter((r) => r.status === 'open')
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-5">
+    <div className="h-full overflow-y-auto p-6 max-w-3xl mx-auto space-y-5">
       <div>
         <h2 className="text-lg font-semibold tracking-tight">Risks</h2>
         <p className="text-sm text-muted-foreground mt-0.5">{open.length} open risk{open.length !== 1 ? 's' : ''}</p>

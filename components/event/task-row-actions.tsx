@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { CheckCircle2, Circle, Loader2 } from 'lucide-react'
+import { CheckCircle2, Circle } from 'lucide-react'
 import type { Task } from '@/lib/types'
 
 interface TaskRowActionsProps {

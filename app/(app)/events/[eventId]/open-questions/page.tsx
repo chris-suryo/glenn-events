@@ -25,7 +25,7 @@ export default async function OpenQuestionsPage({ params }: PageProps) {
   const answered = list.filter((q) => q.status === 'answered')
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-5">
+    <div className="h-full overflow-y-auto p-6 max-w-3xl mx-auto space-y-5">
       <div>
         <h2 className="text-lg font-semibold tracking-tight">Open Questions</h2>
         <p className="text-sm text-muted-foreground mt-0.5">{open.length} open · {answered.length} answered</p>
@@ -60,6 +60,11 @@ export default async function OpenQuestionsPage({ params }: PageProps) {
               {question.status === 'open' && (
                 <div className="pl-6">
                   <OpenQuestionResolveButton questionId={question.id} eventId={eventId} />
+                </div>
+              )}
+              {question.status === 'answered' && question.answer && (
+                <div className="pl-6">
+                  <p className="text-xs text-muted-foreground italic">&ldquo;{question.answer}&rdquo;</p>
                 </div>
               )}
             </div>

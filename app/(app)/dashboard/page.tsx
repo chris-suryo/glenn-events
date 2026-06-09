@@ -25,7 +25,7 @@ export default async function DashboardPage() {
   const eventList = (events ?? []) as Event[]
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="h-full overflow-y-auto p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Your events</h2>

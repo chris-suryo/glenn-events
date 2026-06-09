@@ -147,6 +147,18 @@ export type UpdatePayload =
   | RiskPayload
   | OpenQuestionPayload
 
+export interface AiRunReviewOutput {
+  understood_summary?: string[]
+  recommended_summary?: string[]
+  tasks?: TaskPayload[]
+  vendors?: VendorPayload[]
+  budget_items?: BudgetItemPayload[]
+  timeline_items?: TimelineItemPayload[]
+  decisions?: DecisionPayload[]
+  risks?: RiskPayload[]
+  open_questions?: OpenQuestionPayload[]
+}
+
 export interface ProposedUpdate {
   id: string
   event_id: string
@@ -271,6 +283,7 @@ export interface OpenQuestion {
   id: string
   event_id: string
   question: string
+  answer: string | null
   owner_user_id: string | null
   status: 'open' | 'answered'
   proposed_update_id: string | null

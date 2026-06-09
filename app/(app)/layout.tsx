@@ -20,7 +20,7 @@ export default async function AppLayout({
       <AppSidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <AppHeader userEmail={user.email} />
-        <main className="flex-1 overflow-auto bg-background">{children}</main>
+        <main className="flex-1 overflow-hidden bg-background">{children}</main>
       </div>
     </div>
   )

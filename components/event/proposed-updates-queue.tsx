@@ -1,97 +1,526 @@
 'use client'
 
+import type { Dispatch, SetStateAction } from 'react'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { ProposedUpdate, UpdateType } from '@/lib/types'
+import type {
+  AiRun,
+  AiRunReviewOutput,
+  BudgetItemPayload,
+  DecisionPayload,
+  OpenQuestionPayload,
+  ProposedUpdate,
+  RiskPayload,
+  TaskPayload,
+  TimelineItemPayload,
+  UpdatePayload,
+  UpdateType,
+  VendorPayload,
+} from '@/lib/types'
+import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CheckCircle2, XCircle, Loader2, ClipboardList } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Pencil,
+  Sparkles,
+  XCircle,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ProposedUpdatesQueueProps {
   updates: ProposedUpdate[]
+  aiRuns: AiRun[]
   eventId: string
 }
 
-const TYPE_LABELS: Record<UpdateType, string> = {
-  task: 'Task',
-  vendor: 'Vendor',
-  budget_item: 'Budget',
+type ReviewAction = 'approve' | 'reject'
+
+interface UpdateGroup {
+  type: UpdateType
+  title: string
+  pill: string
+}
+
+interface ReviewGroup {
+  aiRunId: string
+  aiRun: AiRun | null
+  updates: ProposedUpdate[]
+  understoodSummary: string[]
+  recommendedSummary: string[]
+  createdAt: string
+}
+
+const UPDATE_GROUPS: UpdateGroup[] = [
+  { type: 'task', title: 'Tasks', pill: 'Task' },
+  { type: 'vendor', title: 'Vendors', pill: 'Vendor' },
+  { type: 'budget_item', title: 'Budget', pill: 'Budget' },
+  { type: 'timeline_item', title: 'Timeline', pill: 'Timeline' },
+  { type: 'decision', title: 'Decisions', pill: 'Decision' },
+  { type: 'risk', title: 'Risks', pill: 'Risk' },
+  { type: 'open_question', title: 'Open Questions', pill: 'Question' },
+]
+
+const TYPE_DESTINATION: Record<UpdateType, string> = {
+  task:          'Tasks',
+  vendor:        'Vendors',
+  budget_item:   'Budget',
   timeline_item: 'Timeline',
-  decision: 'Decision',
-  risk: 'Risk',
-  open_question: 'Question',
+  decision:      'Decisions',
+  risk:          'Risks',
+  open_question: 'Open Questions',
 }
 
-const TYPE_COLORS: Record<UpdateType, string> = {
-  task: 'bg-sky-50 text-sky-700 border-sky-200',
-  vendor: 'bg-violet-50 text-violet-700 border-violet-200',
-  budget_item: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  timeline_item: 'bg-amber-50 text-amber-700 border-amber-200',
-  decision: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-  risk: 'bg-rose-50 text-rose-700 border-rose-200',
-  open_question: 'bg-slate-50 text-slate-600 border-slate-200',
+const TYPE_PILL_CLASS: Record<UpdateType, string> = {
+  task:          'border-sky-200 bg-sky-50 text-sky-700',
+  vendor:        'border-violet-200 bg-violet-50 text-violet-700',
+  budget_item:   'border-emerald-200 bg-emerald-50 text-emerald-700',
+  timeline_item: 'border-amber-200 bg-amber-50 text-amber-800',
+  decision:      'border-yellow-200 bg-yellow-50 text-yellow-800',
+  risk:          'border-rose-200 bg-rose-50 text-rose-700',
+  open_question: 'border-slate-200 bg-slate-50 text-slate-700',
 }
 
-const TYPE_STRIPE: Record<UpdateType, string> = {
-  task: 'border-l-sky-400',
-  vendor: 'border-l-violet-400',
-  budget_item: 'border-l-emerald-400',
-  timeline_item: 'border-l-amber-400',
-  decision: 'border-l-yellow-400',
-  risk: 'border-l-rose-500',
-  open_question: 'border-l-slate-400',
+function payloadRecord(payload: UpdatePayload): Record<string, unknown> {
+  return payload as unknown as Record<string, unknown>
 }
 
-function getUpdateTitle(update: ProposedUpdate): string {
-  const p = update.payload_json as unknown as Record<string, unknown>
-  return (p.title as string) || (p.question as string) || (p.name as string) || 'Update'
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function getUpdateSummary(update: ProposedUpdate): string | null {
-  const p = update.payload_json as unknown as Record<string, unknown>
-  if (p.description && typeof p.description === 'string') return p.description
-  if (p.notes && typeof p.notes === 'string') return p.notes
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function getUpdateName(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string {
+  const p = payloadRecord(payload)
+  return (
+    (typeof p.title === 'string' && p.title) ||
+    (typeof p.question === 'string' && p.question) ||
+    (typeof p.name === 'string' && p.name) ||
+    (typeof p.description === 'string' && p.description) ||
+    'Untitled suggestion'
+  )
+}
+
+function formatMoney(value: unknown): string | null {
+  return typeof value === 'number' ? `$${value.toLocaleString()}` : null
+}
+
+function formatDate(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function getUpdateDetail(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string | null {
+  const p = payloadRecord(payload)
+  switch (update.update_type) {
+    case 'task':
+      return p.due_date ? `Due ${formatDate(p.due_date) ?? String(p.due_date)}` : null
+    case 'vendor': {
+      const cost = formatMoney(p.estimated_cost)
+      const status = typeof p.status === 'string' ? p.status : null
+      return [status, cost].filter(Boolean).join(' · ') || null
+    }
+    case 'budget_item':
+      return formatMoney(p.estimated_cost)
+    case 'timeline_item':
+      return p.starts_at ? formatDate(p.starts_at) ?? String(p.starts_at) : null
+    case 'decision':
+      return typeof p.status === 'string' ? p.status : null
+    case 'risk':
+      return typeof p.severity === 'string' ? `${p.severity} risk` : null
+    case 'open_question':
+      return typeof p.owner_name === 'string' && p.owner_name ? `For ${p.owner_name}` : null
+  }
+}
+
+function getUpdateDescription(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string | null {
+  const p = payloadRecord(payload)
+  if (typeof p.description === 'string' && p.description) return p.description
+  if (typeof p.notes === 'string' && p.notes) return p.notes
+  if (typeof p.decision === 'string' && p.decision) return p.decision
+  if (typeof p.mitigation === 'string' && p.mitigation) return p.mitigation
+  if (update.update_type === 'open_question') return getUpdateName(update, payload)
   return null
 }
 
-async function reviewUpdate(updateId: string, action: 'approve' | 'reject') {
-  const res = await fetch(`/api/updates/${updateId}/${action}`, { method: 'POST' })
+function getReviewRecommendation(update: ProposedUpdate): string {
+  const name = getUpdateName(update)
+  switch (update.update_type) {
+    case 'task':
+      return `Create task: ${name}`
+    case 'vendor':
+      return `Add vendor: ${name}`
+    case 'budget_item': {
+      const detail = getUpdateDetail(update)
+      return detail ? `Add budget item: ${name} (${detail})` : `Add budget item: ${name}`
+    }
+    case 'timeline_item':
+      return `Add timeline item: ${name}`
+    case 'decision':
+      return `Record decision: ${name}`
+    case 'risk':
+      return `Flag risk: ${name}`
+    case 'open_question':
+      return `Ask: ${name}`
+  }
+}
+
+function getOutputReview(aiRun: AiRun | null): Pick<AiRunReviewOutput, 'understood_summary' | 'recommended_summary'> {
+  if (!aiRun || !isRecord(aiRun.output_json)) {
+    return {}
+  }
+
+  return {
+    understood_summary: stringArray(aiRun.output_json.understood_summary),
+    recommended_summary: stringArray(aiRun.output_json.recommended_summary),
+  }
+}
+
+function buildFallbackReview(updates: ProposedUpdate[]): { understoodSummary: string[]; recommendedSummary: string[] } {
+  const touched = UPDATE_GROUPS
+    .filter((group) => updates.some((update) => update.update_type === group.type))
+    .map((group) => group.title)
+
+  return {
+    understoodSummary: touched.length > 0
+      ? [`Glenn found plan changes touching ${touched.join(', ')}.`]
+      : ['Glenn reviewed this update for plan changes.'],
+    recommendedSummary: updates.map(getReviewRecommendation).slice(0, 6),
+  }
+}
+
+function textValue(value: string | null): string {
+  return value ?? ''
+}
+
+function nullableText(value: string): string | null {
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function nullableNumber(value: string): number | null {
+  if (value.trim().length === 0) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+async function reviewUpdate(updateId: string, action: ReviewAction, payload?: UpdatePayload) {
+  const init: RequestInit = { method: 'POST' }
+  if (action === 'approve' && payload) {
+    init.headers = { 'Content-Type': 'application/json' }
+    init.body = JSON.stringify({ payload_json: payload })
+  }
+
+  const res = await fetch(`/api/updates/${updateId}/${action}`, init)
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error(data.error ?? 'Failed to update')
   }
 }
 
-export function ProposedUpdatesQueue({ updates }: ProposedUpdatesQueueProps) {
+function groupByType(scopedUpdates: ProposedUpdate[]) {
+  return UPDATE_GROUPS.map((group) => ({
+    ...group,
+    updates: scopedUpdates.filter((update) => update.update_type === group.type),
+  })).filter((group) => group.updates.length > 0)
+}
+
+function buildReviewGroups(updates: ProposedUpdate[], aiRuns: AiRun[]): ReviewGroup[] {
+  const aiRunMap = new Map(aiRuns.map((run) => [run.id, run]))
+  const grouped = new Map<string, ProposedUpdate[]>()
+
+  for (const update of updates) {
+    const current = grouped.get(update.ai_run_id) ?? []
+    current.push(update)
+    grouped.set(update.ai_run_id, current)
+  }
+
+  return Array.from(grouped.entries())
+    .map(([aiRunId, runUpdates]) => {
+      const aiRun = aiRunMap.get(aiRunId) ?? null
+      const outputReview = getOutputReview(aiRun)
+      const fallbackReview = buildFallbackReview(runUpdates)
+      return {
+        aiRunId,
+        aiRun,
+        updates: runUpdates,
+        understoodSummary: outputReview.understood_summary && outputReview.understood_summary.length > 0
+          ? outputReview.understood_summary
+          : fallbackReview.understoodSummary,
+        recommendedSummary: outputReview.recommended_summary && outputReview.recommended_summary.length > 0
+          ? outputReview.recommended_summary
+          : fallbackReview.recommendedSummary,
+        createdAt: aiRun?.created_at ?? runUpdates[0]?.created_at ?? '',
+      }
+    })
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+function SelectField<T extends string>({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: T
+  options: T[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+        className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function TextField({
+  id,
+  label,
+  value,
+  onChange,
+  type = 'text',
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  type?: string
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
+      <Input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  )
+}
+
+function NotesField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
+      <Textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} className="min-h-20" />
+    </div>
+  )
+}
+
+function EditFields({
+  update,
+  payload,
+  onChange,
+}: {
+  update: ProposedUpdate
+  payload: UpdatePayload
+  onChange: (payload: UpdatePayload) => void
+}) {
+  switch (update.update_type) {
+    case 'task': {
+      const p = payload as TaskPayload
+      return (
+        <div className="flex flex-col gap-3">
+          <TextField id={`${update.id}-title`} label="Task title" value={p.title} onChange={(title) => onChange({ ...p, title })} />
+          <NotesField id={`${update.id}-description`} label="Notes" value={textValue(p.description)} onChange={(description) => onChange({ ...p, description: nullableText(description) })} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField id={`${update.id}-due`} label="Due date" type="date" value={textValue(p.due_date)} onChange={(due_date) => onChange({ ...p, due_date: nullableText(due_date) })} />
+            <SelectField id={`${update.id}-priority`} label="Priority" value={p.priority} options={['low', 'medium', 'high']} onChange={(priority) => onChange({ ...p, priority })} />
+          </div>
+        </div>
+      )
+    }
+    case 'vendor': {
+      const p = payload as VendorPayload
+      return (
+        <div className="flex flex-col gap-3">
+          <TextField id={`${update.id}-name`} label="Vendor name" value={p.name} onChange={(name) => onChange({ ...p, name })} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField id={`${update.id}-category`} label="Category" value={textValue(p.category)} onChange={(category) => onChange({ ...p, category: nullableText(category) })} />
+            <SelectField id={`${update.id}-status`} label="Status" value={p.status} options={['prospect', 'contacted', 'confirmed', 'declined']} onChange={(status) => onChange({ ...p, status })} />
+          </div>
+          <TextField id={`${update.id}-cost`} label="Estimated cost" type="number" value={p.estimated_cost?.toString() ?? ''} onChange={(estimated_cost) => onChange({ ...p, estimated_cost: nullableNumber(estimated_cost) })} />
+          <NotesField id={`${update.id}-notes`} label="Notes" value={textValue(p.notes)} onChange={(notes) => onChange({ ...p, notes: nullableText(notes) })} />
+        </div>
+      )
+    }
+    case 'budget_item': {
+      const p = payload as BudgetItemPayload
+      return (
+        <div className="flex flex-col gap-3">
+          <TextField id={`${update.id}-category`} label="Budget category" value={p.category} onChange={(category) => onChange({ ...p, category })} />
+          <NotesField id={`${update.id}-description`} label="Description" value={p.description} onChange={(description) => onChange({ ...p, description })} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField id={`${update.id}-estimated`} label="Estimated cost" type="number" value={p.estimated_cost?.toString() ?? ''} onChange={(estimated_cost) => onChange({ ...p, estimated_cost: nullableNumber(estimated_cost) })} />
+            <TextField id={`${update.id}-actual`} label="Actual cost" type="number" value={p.actual_cost?.toString() ?? ''} onChange={(actual_cost) => onChange({ ...p, actual_cost: nullableNumber(actual_cost) })} />
+          </div>
+          <SelectField id={`${update.id}-status`} label="Status" value={p.status} options={['estimated', 'committed', 'paid']} onChange={(status) => onChange({ ...p, status })} />
+        </div>
+      )
+    }
+    case 'timeline_item': {
+      const p = payload as TimelineItemPayload
+      return (
+        <div className="flex flex-col gap-3">
+          <TextField id={`${update.id}-title`} label="Timeline title" value={p.title} onChange={(title) => onChange({ ...p, title })} />
+          <NotesField id={`${update.id}-description`} label="Description" value={textValue(p.description)} onChange={(description) => onChange({ ...p, description: nullableText(description) })} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField id={`${update.id}-starts`} label="Starts" value={textValue(p.starts_at)} onChange={(starts_at) => onChange({ ...p, starts_at: nullableText(starts_at) })} />
+            <TextField id={`${update.id}-ends`} label="Ends" value={textValue(p.ends_at)} onChange={(ends_at) => onChange({ ...p, ends_at: nullableText(ends_at) })} />
+          </div>
+          <SelectField id={`${update.id}-type`} label="Type" value={p.type} options={['milestone', 'task', 'deadline', 'planning']} onChange={(type) => onChange({ ...p, type })} />
+        </div>
+      )
+    }
+    case 'decision': {
+      const p = payload as DecisionPayload
+      return (
+        <div className="flex flex-col gap-3">
+          <TextField id={`${update.id}-title`} label="Decision title" value={p.title} onChange={(title) => onChange({ ...p, title })} />
+          <NotesField id={`${update.id}-description`} label="Context" value={textValue(p.description)} onChange={(description) => onChange({ ...p, description: nullableText(description) })} />
+          <SelectField id={`${update.id}-status`} label="Status" value={p.status} options={['pending', 'decided']} onChange={(status) => onChange({ ...p, status })} />
+          <NotesField id={`${update.id}-decision`} label="Decision" value={textValue(p.decision)} onChange={(decision) => onChange({ ...p, decision: nullableText(decision) })} />
+        </div>
+      )
+    }
+    case 'risk': {
+      const p = payload as RiskPayload
+      return (
+        <div className="flex flex-col gap-3">
+          <TextField id={`${update.id}-title`} label="Risk title" value={p.title} onChange={(title) => onChange({ ...p, title })} />
+          <NotesField id={`${update.id}-description`} label="Description" value={textValue(p.description)} onChange={(description) => onChange({ ...p, description: nullableText(description) })} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField id={`${update.id}-severity`} label="Severity" value={p.severity} options={['low', 'medium', 'high']} onChange={(severity) => onChange({ ...p, severity })} />
+            <SelectField id={`${update.id}-status`} label="Status" value={p.status} options={['open', 'monitoring', 'resolved']} onChange={(status) => onChange({ ...p, status })} />
+          </div>
+          <NotesField id={`${update.id}-mitigation`} label="Mitigation" value={textValue(p.mitigation)} onChange={(mitigation) => onChange({ ...p, mitigation: nullableText(mitigation) })} />
+        </div>
+      )
+    }
+    case 'open_question': {
+      const p = payload as OpenQuestionPayload
+      return (
+        <div className="flex flex-col gap-3">
+          <NotesField id={`${update.id}-question`} label="Question" value={p.question} onChange={(question) => onChange({ ...p, question })} />
+          <TextField id={`${update.id}-owner`} label="Owner" value={textValue(p.owner_name)} onChange={(owner_name) => onChange({ ...p, owner_name: nullableText(owner_name) })} />
+        </div>
+      )
+    }
+  }
+}
+
+export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueueProps) {
   const router = useRouter()
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(new Set())
+  const [editingIds, setEditingIds] = useState<Set<string>>(new Set())
+  const [draftPayloads, setDraftPayloads] = useState<Record<string, UpdatePayload>>({})
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set())
   const [isPendingBulk, startBulkTransition] = useTransition()
+  const reviewGroups = buildReviewGroups(updates, aiRuns)
 
-  async function handleSingle(id: string, action: 'approve' | 'reject') {
-    setProcessingIds((s) => new Set(s).add(id))
+  function toggleSetValue<T>(setter: Dispatch<SetStateAction<Set<T>>>, value: T) {
+    setter((current) => {
+      const next = new Set(current)
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
+      return next
+    })
+  }
+
+  function startEdit(update: ProposedUpdate) {
+    setExpandedIds((current) => new Set(current).add(update.id))
+    setEditingIds((current) => new Set(current).add(update.id))
+    setDraftPayloads((current) => ({
+      ...current,
+      [update.id]: structuredClone(update.payload_json),
+    }))
+  }
+
+  function cancelEdit(updateId: string) {
+    setEditingIds((current) => {
+      const next = new Set(current)
+      next.delete(updateId)
+      return next
+    })
+    setDraftPayloads((current) => {
+      const next = { ...current }
+      delete next[updateId]
+      return next
+    })
+  }
+
+  async function handleSingle(update: ProposedUpdate, action: ReviewAction, payload?: UpdatePayload) {
+    setProcessingIds((current) => new Set(current).add(update.id))
+    const name = getUpdateName(update, payload)
+    const dest = TYPE_DESTINATION[update.update_type]
     try {
-      await reviewUpdate(id, action)
-      toast.success(action === 'approve' ? 'Update applied.' : 'Update rejected.')
+      await reviewUpdate(update.id, action, payload)
+      if (action === 'approve') {
+        toast.success(`Added to ${dest}: ${name}`)
+      } else {
+        toast.success('Dismissed. The plan is unchanged.')
+      }
+      cancelEdit(update.id)
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
-      setProcessingIds((s) => { const n = new Set(s); n.delete(id); return n })
+      setProcessingIds((current) => {
+        const next = new Set(current)
+        next.delete(update.id)
+        return next
+      })
     }
   }
 
-  async function handleBulk(action: 'approve' | 'reject') {
+  async function handleBulk(action: ReviewAction, scopedUpdates: ProposedUpdate[]) {
     startBulkTransition(async () => {
       try {
-        await Promise.all(updates.map((u) => reviewUpdate(u.id, action)))
+        await Promise.all(scopedUpdates.map((update) => reviewUpdate(update.id, action)))
         toast.success(
           action === 'approve'
-            ? `${updates.length} update${updates.length !== 1 ? 's' : ''} applied.`
-            : `${updates.length} update${updates.length !== 1 ? 's' : ''} rejected.`
+            ? `Applied ${scopedUpdates.length} stored suggestion${scopedUpdates.length !== 1 ? 's' : ''} to the event plan.`
+            : `Dismissed ${scopedUpdates.length} suggestion${scopedUpdates.length !== 1 ? 's' : ''}. The plan is unchanged.`
         )
         router.refresh()
       } catch {
-        toast.error('Some updates could not be processed.')
+        toast.error('Some suggestions could not be processed.')
         router.refresh()
       }
     })
@@ -99,90 +528,277 @@ export function ProposedUpdatesQueue({ updates }: ProposedUpdatesQueueProps) {
 
   if (updates.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 px-6 text-center gap-3">
-        <ClipboardList className="h-8 w-8 text-muted-foreground/30" />
-        <p className="text-sm text-muted-foreground">No pending updates.<br />Tell Glenn what changed to get started.</p>
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+        <Sparkles className="size-7 text-muted-foreground/25" />
+        <p className="text-sm font-medium text-muted-foreground">No suggestions yet</p>
+        <p className="max-w-[200px] text-xs text-muted-foreground">Tell Glenn what changed and suggestions will appear here for your review.</p>
       </div>
     )
   }
 
   return (
-    <div className="px-4 py-4 space-y-3">
-      {/* Bulk actions */}
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="default"
-          disabled={isPendingBulk}
-          onClick={() => handleBulk('approve')}
-          className="flex-1"
-        >
-          {isPendingBulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve all'}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={isPendingBulk}
-          onClick={() => handleBulk('reject')}
-          className="flex-1"
-        >
-          Reject all
-        </Button>
-      </div>
+    <div className="flex flex-col gap-3 px-4 py-4">
+      <div className="flex flex-col gap-3">
+        {reviewGroups.map((reviewGroup) => {
+          const detailsOpen = expandedRunIds.has(reviewGroup.aiRunId)
+          const groupedUpdates = groupByType(reviewGroup.updates)
+          return (
+            <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold leading-5">Glenn reviewed your update</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {reviewGroup.updates.length} suggestion{reviewGroup.updates.length !== 1 ? 's' : ''} ready for review
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className="shrink-0 rounded-md px-2 text-xs">
+                    {reviewGroup.updates.length}
+                  </Badge>
+                </div>
 
-      {/* Individual updates */}
-      {updates.map((update) => {
-        const isProcessing = processingIds.has(update.id)
-        const title = getUpdateTitle(update)
-        const summary = getUpdateSummary(update)
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground">Here&apos;s what I understood</p>
+                    <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
+                      {reviewGroup.understoodSummary.slice(0, 4).map((summary) => (
+                        <li key={summary} className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                          <span>{summary}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
 
-        return (
-          <div
-            key={update.id}
-            className={`rounded-lg border border-l-[3px] bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.06)] p-3 space-y-2.5 ${TYPE_STRIPE[update.update_type]}`}
-          >
-            <div className="flex items-start gap-2">
-              <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium shrink-0 ${TYPE_COLORS[update.update_type]}`}>
-                {TYPE_LABELS[update.update_type]}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium leading-snug">{title}</p>
-                {summary && (
-                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{summary}</p>
-                )}
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-xs font-semibold text-muted-foreground">I recommend updating the plan with</p>
+                    <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
+                      {reviewGroup.recommendedSummary.slice(0, 6).map((summary) => (
+                        <li key={summary} className="flex gap-2">
+                          <span className="mt-2 size-1 shrink-0 rounded-full bg-primary/70" />
+                          <span>{summary}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    disabled={isPendingBulk}
+                    onClick={() => handleBulk('approve', reviewGroup.updates)}
+                    className="w-full"
+                  >
+                    {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                    Apply all
+                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => toggleSetValue(setExpandedRunIds, reviewGroup.aiRunId)}
+                      aria-expanded={detailsOpen}
+                      className="w-full"
+                    >
+                      {detailsOpen ? <ChevronDown data-icon="inline-start" /> : <ChevronRight data-icon="inline-start" />}
+                      Review/edit details
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isPendingBulk}
+                      onClick={() => handleBulk('reject', reviewGroup.updates)}
+                      className="w-full"
+                    >
+                      <XCircle data-icon="inline-start" />
+                      Dismiss all
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {update.rationale && (
-              <p className="text-xs text-muted-foreground italic border-l-2 border-muted pl-2">{update.rationale}</p>
-            )}
+              {detailsOpen ? (
+                <div className="flex flex-col gap-3 border-t pt-3">
+                  <div className="flex flex-col gap-2 rounded-lg bg-muted/30 p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-muted-foreground">Detailed suggestions</p>
+                      <p className="text-[11px] text-muted-foreground">{reviewGroup.updates.length} pending</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        disabled={isPendingBulk}
+                        onClick={() => handleBulk('approve', reviewGroup.updates)}
+                        className="w-full"
+                      >
+                        {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+                        Apply all details
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isPendingBulk}
+                        onClick={() => handleBulk('reject', reviewGroup.updates)}
+                        className="w-full"
+                      >
+                        Dismiss all details
+                      </Button>
+                    </div>
+                  </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                className="flex-1 h-7 text-xs"
-                disabled={isProcessing}
-                onClick={() => handleSingle(update.id, 'approve')}
-              >
-                {isProcessing ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <><CheckCircle2 className="h-3 w-3 mr-1" />Apply</>
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 h-7 text-xs"
-                disabled={isProcessing}
-                onClick={() => handleSingle(update.id, 'reject')}
-              >
-                <XCircle className="h-3 w-3 mr-1" />Reject
-              </Button>
-            </div>
-          </div>
-        )
-      })}
+                  {groupedUpdates.map((group) => {
+                    const groupKey = `${reviewGroup.aiRunId}:${group.type}`
+                    const groupOpen = !closedGroups.has(groupKey)
+                    return (
+                      <section key={groupKey} className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleSetValue(setClosedGroups, groupKey)}
+                          className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left text-xs font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          <span>{group.title} ({group.updates.length})</span>
+                          {groupOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                        </button>
+
+                        {groupOpen ? (
+                          <div className="flex flex-col gap-2">
+                            {group.updates.map((update) => {
+                    const isProcessing = processingIds.has(update.id)
+                    const isExpanded = expandedIds.has(update.id)
+                    const isEditing = editingIds.has(update.id)
+                    const draftPayload = draftPayloads[update.id]
+                    const activePayload = draftPayload ?? update.payload_json
+                    const name = getUpdateName(update, activePayload)
+                    const detail = getUpdateDetail(update, activePayload)
+                    const description = getUpdateDescription(update, activePayload)
+                    const dest = TYPE_DESTINATION[update.update_type]
+
+                    return (
+                      <article key={update.id} className="flex flex-col gap-2 rounded-lg border bg-card p-2.5 shadow-sm">
+                        <div className="flex items-start gap-2">
+                          <Badge
+                            variant="outline"
+                            className={cn('mt-0.5 h-5 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
+                          >
+                            {group.pill}
+                          </Badge>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium leading-5">{name}</p>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                              <span>Goes to {dest}</span>
+                              {detail ? <span>{detail}</span> : null}
+                            </div>
+                          </div>
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            aria-label={isExpanded ? 'Hide details' : 'Show details'}
+                            aria-expanded={isExpanded}
+                            onClick={() => toggleSetValue(setExpandedIds, update.id)}
+                          >
+                            {isExpanded ? <ChevronDown /> : <ChevronRight />}
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <Button
+                            size="sm"
+                            className="w-full"
+                            disabled={isProcessing || isEditing}
+                            onClick={() => handleSingle(update, 'approve')}
+                          >
+                            {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                            Apply
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            disabled={isProcessing}
+                            onClick={() => handleSingle(update, 'reject')}
+                          >
+                            <XCircle data-icon="inline-start" />
+                            Dismiss
+                          </Button>
+                        </div>
+
+                        {isExpanded ? (
+                          <div className="flex flex-col gap-3 border-t pt-3">
+                            <div className="flex flex-col gap-2 text-xs">
+                              {description ? (
+                                <div className="flex flex-col gap-1">
+                                  <p className="font-medium text-foreground">Details</p>
+                                  <p className="leading-relaxed text-muted-foreground">{description}</p>
+                                </div>
+                              ) : null}
+                              {update.rationale ? (
+                                <div className="flex flex-col gap-1">
+                                  <p className="font-medium text-foreground">Why Glenn suggested it</p>
+                                  <p className="leading-relaxed text-muted-foreground">{update.rationale}</p>
+                                </div>
+                              ) : null}
+                              <p className="text-muted-foreground">This will go to {dest} when applied.</p>
+                            </div>
+
+                            {isEditing ? (
+                              <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+                                <EditFields
+                                  update={update}
+                                  payload={activePayload}
+                                  onChange={(payload) => setDraftPayloads((current) => ({ ...current, [update.id]: payload }))}
+                                />
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                  <Button
+                                    size="sm"
+                                    className="w-full"
+                                    disabled={isProcessing}
+                                    onClick={() => handleSingle(update, 'approve', activePayload)}
+                                  >
+                                    {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                                    Save & Apply
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full"
+                                    disabled={isProcessing}
+                                    onClick={() => cancelEdit(update.id)}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-fit"
+                                disabled={isProcessing}
+                                onClick={() => startEdit(update)}
+                              >
+                                <Pencil data-icon="inline-start" />
+                                Edit
+                              </Button>
+                            )}
+                          </div>
+                        ) : null}
+                      </article>
+                    )
+                            })}
+                          </div>
+                        ) : null}
+                      </section>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </section>
+          )
+        })}
+      </div>
     </div>
   )
 }

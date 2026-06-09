@@ -7,6 +7,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuLabel,
@@ -61,17 +62,19 @@ export function TaskAssignButton({ taskId, eventId, currentOwnerId, members }: T
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="end">
-        <DropdownMenuLabel>Assign to</DropdownMenuLabel>
-        {members.map((m) => (
-          <DropdownMenuItem
-            key={m.user_id}
-            onClick={() => assign(m.user_id)}
-            className={`gap-2 ${optimisticOwnerId === m.user_id ? 'font-semibold' : ''}`}
-          >
-            <UserAvatar fullName={m.full_name} avatarUrl={m.avatar_url} size="xs" />
-            {m.full_name ?? 'Unknown'}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+          {members.map((m) => (
+            <DropdownMenuItem
+              key={m.user_id}
+              onClick={() => assign(m.user_id)}
+              className={`gap-2 ${optimisticOwnerId === m.user_id ? 'font-semibold' : ''}`}
+            >
+              <UserAvatar fullName={m.full_name} avatarUrl={m.avatar_url} size="xs" />
+              {m.full_name ?? 'Unknown'}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
         {optimisticOwnerId && (
           <>
             <DropdownMenuSeparator />

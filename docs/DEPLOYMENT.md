@@ -13,7 +13,12 @@
 ## 1. Supabase setup
 
 1. Create a new Supabase project (keep it separate from your local dev project)
-2. Run the migration: Settings → SQL Editor → paste contents of `supabase/migrations/001_init.sql`
+2. Run **all six migrations** in order via Settings → SQL Editor:
+   - `001_init.sql` — full schema: 17 tables, RLS policies, indexes
+   - `002_...` / `003_...` — incremental schema additions
+   - `004_open_questions_answer.sql` — adds `open_questions.answer` column
+   - `005_grant_authenticated_permissions.sql` — **critical**: grants SELECT/INSERT/UPDATE/DELETE on all tables to the `authenticated` role. Without this, PostgREST returns 403 even when RLS policies are correct.
+   - `006_fix_rls_bootstrap.sql` — fixes org/event creation RLS bootstrap and adds the event delete policy. Without this, new users cannot create organizations or events.
 3. Note your project URL and anon key from Settings → API
 
 ---
@@ -30,22 +35,31 @@
 
 ---
 
-## 3. Required environment variables
+## 3. Environment variables
 
-Set these in **Netlify → Site settings → Environment variables**:
+Set these in **Netlify → Site settings → Environment variables**.
+
+### Required
 
 | Variable | Where to get it |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public key |
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys |
-| `SENTRY_DSN` | sentry.io → Settings → Projects → [project] → Client Keys |
-| `NEXT_PUBLIC_SENTRY_DSN` | Same as `SENTRY_DSN` |
-| `SENTRY_AUTH_TOKEN` | sentry.io → Settings → Auth Tokens (for source maps in CI) |
-| `SENTRY_ORG` | Your Sentry organization slug |
-| `SENTRY_PROJECT` | Your Sentry project slug |
 
-**Do NOT set `SUPABASE_SERVICE_ROLE_KEY` in Netlify.** That key is for dev scripts only and must never be exposed in the app environment.
+### Optional
+
+| Variable | Effect when set |
+|---|---|
+| `SENTRY_DSN` | Enables Sentry server-side error capture |
+| `NEXT_PUBLIC_SENTRY_DSN` | Enables Sentry client-side error capture |
+| `SENTRY_AUTH_TOKEN` | Uploads source maps so Sentry stack traces show original code |
+| `SENTRY_ORG` | Required alongside `SENTRY_AUTH_TOKEN` |
+| `SENTRY_PROJECT` | Required alongside `SENTRY_AUTH_TOKEN` |
+
+**Do NOT set `SUPABASE_SERVICE_ROLE_KEY` in Netlify.** That key is for local dev scripts only (`npm run seed`) and must never be present in the app environment.
+
+**Do NOT set `SEED_USER_EMAIL` or `SEED_USER_PASSWORD` in Netlify.** Those are local dev-only seed script variables.
 
 ---
 

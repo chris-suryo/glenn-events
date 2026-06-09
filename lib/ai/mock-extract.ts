@@ -426,3 +426,97 @@ export function groupExtracted(items: ExtractedItem[]) {
     open_questions: items.filter((i) => i.update_type === 'open_question'),
   }
 }
+
+function itemTitle(item: ExtractedItem): string {
+  switch (item.update_type) {
+    case 'task': {
+      const payload = item.payload as TaskPayload
+      return payload.title
+    }
+    case 'vendor': {
+      const payload = item.payload as VendorPayload
+      return payload.name
+    }
+    case 'budget_item': {
+      const payload = item.payload as BudgetItemPayload
+      return payload.description
+    }
+    case 'timeline_item': {
+      const payload = item.payload as TimelineItemPayload
+      return payload.title
+    }
+    case 'decision': {
+      const payload = item.payload as DecisionPayload
+      return payload.title
+    }
+    case 'risk': {
+      const payload = item.payload as RiskPayload
+      return payload.title
+    }
+    case 'open_question': {
+      const payload = item.payload as OpenQuestionPayload
+      return payload.question
+    }
+  }
+}
+
+function itemRecommendation(item: ExtractedItem): string {
+  switch (item.update_type) {
+    case 'task': {
+      const payload = item.payload as TaskPayload
+      return `Create task: ${payload.title}`
+    }
+    case 'vendor': {
+      const payload = item.payload as VendorPayload
+      return `Add ${payload.name} as ${payload.status} vendor`
+    }
+    case 'budget_item': {
+      const payload = item.payload as BudgetItemPayload
+      const cost = payload.estimated_cost ?? payload.actual_cost
+      return cost === null
+        ? `Add budget item: ${payload.description}`
+        : `Add ${payload.description} to budget at $${cost.toLocaleString()}`
+    }
+    case 'timeline_item': {
+      const payload = item.payload as TimelineItemPayload
+      return `Add timeline item: ${payload.title}`
+    }
+    case 'decision': {
+      const payload = item.payload as DecisionPayload
+      return `Record decision: ${payload.title}`
+    }
+    case 'risk': {
+      const payload = item.payload as RiskPayload
+      return `Flag risk: ${payload.title}`
+    }
+    case 'open_question': {
+      const payload = item.payload as OpenQuestionPayload
+      return `Ask: ${payload.question}`
+    }
+  }
+}
+
+export function summarizeExtracted(inputText: string, items: ExtractedItem[]) {
+  const firstSentence = splitSentences(inputText)[0] ?? inputText.trim()
+  const understood = firstSentence
+    ? [`You shared: ${firstSentence.slice(0, 180)}${firstSentence.length > 180 ? '...' : ''}`]
+    : ['You shared an event update for Glenn to review.']
+
+  const grouped = groupExtracted(items)
+  const names = [
+    ...grouped.vendors.map((item) => (item.payload as VendorPayload).name),
+    ...grouped.budget_items
+      .map((item) => (item.payload as BudgetItemPayload).vendor_name)
+      .filter((name): name is string => Boolean(name)),
+  ]
+  const uniqueNames = Array.from(new Set(names))
+  if (uniqueNames.length > 0) {
+    understood.push(`The update mentions ${uniqueNames.slice(0, 3).join(', ')}.`)
+  }
+
+  return {
+    understoodSummary: understood.slice(0, 3),
+    recommendedSummary: items.map(itemRecommendation).slice(0, 6),
+    fallbackTitles: items.map(itemTitle),
+  }
+}
