@@ -1,33 +1,11 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import type { AiRun, Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
+import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
 import { CommandCenter } from '@/components/event/command-center'
-import type { GlennBriefView } from '@/components/event/event-brief-panel'
+import type { CommandCenterBrief } from '@/components/event/event-brief-panel'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
-}
-
-function stringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function parseGlennBrief(aiRuns: AiRun[]): GlennBriefView | null {
-  for (const run of aiRuns) {
-    if (!run.output_json || typeof run.output_json !== 'object' || Array.isArray(run.output_json)) continue
-    const output = run.output_json as Record<string, unknown>
-    const understoodSummary = stringArray(output.understood_summary)
-    if (understoodSummary.length === 0) continue
-    return {
-      understoodSummary: understoodSummary.slice(0, 4),
-      createdAt: run.created_at,
-    }
-  }
-  return null
 }
 
 export default async function EventCommandCenterPage({ params }: PageProps) {
@@ -47,7 +25,6 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
     { data: pendingDecisions },
     { data: upcomingTimeline },
     { data: recentActivity },
-    { data: aiRuns },
   ] = await Promise.all([
     supabase.from('events').select('*').eq('id', eventId).single(),
     supabase.from('tasks').select('*').eq('event_id', eventId).eq('status', 'todo').order('created_at'),
@@ -86,30 +63,51 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       .in('action', ['proposed_updates_created', 'proposed_update_applied', 'proposed_update_rejected'])
       .order('created_at', { ascending: false })
       .limit(8),
-    supabase
-      .from('ai_runs')
-      .select('*')
-      .eq('event_id', eventId)
-      .order('created_at', { ascending: false })
-      .limit(12),
   ])
 
   if (!event) notFound()
 
-  const glennBrief = parseGlennBrief((aiRuns ?? []) as AiRun[])
+  const typedEvent = event as Event
+  const typedTasks = (tasks ?? []) as Task[]
+  const typedVendors = (vendors ?? []) as Vendor[]
+  const typedBudgetItems = (budgetItems ?? []) as BudgetItem[]
+  const typedRisks = (risks ?? []) as Risk[]
+  const typedOpenQuestions = (openQuestions ?? []) as OpenQuestion[]
+  const typedPendingDecisions = (pendingDecisions ?? []) as Decision[]
+
+  const priorityOrder: Record<Task['priority'], number> = { high: 0, medium: 1, low: 2 }
+  const commandCenterBrief: CommandCenterBrief = {
+    openTaskCount: typedTasks.length,
+    topTasks: [...typedTasks]
+      .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
+      .slice(0, 3)
+      .map(t => ({ title: t.title, priority: t.priority })),
+    vendorSummary: {
+      confirmedCount: typedVendors.filter(v => v.status === 'confirmed').length,
+      totalCount: typedVendors.length,
+    },
+    budgetSummary: {
+      estimated: typedBudgetItems.reduce((s, b) => s + (b.estimated_cost ?? 0), 0),
+      target: typedEvent.budget_target,
+      unpricedCount: typedBudgetItems.filter(b => b.estimated_cost === null).length,
+    },
+    openRiskCount: typedRisks.length,
+    openQuestionCount: typedOpenQuestions.length,
+    pendingDecisionCount: typedPendingDecisions.length,
+  }
 
   return (
     <CommandCenter
-      event={event as Event}
-      glennBrief={glennBrief}
-      openTasks={(tasks ?? []) as Task[]}
-      vendors={(vendors ?? []) as Vendor[]}
-      openRisks={(risks ?? []) as Risk[]}
+      event={typedEvent}
+      commandCenterBrief={commandCenterBrief}
+      openTasks={typedTasks}
+      vendors={typedVendors}
+      openRisks={typedRisks}
       pendingUpdates={(pendingUpdates ?? []) as ProposedUpdate[]}
-      openQuestions={(openQuestions ?? []) as OpenQuestion[]}
-      pendingDecisions={(pendingDecisions ?? []) as Decision[]}
+      openQuestions={typedOpenQuestions}
+      pendingDecisions={typedPendingDecisions}
       upcomingTimeline={(upcomingTimeline ?? []) as TimelineItem[]}
-      budgetItems={(budgetItems ?? []) as BudgetItem[]}
+      budgetItems={typedBudgetItems}
       recentActivity={(recentActivity ?? []) as ActivityLog[]}
     />
   )

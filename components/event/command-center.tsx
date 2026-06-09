@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
-import { EventBriefPanel, type GlennBriefView } from './event-brief-panel'
+import { EventBriefPanel, type CommandCenterBrief } from './event-brief-panel'
 import { ProposedUpdatesBadge } from './proposed-updates-badge'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -193,7 +193,7 @@ function ViewAllLink({ href, count }: { href: string; count: number }) {
 
 interface CommandCenterProps {
   event: Event
-  glennBrief: GlennBriefView | null
+  commandCenterBrief: CommandCenterBrief
   openTasks: Task[]
   vendors: Vendor[]
   openRisks: Risk[]
@@ -207,7 +207,7 @@ interface CommandCenterProps {
 
 export function CommandCenter({
   event,
-  glennBrief,
+  commandCenterBrief,
   openTasks,
   vendors,
   openRisks,
@@ -361,7 +361,7 @@ export function CommandCenter({
             <div className="lg:col-span-2 space-y-4 lg:order-first">
               <EventBriefPanel
                 event={event}
-                glennBrief={glennBrief}
+                commandCenterBrief={commandCenterBrief}
                 pendingSuggestionsCount={pendingUpdates.length}
                 eventId={event.id}
               />

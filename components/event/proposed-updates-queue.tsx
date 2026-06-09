@@ -527,7 +527,14 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
   }
 
   if (updates.length === 0) {
-    return (
+    const hasHistory = aiRuns.some(r => r.status === 'completed')
+    return hasHistory ? (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+        <CheckCircle2 className="size-7 text-emerald-500/60" />
+        <p className="text-sm font-medium text-foreground">All caught up</p>
+        <p className="max-w-[200px] text-xs text-muted-foreground">All suggestions have been reviewed. Tell Glenn what changed and new ones will appear here.</p>
+      </div>
+    ) : (
       <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
         <Sparkles className="size-7 text-muted-foreground/25" />
         <p className="text-sm font-medium text-muted-foreground">No suggestions yet</p>
@@ -538,6 +545,22 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
+      {reviewGroups.length > 1 && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/30 px-3 py-2.5">
+          <p className="text-sm text-muted-foreground">
+            {updates.length} suggestion{updates.length !== 1 ? 's' : ''} across {reviewGroups.length} update{reviewGroups.length !== 1 ? 's' : ''}
+          </p>
+          <Button
+            size="sm"
+            variant="default"
+            disabled={isPendingBulk}
+            onClick={() => handleBulk('approve', updates)}
+          >
+            {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+            Apply all
+          </Button>
+        </div>
+      )}
       <div className="flex flex-col gap-3">
         {reviewGroups.map((reviewGroup) => {
           const detailsOpen = expandedRunIds.has(reviewGroup.aiRunId)

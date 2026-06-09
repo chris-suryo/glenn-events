@@ -24,18 +24,12 @@ export default async function EventChatPage({ params }: PageProps) {
 
   if (!event) notFound()
 
-  const pendingAiRunIds = Array.from(
-    new Set((pendingUpdates ?? []).map((update) => update.ai_run_id).filter(Boolean))
-  )
-
-  const { data: aiRuns } = pendingAiRunIds.length > 0
-    ? await supabase
-      .from('ai_runs')
-      .select('*')
-      .eq('event_id', eventId)
-      .in('id', pendingAiRunIds)
-      .order('created_at')
-    : { data: [] }
+  const { data: aiRuns } = await supabase
+    .from('ai_runs')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: false })
+    .limit(20)
 
   return (
     <ChatView

@@ -6,7 +6,7 @@ import type { AiRun, Event, Message, ProposedUpdate } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { ProposedUpdatesQueue } from './proposed-updates-queue'
 import { formatDistanceToNow } from '@/lib/utils'
-import { MessageCircle } from 'lucide-react'
+import { CheckCircle2, MessageCircle } from 'lucide-react'
 
 interface ChatViewProps {
   event: Event
@@ -163,6 +163,12 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewPr
 
   const hasContent = messages.length > 0 || !!optimisticMsg || isThinking || !!streamingText
 
+  const completedSourceMsgIds = new Set(
+    aiRuns
+      .filter(r => r.status === 'completed' && r.source_message_id)
+      .map(r => r.source_message_id as string)
+  )
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
@@ -193,28 +199,53 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewPr
               {hasContent && (
                 <div className="space-y-3">
 
-                  {/* DB messages */}
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col gap-1 ${msg.role === 'assistant' ? 'items-start' : 'items-end'}`}
-                    >
-                      <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                        msg.role === 'user'
-                          ? 'bg-primary text-primary-foreground rounded-br-sm'
-                          : 'bg-muted text-foreground rounded-bl-sm'
-                      }`}>
-                        {msg.role === 'assistant'
-                          ? <GlennMessageContent text={msg.content} />
-                          : msg.content
-                        }
-                      </div>
-                      <span className="text-xs text-muted-foreground px-1">
-                        {msg.role === 'assistant' ? 'Glenn · ' : ''}
-                        {formatDistanceToNow(msg.created_at)}
-                      </span>
-                    </div>
-                  ))}
+                  {/* DB messages — with completed-review dividers */}
+                  {(() => {
+                    const items: React.ReactNode[] = []
+                    let lastUserMsgId: string | null = null
+
+                    for (const msg of messages) {
+                      items.push(
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col gap-1 ${msg.role === 'assistant' ? 'items-start' : 'items-end'}`}
+                        >
+                          <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                            msg.role === 'user'
+                              ? 'bg-primary text-primary-foreground rounded-br-sm'
+                              : 'bg-muted text-foreground rounded-bl-sm'
+                          }`}>
+                            {msg.role === 'assistant'
+                              ? <GlennMessageContent text={msg.content} />
+                              : msg.content
+                            }
+                          </div>
+                          <span className="text-xs text-muted-foreground px-1">
+                            {msg.role === 'assistant' ? 'Glenn · ' : ''}
+                            {formatDistanceToNow(msg.created_at)}
+                          </span>
+                        </div>
+                      )
+
+                      if (msg.role === 'user') {
+                        lastUserMsgId = msg.id
+                      } else if (msg.role === 'assistant' && lastUserMsgId && completedSourceMsgIds.has(lastUserMsgId)) {
+                        items.push(
+                          <div key={`divider-${msg.id}`} className="flex items-center gap-3 py-2">
+                            <div className="h-px flex-1 bg-emerald-500/20" />
+                            <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600/70">
+                              <CheckCircle2 className="size-3" />
+                              All suggestions reviewed
+                            </span>
+                            <div className="h-px flex-1 bg-emerald-500/20" />
+                          </div>
+                        )
+                        lastUserMsgId = null
+                      }
+                    }
+
+                    return items
+                  })()}
 
                   {/* Optimistic user message — shows instantly on submit */}
                   {optimisticMsg && (

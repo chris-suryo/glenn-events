@@ -1,16 +1,21 @@
 import Link from 'next/link'
-import type { Event } from '@/lib/types'
+import type { Event, Task } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ChevronRight, Sparkles } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 
-export interface GlennBriefView {
-  understoodSummary: string[]
-  createdAt: string
+export interface CommandCenterBrief {
+  openTaskCount: number
+  topTasks: Array<{ title: string; priority: Task['priority'] }>
+  vendorSummary: { confirmedCount: number; totalCount: number }
+  budgetSummary: { estimated: number; target: number | null; unpricedCount: number }
+  openRiskCount: number
+  openQuestionCount: number
+  pendingDecisionCount: number
 }
 
 interface EventBriefPanelProps {
   event: Event
-  glennBrief?: GlennBriefView | null
+  commandCenterBrief?: CommandCenterBrief | null
   pendingSuggestionsCount?: number
   eventId?: string
 }
@@ -37,42 +42,130 @@ function generateBrief(event: Event): string {
   return parts.join(', ') + '.'
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
+function formatCurrency(n: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
-export function EventBriefPanel({ event, glennBrief, pendingSuggestionsCount = 0, eventId }: EventBriefPanelProps) {
-  const staticBrief = generateBrief(event)
-  const hasGlennSummary = (glennBrief?.understoodSummary.length ?? 0) > 0
+function priorityDot(priority: Task['priority']): string {
+  if (priority === 'high') return 'bg-rose-500'
+  if (priority === 'medium') return 'bg-amber-400'
+  return 'bg-slate-300'
+}
+
+function buildIdentityLine(event: Event): string {
+  const parts: string[] = [event.name]
+  if (event.event_date) {
+    const formatted = new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    parts.push(formatted)
+  }
+  if (event.location) parts.push(event.location)
+  if (event.attendee_target) parts.push(`~${event.attendee_target} attendees`)
+  return parts.join(' · ')
+}
+
+function buildSummaryLine(brief: CommandCenterBrief): string | null {
+  const taskPart = brief.openTaskCount > 0
+    ? `${brief.openTaskCount} open task${brief.openTaskCount !== 1 ? 's' : ''}`
+    : null
+
+  const vendorPart = brief.vendorSummary.totalCount > 0
+    ? `${brief.vendorSummary.confirmedCount} of ${brief.vendorSummary.totalCount} vendor${brief.vendorSummary.totalCount !== 1 ? 's' : ''} confirmed`
+    : null
+
+  const pieces = [taskPart, vendorPart].filter(Boolean)
+  if (pieces.length === 0) return null
+  return `This event currently has ${pieces.join(', ')}.`
+}
+
+function buildBudgetLine(s: CommandCenterBrief['budgetSummary']): string {
+  if (s.estimated > 0 && s.target !== null) return `${formatCurrency(s.estimated)} of ${formatCurrency(s.target)} target`
+  if (s.estimated > 0) return formatCurrency(s.estimated)
+  if (s.unpricedCount > 0 && s.target !== null) return `$0 of ${formatCurrency(s.target)} · ${s.unpricedCount} unpriced`
+  if (s.unpricedCount > 0) return `$0 · ${s.unpricedCount} unpriced item${s.unpricedCount !== 1 ? 's' : ''}`
+  if (s.target !== null) return `$0 of ${formatCurrency(s.target)} target`
+  return '$0'
+}
+
+function buildAttentionLine(brief: CommandCenterBrief): string {
+  const parts: string[] = []
+  if (brief.openRiskCount > 0) parts.push(`${brief.openRiskCount} risk${brief.openRiskCount !== 1 ? 's' : ''}`)
+  if (brief.openQuestionCount > 0) parts.push(`${brief.openQuestionCount} question${brief.openQuestionCount !== 1 ? 's' : ''}`)
+  if (brief.pendingDecisionCount > 0) parts.push(`${brief.pendingDecisionCount} decision${brief.pendingDecisionCount !== 1 ? 's' : ''}`)
+  return parts.join(', ')
+}
+
+export function EventBriefPanel({ event, commandCenterBrief: brief, pendingSuggestionsCount = 0, eventId }: EventBriefPanelProps) {
+  const hasPlanData = !!brief && (
+    brief.openTaskCount > 0 ||
+    brief.vendorSummary.totalCount > 0 ||
+    brief.budgetSummary.estimated > 0 ||
+    brief.budgetSummary.target !== null ||
+    brief.budgetSummary.unpricedCount > 0 ||
+    brief.openRiskCount > 0 ||
+    brief.openQuestionCount > 0 ||
+    brief.pendingDecisionCount > 0
+  )
+
+  const showBudgetRow = !!brief && (
+    brief.budgetSummary.estimated > 0 ||
+    brief.budgetSummary.target !== null ||
+    brief.budgetSummary.unpricedCount > 0
+  )
+
+  const showAttentionRow = !!brief && (
+    brief.openRiskCount > 0 ||
+    brief.openQuestionCount > 0 ||
+    brief.pendingDecisionCount > 0
+  )
 
   return (
     <Card className="border bg-primary/[0.03]">
       <CardHeader className="pb-2">
-        <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-          <Sparkles className="h-3 w-3 text-primary" />
-          Glenn&apos;s current brief
+        <CardTitle className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Event brief
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {hasGlennSummary ? (
+        {hasPlanData && brief ? (
           <div className="flex flex-col gap-3">
-            <ul className="flex flex-col gap-1.5 text-sm leading-relaxed text-foreground">
-              {glennBrief!.understoodSummary.map((summary) => (
-                <li key={summary} className="flex gap-2">
-                  <span className="mt-2 size-1 shrink-0 rounded-full bg-primary/70" />
-                  <span>{summary}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="text-[11px] text-muted-foreground">
-              Last updated from chat · {timeAgo(glennBrief!.createdAt)}
+            <p className="text-xs font-medium text-muted-foreground">
+              {buildIdentityLine(event)}
             </p>
+
+            {buildSummaryLine(brief) && (
+              <p className="text-sm leading-relaxed text-foreground">
+                {buildSummaryLine(brief)}
+              </p>
+            )}
+
+            {brief.topTasks.length > 0 && (
+              <ul className="flex flex-col gap-1.5">
+                {brief.topTasks.slice(0, 3).map((t) => (
+                  <li key={t.title} className="flex items-center gap-2 text-xs text-foreground">
+                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${priorityDot(t.priority)}`} />
+                    <span className="min-w-0 truncate">{t.title}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {(showBudgetRow || showAttentionRow) && (
+              <div className="flex flex-col gap-1 border-t pt-2">
+                {showBudgetRow && (
+                  <div className="flex justify-between gap-4 text-xs">
+                    <span className="text-muted-foreground shrink-0">Budget</span>
+                    <span className="font-medium text-right">{buildBudgetLine(brief.budgetSummary)}</span>
+                  </div>
+                )}
+                {showAttentionRow && (
+                  <div className="flex justify-between gap-4 text-xs">
+                    <span className="text-muted-foreground shrink-0">Needs attention</span>
+                    <span className="font-medium text-amber-600 text-right">{buildAttentionLine(brief)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {pendingSuggestionsCount > 0 && eventId ? (
               <Link
                 href={`/events/${eventId}/chat`}
@@ -86,7 +179,7 @@ export function EventBriefPanel({ event, glennBrief, pendingSuggestionsCount = 0
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {staticBrief.split('**').map((part, i) =>
+              {generateBrief(event).split('**').map((part, i) =>
                 i % 2 === 1
                   ? <strong key={i} className="text-foreground font-semibold">{part}</strong>
                   : part
