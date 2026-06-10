@@ -1,27 +1,28 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
 import { EventBriefPanel, type CommandCenterBrief } from './event-brief-panel'
 import { ProposedUpdatesBadge } from './proposed-updates-badge'
+import { GlennInput } from './glenn-input'
 import { activityDot, activityLabel, timeAgo } from '@/lib/activity'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Activity, AlertTriangle, CheckCircle2,
-  ChevronRight, DollarSign, HelpCircle, Scale, Sparkles, Trash2, Users,
+  ChevronRight, DollarSign, HelpCircle, Sparkles, Trash2, Users,
 } from 'lucide-react'
 
-type TabKey = 'tasks' | 'vendors' | 'budget' | 'timeline' | 'decisions'
-
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: 'tasks',     label: 'Tasks'     },
-  { key: 'vendors',   label: 'Vendors'   },
-  { key: 'budget',    label: 'Budget'    },
-  { key: 'timeline',  label: 'Timeline'  },
-  { key: 'decisions', label: 'Decisions' },
-]
+const PENDING_TYPE_LABELS: Record<string, string> = {
+  task:          'task',
+  vendor:        'vendor',
+  budget_item:   'budget item',
+  timeline_item: 'timeline item',
+  decision:      'decision',
+  risk:          'risk',
+  open_question: 'question',
+}
 
 interface NeedsAttentionItem {
   id: string
@@ -45,25 +46,6 @@ function shortDate(iso: string) {
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
-
-function priorityDot(priority: Task['priority']) {
-  if (priority === 'high')   return 'bg-rose-500'
-  if (priority === 'medium') return 'bg-amber-400'
-  return 'bg-slate-300'
-}
-
-function priorityLabel(priority: Task['priority']) {
-  if (priority === 'high') return 'High'
-  if (priority === 'medium') return 'Medium'
-  return 'Low'
-}
-
-function vendorDot(status: Vendor['status']) {
-  if (status === 'confirmed') return 'bg-emerald-500'
-  if (status === 'declined')  return 'bg-rose-400'
-  if (status === 'contacted') return 'bg-sky-400'
-  return 'bg-slate-300'
 }
 
 function firstLine(text: string | null): string | null {
@@ -108,37 +90,49 @@ function buildReadinessStatus(
   if (pendingUpdates.length > 0) {
     return {
       title: 'Review pending',
-      detail: `${plural(pendingUpdates.length, 'suggestion')} ${pendingUpdates.length === 1 ? 'is' : 'are'} waiting`,
+      detail: `${plural(pendingUpdates.length, 'update')} ${pendingUpdates.length === 1 ? 'is' : 'are'} waiting for your review`,
       tone: 'review',
       href: `/events/${eventId}/chat`,
     }
   }
 
-  const highRiskCount = openRisks.filter((risk) => risk.severity === 'high').length
-  const overdueTaskCount = openTasks.filter((task) => isOverdue(task.due_date)).length
-  const highPriorityTaskCount = openTasks.filter((task) => task.priority === 'high' && !isOverdue(task.due_date)).length
-  const parts = [
-    highRiskCount > 0 ? plural(highRiskCount, 'high risk') : null,
-    openQuestions.length > 0 ? plural(openQuestions.length, 'question') : null,
-    overdueTaskCount > 0 ? plural(overdueTaskCount, 'overdue task') : null,
-    highPriorityTaskCount > 0 ? plural(highPriorityTaskCount, 'high-priority task') : null,
-    pendingDecisions.length > 0 ? plural(pendingDecisions.length, 'decision') : null,
-  ].filter((part): part is string => Boolean(part))
+  const worstItems: Array<{ text: string; href: string }> = [
+    ...openRisks
+      .filter((risk) => risk.severity === 'high')
+      .map((risk) => ({
+        text: `${snippet(risk.title, 48) ?? risk.title} (high risk)`,
+        href: `/events/${eventId}/plan?tab=risks&highlight=${risk.id}`,
+      })),
+    ...openTasks
+      .filter((task) => isOverdue(task.due_date))
+      .map((task) => ({
+        text: `${snippet(task.title, 48) ?? task.title} (overdue)`,
+        href: `/events/${eventId}/plan?tab=tasks&highlight=${task.id}`,
+      })),
+    ...openQuestions.map((question) => ({
+      text: snippet(question.question, 56) ?? question.question,
+      href: `/events/${eventId}/plan?tab=open-questions&highlight=${question.id}`,
+    })),
+    ...openTasks
+      .filter((task) => task.priority === 'high' && !isOverdue(task.due_date))
+      .map((task) => ({
+        text: `${snippet(task.title, 48) ?? task.title} (high priority)`,
+        href: `/events/${eventId}/plan?tab=tasks&highlight=${task.id}`,
+      })),
+    ...pendingDecisions.map((decision) => ({
+      text: `Decide: ${snippet(decision.title, 44) ?? decision.title}`,
+      href: `/events/${eventId}/plan?tab=decisions&highlight=${decision.id}`,
+    })),
+  ]
 
-  if (parts.length > 0) {
-    const href = highRiskCount > 0
-      ? `/events/${eventId}/plan?tab=risks`
-      : openQuestions.length > 0
-        ? `/events/${eventId}/plan?tab=open-questions`
-        : overdueTaskCount > 0 || highPriorityTaskCount > 0
-          ? `/events/${eventId}/plan?tab=tasks`
-          : `/events/${eventId}/plan?tab=decisions`
-
+  if (worstItems.length > 0) {
+    const named = worstItems.slice(0, 2).map((item) => item.text).join(' · ')
+    const overflow = worstItems.length > 2 ? ` · +${worstItems.length - 2} more` : ''
     return {
       title: 'Needs attention',
-      detail: `${joinParts(parts)} ${parts.length === 1 ? 'needs' : 'need'} review`,
+      detail: `${named}${overflow}`,
       tone: 'attention',
-      href,
+      href: worstItems[0].href,
     }
   }
 
@@ -162,11 +156,19 @@ function buildNextBestActions(
   const items: NeedsAttentionItem[] = []
 
   if (pendingUpdates.length > 0) {
+    const typeCounts = new Map<string, number>()
+    for (const update of pendingUpdates) {
+      typeCounts.set(update.update_type, (typeCounts.get(update.update_type) ?? 0) + 1)
+    }
+    const typeParts = [...typeCounts.entries()].map(([type, count]) => {
+      const label = PENDING_TYPE_LABELS[type] ?? type
+      return count === 1 ? label : `${count} ${label}s`
+    })
     items.push({
       id: 'pending-updates',
-      title: `Review ${plural(pendingUpdates.length, 'suggestion')}`,
-      badge: 'Review suggestions',
-      context: 'Approve or dismiss new plan updates.',
+      title: `Review ${plural(pendingUpdates.length, 'update')}`,
+      badge: 'Review',
+      context: joinParts(typeParts),
       href: `/events/${eventId}/chat`,
       tone: 'review',
     })
@@ -178,7 +180,7 @@ function buildNextBestActions(
       title: risk.title,
       badge: 'Resolve risk',
       context: snippet(risk.mitigation) ?? snippet(risk.description),
-      href: `/events/${eventId}/plan?tab=risks`,
+      href: `/events/${eventId}/plan?tab=risks&highlight=${risk.id}`,
       tone: 'risk',
     })
   }
@@ -189,7 +191,7 @@ function buildNextBestActions(
       title: question.question,
       badge: 'Needs answer',
       context: null,
-      href: `/events/${eventId}/plan?tab=open-questions`,
+      href: `/events/${eventId}/plan?tab=open-questions&highlight=${question.id}`,
       tone: 'question',
     })
   }
@@ -210,7 +212,7 @@ function buildNextBestActions(
       title: task.title,
       badge: isOverdue(task.due_date) ? 'Overdue task' : 'Confirm',
       context: task.due_date ? `Due ${shortDate(task.due_date)}` : snippet(task.description),
-      href: `/events/${eventId}/plan?tab=tasks`,
+      href: `/events/${eventId}/plan?tab=tasks&highlight=${task.id}`,
       tone: 'task',
     })
   }
@@ -230,7 +232,7 @@ function buildNextBestActions(
       title: item.title,
       badge: item.type === 'deadline' ? 'Deadline' : 'Upcoming',
       context: item.starts_at ? shortDate(item.starts_at) : snippet(item.description),
-      href: `/events/${eventId}/plan?tab=timeline`,
+      href: `/events/${eventId}/plan?tab=timeline&highlight=${item.id}`,
       tone: 'timeline',
     })
   }
@@ -241,7 +243,7 @@ function buildNextBestActions(
       title: `Decide: ${decision.title}`,
       badge: 'Decide',
       context: snippet(decision.description),
-      href: `/events/${eventId}/plan?tab=decisions`,
+      href: `/events/${eventId}/plan?tab=decisions&highlight=${decision.id}`,
       tone: 'decision',
     })
   }
@@ -267,28 +269,6 @@ function statusClasses(tone: ReadinessStatus['tone']) {
 function StatusIcon({ tone }: { tone: ReadinessStatus['tone'] }) {
   if (tone === 'track') return <CheckCircle2 className="h-4 w-4" />
   return <AlertTriangle className="h-4 w-4" />
-}
-
-const TIMELINE_COLORS: Record<TimelineItem['type'], string> = {
-  deadline:  'bg-rose-100 text-rose-700',
-  milestone: 'bg-indigo-100 text-indigo-700',
-  planning:  'bg-amber-100 text-amber-700',
-  task:      'bg-emerald-100 text-emerald-700',
-}
-
-function ViewAllLink({ href, count }: { href: string; count: number }) {
-  if (count === 0) return null
-  return (
-    <div className="pt-2.5">
-      <Link
-        href={href}
-        className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5"
-      >
-        View all in Plan
-        <ChevronRight className="h-3 w-3" />
-      </Link>
-    </div>
-  )
 }
 
 interface CommandCenterProps {
@@ -318,7 +298,6 @@ export function CommandCenter({
   budgetItems,
   recentActivity,
 }: CommandCenterProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>('tasks')
   const [isDeleting, startDelete] = useTransition()
   const router = useRouter()
 
@@ -355,14 +334,6 @@ export function CommandCenter({
       await fetch(`/api/events/${event.id}`, { method: 'DELETE' })
       router.push('/dashboard')
     })
-  }
-
-  const tabCounts: Record<TabKey, number> = {
-    tasks:     openTasks.length,
-    vendors:   vendors.length,
-    budget:    budgetItems.length,
-    timeline:  upcomingTimeline.length,
-    decisions: pendingDecisions.length,
   }
 
   return (
@@ -500,6 +471,42 @@ export function CommandCenter({
                 eventId={event.id}
               />
 
+              {recentActivity.length > 0 && (
+                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recent</p>
+                  </div>
+                  <div className="space-y-2.5">
+                    {recentActivity.slice(0, 5).map((entry) => (
+                      <div key={entry.id} className="flex items-start gap-2">
+                        <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${activityDot(entry.action)}`} />
+                        <span className="text-xs text-muted-foreground flex-1 leading-snug min-w-0">
+                          {activityLabel(entry)}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground/60 shrink-0">{timeAgo(entry.created_at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Link
+                    href={`/events/${event.id}/activity`}
+                    className="text-xs text-muted-foreground hover:text-foreground mt-3 inline-block transition-colors"
+                  >
+                    View all activity →
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-3 space-y-4">
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tell Glenn what changed</p>
+                </div>
+                <GlennInput eventId={event.id} />
+              </div>
+
               <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
                 <div className="flex items-center gap-1.5 mb-3">
                   <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
@@ -543,208 +550,12 @@ export function CommandCenter({
                   </div>
                 )}
               </div>
-
-              {recentActivity.length > 0 && (
-                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recent</p>
-                  </div>
-                  <div className="space-y-2.5">
-                    {recentActivity.slice(0, 5).map((entry) => (
-                      <div key={entry.id} className="flex items-start gap-2">
-                        <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${activityDot(entry.action)}`} />
-                        <span className="text-xs text-muted-foreground flex-1 leading-snug min-w-0">
-                          {activityLabel(entry)}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground/60 shrink-0">{timeAgo(entry.created_at)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <Link
-                    href={`/events/${event.id}/activity`}
-                    className="text-xs text-muted-foreground hover:text-foreground mt-3 inline-block transition-colors"
-                  >
-                    View all activity →
-                  </Link>
-                </div>
-              )}
-            </div>
-
-            <div className="lg:col-span-3 rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
-
-              <div className="flex border-b bg-muted/30">
-                {TABS.map(({ key, label }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setActiveTab(key)}
-                    className={`flex-1 py-2.5 text-xs font-medium transition-colors relative whitespace-nowrap
-                      ${activeTab === key
-                        ? 'text-primary bg-background border-b-2 border-primary -mb-px'
-                        : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                  >
-                    {label}
-                    {tabCounts[key] > 0 && (
-                      <span className={`ml-1 text-[10px] font-semibold
-                        ${activeTab === key ? 'text-primary' : 'text-muted-foreground/60'}`}>
-                        {tabCounts[key]}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              <div className="px-4 py-3 min-h-[180px]">
-
-                {activeTab === 'tasks' && (
-                  <>
-                    {openTasks.length === 0
-                      ? <p className="text-sm text-muted-foreground py-4 text-center">No open tasks — all clear.</p>
-                      : openTasks.slice(0, 5).map((task) => {
-                        const desc = snippet(task.description)
-                        return (
-                          <div key={task.id} className="py-2.5 border-b last:border-0">
-                            <div className="flex items-center gap-3">
-                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${priorityDot(task.priority)}`} />
-                              <span className="text-sm flex-1 min-w-0 truncate">{task.title}</span>
-                              <span className="text-[10px] text-muted-foreground shrink-0">{priorityLabel(task.priority)}</span>
-                              {task.due_date && (
-                                <span className="text-xs text-muted-foreground shrink-0">{shortDate(task.due_date)}</span>
-                              )}
-                            </div>
-                            {desc ? (
-                              <p className="text-xs text-muted-foreground mt-1 pl-4 truncate">{desc}</p>
-                            ) : null}
-                          </div>
-                        )
-                      })
-                    }
-                    <ViewAllLink href={`/events/${event.id}/plan?tab=tasks`} count={openTasks.length} />
-                  </>
-                )}
-
-                {activeTab === 'vendors' && (
-                  <>
-                    {vendors.length === 0
-                      ? <p className="text-sm text-muted-foreground py-4 text-center">No vendors yet.</p>
-                      : vendors.slice(0, 5).map((vendor) => {
-                        const noteLine = snippet(vendor.notes)
-                        return (
-                          <div key={vendor.id} className="py-2.5 border-b last:border-0">
-                            <div className="flex items-center gap-3">
-                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${vendorDot(vendor.status)}`} />
-                              <span className="text-sm flex-1 min-w-0 truncate">{vendor.name}</span>
-                              {vendor.category && (
-                                <span className="text-xs text-muted-foreground shrink-0">{vendor.category}</span>
-                              )}
-                              <span className="text-xs text-muted-foreground capitalize shrink-0">{vendor.status}</span>
-                            </div>
-                            {vendor.contact_name ? (
-                              <p className="text-xs text-muted-foreground mt-1 pl-4">Contact: {vendor.contact_name}</p>
-                            ) : null}
-                            {noteLine ? (
-                              <p className="text-xs text-muted-foreground mt-0.5 pl-4 truncate">{noteLine}</p>
-                            ) : null}
-                          </div>
-                        )
-                      })
-                    }
-                    <ViewAllLink href={`/events/${event.id}/plan?tab=vendors`} count={vendors.length} />
-                  </>
-                )}
-
-                {activeTab === 'budget' && (
-                  <>
-                    {(totalEstimated > 0 || unpricedBudgetCount > 0) && (
-                      <div className="py-2 border-b mb-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                        <span className="text-xs text-muted-foreground">Total estimated:</span>
-                        <span className="text-sm font-semibold">{formatCurrency(totalEstimated)}</span>
-                        {unpricedBudgetCount > 0 && (
-                          <span className="text-xs text-muted-foreground">
-                            · {unpricedBudgetCount} unpriced item{unpricedBudgetCount !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                        {event.budget_target && (
-                          <span className="text-xs text-muted-foreground">
-                            of {formatCurrency(event.budget_target)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {budgetItems.length === 0
-                      ? <p className="text-sm text-muted-foreground py-4 text-center">No budget items yet.</p>
-                      : budgetItems.slice(0, 5).map((item) => (
-                        <div key={item.id} className="flex items-center gap-3 py-2.5 border-b last:border-0">
-                          <span className="text-sm flex-1 min-w-0 truncate">
-                            {item.description.replace(/\s*\(Vendor reference:[^)]+\)/, '')}
-                          </span>
-                          <span className="text-xs text-muted-foreground shrink-0">{item.category}</span>
-                          <span className="text-xs font-medium shrink-0">
-                            {item.estimated_cost !== null ? formatCurrency(item.estimated_cost) : 'Cost TBD'}
-                          </span>
-                        </div>
-                      ))
-                    }
-                    <ViewAllLink href={`/events/${event.id}/plan?tab=budget`} count={budgetItems.length} />
-                  </>
-                )}
-
-                {activeTab === 'timeline' && (
-                  <>
-                    {upcomingTimeline.length === 0
-                      ? <p className="text-sm text-muted-foreground py-4 text-center">No upcoming milestones.</p>
-                      : upcomingTimeline.slice(0, 5).map((item) => (
-                        <div key={item.id} className="flex items-center gap-3 py-2.5 border-b last:border-0">
-                          {item.starts_at && (
-                            <span className="text-xs text-muted-foreground w-14 shrink-0">{shortDate(item.starts_at)}</span>
-                          )}
-                          <span className="text-sm flex-1 min-w-0 truncate">{item.title}</span>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${TIMELINE_COLORS[item.type]}`}>
-                            {item.type}
-                          </span>
-                        </div>
-                      ))
-                    }
-                    <ViewAllLink href={`/events/${event.id}/plan?tab=timeline`} count={upcomingTimeline.length} />
-                  </>
-                )}
-
-                {activeTab === 'decisions' && (
-                  <>
-                    {pendingDecisions.length === 0
-                      ? <p className="text-sm text-muted-foreground py-4 text-center">No pending decisions.</p>
-                      : pendingDecisions.slice(0, 5).map((dec) => (
-                        <div key={dec.id} className="flex items-start gap-3 py-2.5 border-b last:border-0">
-                          <Scale className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/50" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{dec.title}</p>
-                            {dec.description && (
-                              <p className="text-xs text-muted-foreground mt-0.5 truncate">{dec.description}</p>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    }
-                    <ViewAllLink href={`/events/${event.id}/plan?tab=decisions`} count={pendingDecisions.length} />
-                  </>
-                )}
-              </div>
             </div>
 
           </div>
 
         </div>
       </div>
-
-      <Link
-        href={`/events/${event.id}/chat`}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
-      >
-        <Sparkles className="h-4 w-4" />
-        Ask Glenn
-      </Link>
 
     </div>
   )
