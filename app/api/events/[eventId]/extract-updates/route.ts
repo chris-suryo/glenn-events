@@ -1,10 +1,65 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { ExtractUpdatesSchema } from '@/lib/validators/extract'
-import { mockExtract, groupExtracted, summarizeExtracted } from '@/lib/ai/mock-extract'
+import { mockExtract, groupExtracted, summarizeExtracted, type ExtractedItem } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
 import { dedupeExtractedItems } from '@/lib/ai/dedupe'
 import type { EventStateContext, UpdateType } from '@/lib/types'
+
+type CountByType = Record<UpdateType, number>
+type ExtractionMode = 'anthropic' | 'mock'
+
+interface ExtractionDiagnostics {
+  mode: ExtractionMode
+  raw_count: number
+  raw_count_by_type: CountByType
+  kept_count: number
+  kept_count_by_type: CountByType
+  deduped_count: number
+  dropped: Array<{
+    update_type: UpdateType
+    label: string
+    reason: string
+  }>
+  inserted_count: number
+}
+
+const EMPTY_COUNTS: CountByType = {
+  task: 0,
+  vendor: 0,
+  budget_item: 0,
+  timeline_item: 0,
+  decision: 0,
+  risk: 0,
+  open_question: 0,
+}
+
+function shouldIncludeDiagnostics(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.GLENN_EXTRACT_DEBUG === '1'
+}
+
+function countByType(items: ExtractedItem[]): CountByType {
+  const counts = { ...EMPTY_COUNTS }
+  for (const item of items) {
+    counts[item.update_type] += 1
+  }
+  return counts
+}
+
+function itemLabel(item: ExtractedItem): string {
+  const payload = item.payload as unknown as Record<string, unknown>
+  const raw =
+    payload.title ??
+    payload.name ??
+    payload.question ??
+    payload.description ??
+    payload.category ??
+    'Untitled suggestion'
+
+  return typeof raw === 'string' && raw.trim().length > 0
+    ? raw.trim().slice(0, 120)
+    : 'Untitled suggestion'
+}
 
 export async function POST(
   request: NextRequest,
@@ -234,7 +289,9 @@ export async function POST(
     let understoodSummary: string[]
     let recommendedSummary: string[]
 
-    if (process.env.ANTHROPIC_API_KEY) {
+    const extractionMode: ExtractionMode = process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'mock'
+
+    if (extractionMode === 'anthropic') {
       const result = await llmExtract(input_text, conversationHistory, eventStateContext)
       rawExtracted = result.items
       assistantContent = result.responseMessage
@@ -256,7 +313,7 @@ export async function POST(
     const dedupeResult = dedupeExtractedItems(rawExtracted, eventStateContext)
     const extracted = dedupeResult.kept
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (extractionMode === 'mock') {
       // Fallback response for mock mode (uses deduped count)
       assistantContent = extracted.length === 0
         ? "Got it — I saved your note. I didn't see anything that needs to update the event plan yet, but you can tell me about vendors, tasks, costs, deadlines, risks, or decisions anytime."
@@ -271,11 +328,29 @@ export async function POST(
     }
 
     const grouped = groupExtracted(extracted)
+    const includeDiagnostics = shouldIncludeDiagnostics()
+    let diagnostics: ExtractionDiagnostics | null = includeDiagnostics
+      ? {
+          mode: extractionMode,
+          raw_count: rawExtracted.length,
+          raw_count_by_type: countByType(rawExtracted),
+          kept_count: extracted.length,
+          kept_count_by_type: countByType(extracted),
+          deduped_count: dedupeResult.deduped_count,
+          dropped: dedupeResult.dropped.map((drop) => ({
+            update_type: drop.dropped_item.update_type,
+            label: itemLabel(drop.dropped_item),
+            reason: drop.reason,
+          })),
+          inserted_count: 0,
+        }
+      : null
 
     const outputJson = {
       understood_summary: understoodSummary,
       recommended_summary: recommendedSummary,
       deduped_count: dedupeResult.deduped_count,
+      ...(diagnostics ? { diagnostics } : {}),
       tasks: grouped.tasks.map((i) => i.payload),
       vendors: grouped.vendors.map((i) => i.payload),
       budget_items: grouped.budget_items.map((i) => i.payload),
@@ -305,6 +380,7 @@ export async function POST(
     }
 
     // 5. Insert proposed_updates
+    let insertedCount = 0
     if (extracted.length > 0) {
       const rows = extracted.map((item) => ({
         event_id: eventId,
@@ -321,6 +397,24 @@ export async function POST(
       if (updatesErr) {
         console.error('proposed_updates insert error:', updatesErr)
         return NextResponse.json({ error: 'Failed to create proposed updates' }, { status: 500 })
+      }
+      insertedCount = rows.length
+    }
+
+    if (diagnostics) {
+      diagnostics = { ...diagnostics, inserted_count: insertedCount }
+      const outputJsonWithDiagnostics = {
+        ...outputJson,
+        diagnostics,
+      }
+
+      await supabase
+        .from('ai_runs')
+        .update({ output_json: outputJsonWithDiagnostics })
+        .eq('id', aiRun.id)
+
+      if (process.env.GLENN_EXTRACT_DEBUG === '1') {
+        console.info('glenn extraction diagnostics', diagnostics)
       }
     }
 

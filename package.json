@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test:extract": "tsx scripts/test-extraction.ts",
     "seed": "tsx scripts/seed-demo.ts",
     "seed:reset": "SEED_RESET=true tsx scripts/seed-demo.ts"
   },
