@@ -78,7 +78,7 @@ export default function NewEventPage() {
         <CardHeader>
           <CardTitle>Create a new event</CardTitle>
           <CardDescription>
-            Fill in what you know. You can always add more later — just tell Glenn.
+            Fill in what you know — name is all you need to start. After creating, tell Glenn about vendors, dates, budget, and tasks in plain language.
           </CardDescription>
         </CardHeader>
         <CardContent>

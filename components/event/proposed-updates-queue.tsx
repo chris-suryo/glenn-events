@@ -533,6 +533,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
         <CheckCircle2 className="size-7 text-emerald-500/60" />
         <p className="text-sm font-medium text-foreground">All caught up</p>
         <p className="max-w-[200px] text-xs text-muted-foreground">All suggestions have been reviewed. Tell Glenn what changed and new ones will appear here.</p>
+        <p className="text-xs text-primary/70">Tell Glenn about new updates ↓</p>
       </div>
     ) : (
       <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
@@ -570,9 +571,11 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
               <div className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold leading-5">Glenn reviewed your update</p>
+                    <p className="text-sm font-semibold leading-5">
+                      Glenn found {reviewGroup.updates.length} suggestion{reviewGroup.updates.length !== 1 ? 's' : ''} from your update
+                    </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {reviewGroup.updates.length} suggestion{reviewGroup.updates.length !== 1 ? 's' : ''} ready for review
+                      Review and apply what looks right
                     </p>
                   </div>
                   <Badge variant="secondary" className="shrink-0 rounded-md px-2 text-xs">
@@ -582,7 +585,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
 
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground">Here&apos;s what I understood</p>
+                    <p className="text-xs font-semibold text-muted-foreground">From your update:</p>
                     <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
                       {reviewGroup.understoodSummary.slice(0, 4).map((summary) => (
                         <li key={summary} className="flex gap-2">
@@ -594,7 +597,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground">I recommend updating the plan with</p>
+                    <p className="text-xs font-semibold text-muted-foreground">Glenn recommends:</p>
                     <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
                       {reviewGroup.recommendedSummary.slice(0, 6).map((summary) => (
                         <li key={summary} className="flex gap-2">

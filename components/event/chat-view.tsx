@@ -6,7 +6,7 @@ import type { AiRun, Event, Message, ProposedUpdate } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { ProposedUpdatesQueue } from './proposed-updates-queue'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle2, MessageCircle } from 'lucide-react'
+import { CheckCircle2, Sparkles } from 'lucide-react'
 
 interface ChatViewProps {
   event: Event
@@ -186,12 +186,18 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewPr
               {/* Spacer + empty state */}
               <div className="flex-1 flex flex-col items-center justify-center py-6">
                 {!hasContent && (
-                  <>
-                    <MessageCircle className="h-8 w-8 text-muted-foreground/30" />
-                    <p className="text-sm text-muted-foreground mt-3 text-center">
-                      No messages yet.<br />Tell Glenn what&apos;s going on with the event.
+                  <div className="flex flex-col items-center gap-3 text-center max-w-xs">
+                    <Sparkles className="h-8 w-8 text-primary/30" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Tell Glenn what changed</p>
+                      <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                        Paste notes, emails, or updates — Glenn proposes structured plan changes for you to review before anything is saved.
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground/60 italic">
+                      e.g. &ldquo;Venue confirmed for Sep 27, deposit $4,500 due Jun 1. AV still unconfirmed.&rdquo;
                     </p>
-                  </>
+                  </div>
                 )}
               </div>
 

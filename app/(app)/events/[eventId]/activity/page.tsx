@@ -7,10 +7,45 @@ interface PageProps {
   params: Promise<{ eventId: string }>
 }
 
-const ACTIVITY_LABELS: Record<string, string> = {
-  proposed_updates_created: 'Glenn proposed updates',
-  proposed_update_applied:  'Update applied to plan',
-  proposed_update_rejected: 'Update dismissed',
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  task:          'task',
+  vendor:        'vendor',
+  budget_item:   'budget item',
+  timeline_item: 'timeline item',
+  decision:      'decision',
+  risk:          'risk',
+  open_question: 'open question',
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function activityLabel(entry: ActivityLog): string {
+  if (entry.action === 'proposed_updates_created') {
+    const total = isRecord(entry.metadata_json) && typeof entry.metadata_json.total === 'number'
+      ? entry.metadata_json.total
+      : null
+    if (total !== null) {
+      return `Glenn proposed ${total} update${total !== 1 ? 's' : ''}`
+    }
+    return 'Glenn proposed updates'
+  }
+
+  if (entry.action === 'proposed_update_applied') {
+    const entityLabel = ENTITY_TYPE_LABELS[entry.entity_type]
+    return entityLabel ? `Applied ${entityLabel} update` : 'Applied plan update'
+  }
+
+  if (entry.action === 'proposed_update_rejected') {
+    const updateType = isRecord(entry.metadata_json) && typeof entry.metadata_json.update_type === 'string'
+      ? entry.metadata_json.update_type
+      : entry.entity_type
+    const entityLabel = ENTITY_TYPE_LABELS[updateType]
+    return entityLabel ? `Dismissed ${entityLabel} suggestion` : 'Dismissed suggestion'
+  }
+
+  return entry.action.replace(/_/g, ' ')
 }
 
 function activityDot(action: string) {
@@ -76,11 +111,8 @@ export default async function ActivityPage({ params }: PageProps) {
                   <span className={`absolute left-0 mt-1.5 h-3.5 w-3.5 rounded-full border-2 border-background shrink-0 ${activityDot(entry.action)}`} />
                   <div className="flex-1 min-w-0 pt-0.5">
                     <p className="text-sm leading-snug">
-                      {ACTIVITY_LABELS[entry.action] ?? entry.action.replace(/_/g, ' ')}
+                      {activityLabel(entry)}
                     </p>
-                    {entry.entity_type && entry.entity_type !== 'ai_run' && (
-                      <p className="text-xs text-muted-foreground mt-0.5 capitalize">{entry.entity_type.replace(/_/g, ' ')}</p>
-                    )}
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0 pt-0.5">
                     {timeAgo(entry.created_at)}

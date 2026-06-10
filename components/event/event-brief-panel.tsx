@@ -188,9 +188,19 @@ export function EventBriefPanel({ event, commandCenterBrief: brief, pendingSugge
             {event.description && (
               <p className="text-sm text-muted-foreground leading-relaxed border-t pt-2">{event.description}</p>
             )}
-            <p className="text-[11px] text-muted-foreground">
-              Tell Glenn what changed in chat to build a live brief here.
-            </p>
+            {eventId ? (
+              <Link
+                href={`/events/${eventId}/chat`}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5"
+              >
+                Tell Glenn what changed to build your event brief.
+                <ChevronRight className="h-3 w-3" />
+              </Link>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Tell Glenn what changed to build your event brief.
+              </p>
+            )}
           </div>
         )}
       </CardContent>

@@ -137,7 +137,7 @@ export function GlennInput({ eventId, onUserMessage, onPendingChange, onGlennRep
 
         <div className="flex items-center justify-between pl-9">
           <p className="text-xs text-muted-foreground">
-            Dump messy notes, emails, updates — Glenn extracts the structure.{' '}
+            Paste notes, emails, or updates — Glenn proposes plan changes for your review.{' '}
             <span className="opacity-60">Enter to send · Shift+Enter for newline</span>
           </p>
           <Button

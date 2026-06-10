@@ -42,18 +42,53 @@ export default async function DashboardPage() {
       </div>
 
       {eventList.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed border-border py-16 flex flex-col items-center gap-4 text-center">
-          <CalendarDays className="h-10 w-10 text-muted-foreground/40" />
-          <div>
-            <p className="font-medium text-foreground">No events yet</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Create your first event and let Glenn help you stay on top of it.
-            </p>
+        <div className="space-y-6">
+          <div className="rounded-xl border bg-card p-6 shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+            <p className="text-sm font-semibold mb-4">How Glenn works</p>
+            <ol className="space-y-4">
+              {([
+                {
+                  n: '1',
+                  title: 'Create an event workspace',
+                  body: 'Name your event and add what you know — date, location, budget. You can fill in details later.',
+                },
+                {
+                  n: '2',
+                  title: 'Tell Glenn what changed',
+                  body: 'Paste messy notes, emails, or planning updates. No formatting needed. Glenn reads it and extracts what matters.',
+                },
+                {
+                  n: '3',
+                  title: 'Review Glenn\'s suggestions',
+                  body: 'Glenn proposes structured updates — tasks, vendors, budget items, risks, and more. You decide what goes into the plan.',
+                },
+              ] as const).map(({ n, title, body }) => (
+                <li key={n} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {n}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium">{title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
-          <Link href="/events/new" className={cn(buttonVariants({ variant: 'outline' }), 'inline-flex items-center')}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Create event
-          </Link>
+
+          <div className="rounded-xl border-2 border-dashed border-border py-12 flex flex-col items-center gap-4 text-center">
+            <CalendarDays className="h-10 w-10 text-muted-foreground/40" />
+            <div>
+              <p className="font-medium text-foreground">No events yet</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Create your first event to get started.
+              </p>
+            </div>
+            <Link href="/events/new" className={cn(buttonVariants({ variant: 'outline' }), 'inline-flex items-center')}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Create event
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
