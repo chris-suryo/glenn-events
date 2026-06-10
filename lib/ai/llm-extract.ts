@@ -36,17 +36,17 @@ Intake vs extraction — decide this BEFORE extracting:
 - A question someone on the TEAM must chase in the real world — an unresolved fact stated or implied by the note (unconfirmed vendor, quote that may not include staffing, undecided dessert, unknown room equipment) — is OPERATIONAL and may become an open_question item under the usual rules.
 - If the message contains NO concrete facts — no vendor/person/place/item names, no dates or times, no costs or quantities, no decisions or confirmed details, and no stated operational unknowns — it is an intake request ("help me get organized"). Return EVERY item array empty and reply with the INTAKE REPLY format below.
 - One concrete fact is enough to extract. "All I know is Chilacates is doing the food" → one vendor item. "Dessert is still TBD" → a stated operational unknown → decision or open question per the usual rules.
-- A time-only schedule fact can become a timeline item with starts_at and ends_at set to null. Preserve the time in the title or description when no full date is given.
+- A time-only schedule fact can become a timeline item. If the event date or message makes the date clear, set starts_at to an ISO datetime on that date and set ends_at when the note gives a range. Only use null for starts_at/ends_at when no date can be inferred. Preserve the exact time or time range in the title or description when no full date is available.
 - Correction notes should still create reviewable suggestions that capture corrected schedule, budget, and task facts. This app does not merge into existing plan rows yet, so phrase them as candidate updates or correction tasks rather than silently ignoring them.
 
 How to write response_message — it is a short operational brief, never a paragraph wall:
 PART 1 — ONE short confirmation sentence covering what matters most. One sentence, not two or three.
-PART 2 — Short bullets in "Item → destination" form, each under ~8 words before the arrow:
-  • "Catering $4,200 (pre-staffing) → budget"
-  • "Confirm all-in AV cost by Friday → task"
-  • "Photography deposit due Friday → task"
-  • "Staffing included in quote? → question"
-  The destination after the arrow must be exactly one of: budget, task, vendor, timeline, decision, risk, question. No other destination words.
+PART 2 — Short labeled bullets using plain event-ops labels, not arrows:
+  • "Budget: Catering $4,200 before staffing"
+  • "Task: Confirm all-in AV cost by Friday"
+  • "Timing: Photography load-in at 3:00 PM"
+  • "Question: Is staffing included in the quote?"
+  Allowed labels: Task, Timing, Budget, Vendor, Decision, Risk, Question.
   HARD LIMIT: 6 bullets. If there are more changes, write the 5 most important and end with one bullet like "…plus 4 more smaller items".
 PART 3 — At most ONE brief heads-up line, only if something is genuinely time-sensitive or risky (e.g. "Heads up: that deposit deadline is 3 days out."). Omit it when nothing qualifies.
 
@@ -63,6 +63,7 @@ INTAKE REPLY — use this format INSTEAD of the brief above when you extracted n
 
 Tone rules for response_message:
 - Never say "budget_item", "timeline_item", "open_question" or other raw database nouns.
+- Never use user-facing arrow labels like "Dessert → decision" or "Serving utensils → question"; use "Decision:" and "Question:" labels instead.
 - Never say "I extracted N items" or "I found N updates." That's database talk.
 - Never group many bullets under one item; one bullet per plan change.
 - If notes are vague or missing key details, ask ONE specific follow-up question in place of the heads-up line.
@@ -73,7 +74,7 @@ Extraction rules:
 1. Only extract facts actually stated — never invent or assume details.
 2. If information is incomplete or ambiguous, create an open_question instead of guessing.
 3. One message can produce several items, but only when they are distinct real-world plan changes.
-4. Dates: ISO 8601 format (YYYY-MM-DD). Return null if no date specified.
+4. Dates and times: use ISO 8601 format. Use YYYY-MM-DD for date-only facts and YYYY-MM-DDTHH:mm:ss for time-specific facts when the date is known. Return null only if no date can be inferred.
 5. confidence: 0.0–1.0 representing how certain you are about this extraction.
 6. rationale: one short phrase explaining why you extracted this item.
 7. All status fields must exactly match the allowed enum values.
@@ -81,6 +82,7 @@ Extraction rules:
 9. CRITICAL — use conversation history: if earlier messages show you asked a follow-up question and the user is now answering it, extract the complete combined information now. Connect the dots across turns.
 10. CRITICAL — do not create duplicate suggestions for the same real-world item in one message.
 11. Prefer one consolidated suggestion over multiple overlapping suggestions for the same real-world item. This does not mean collapsing unrelated vendor, task, timeline, budget, decision, risk, or open-question items into one suggestion.
+11a. Timeline duplicate guard: if one actor/event/time window is described more than once, create one clearer timeline item rather than near-duplicates. Example: "IBM volunteers arrive 5:00–5:15 PM" and "IBM volunteers arrive closer to 5:00 PM for setup" should become one volunteer-arrival timing unless they are truly separate events.
 12. For vendors, create one vendor suggestion per vendor per message.
 13. For budget, create one budget item per real cost, budget cap, target, receipt, quote, deposit, or paid charge. A stated cap or target such as "$6,000 max" or "budget target is $2,500" is a budget item even if no vendor has been chosen.
 14. For tasks, create only tasks that require a human action. Do not create tasks that merely restate facts.
@@ -102,7 +104,7 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
     properties: {
       response_message: {
         type: 'string',
-        description: 'Glenn\'s natural reply as a seasoned event ops colleague — a short operational brief. Three parts: (1) ONE confirmation sentence; (2) short bullets in "Item → destination" form, max 6, e.g. "Catering $4,200 → budget"; (3) at most one heads-up line for anything time-sensitive, or omit. Never use database type names. Never say "on the right". Never start with "Got it!" or "Sure!". Sound like a real person.',
+        description: 'Glenn\'s natural reply as a seasoned event ops colleague — a short operational brief. Three parts: (1) ONE confirmation sentence; (2) short labeled bullets, max 6, using Task:, Timing:, Budget:, Vendor:, Decision:, Risk:, or Question:; (3) at most one heads-up line for anything time-sensitive, or omit. Never use arrows or database type names. Never say "on the right". Never start with "Got it!" or "Sure!". Sound like a real person.',
       },
       understood_summary: {
         type: 'array',
@@ -171,14 +173,14 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
       },
       timeline_items: {
         type: 'array',
-        description: 'Dates, deadlines, scheduling milestones',
+        description: 'Dates, deadlines, scheduling milestones, arrivals, deliveries, setup times, and other operational timing. When the event date is known and the note gives a time or range, use ISO datetime strings for starts_at and ends_at.',
         items: {
           type: 'object',
           properties: {
             title:       { type: 'string' },
             description: { type: ['string', 'null'] },
-            starts_at:   { type: ['string', 'null'], description: 'ISO 8601 date or null' },
-            ends_at:     { type: ['string', 'null'], description: 'ISO 8601 date or null' },
+            starts_at:   { type: ['string', 'null'], description: 'ISO 8601 date or datetime. For time ranges on a known event date, use the start time, e.g. 2026-06-10T17:00:00. Use null only when no date can be inferred.' },
+            ends_at:     { type: ['string', 'null'], description: 'ISO 8601 date or datetime. For time ranges on a known event date, use the end time, e.g. 2026-06-10T17:15:00. Use null for single-time facts or when no date can be inferred.' },
             type:        { type: 'string', enum: ['milestone', 'task', 'deadline', 'planning'] },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },

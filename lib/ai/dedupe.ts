@@ -66,6 +66,7 @@ function countNonNullFields(payload: ExtractedItem['payload']): number {
 // Vendor matching uses a stricter threshold — vendor names can be similar but distinct
 const JACCARD_THRESHOLD = 0.6
 const VENDOR_JACCARD_THRESHOLD = 0.75
+const TIMELINE_JACCARD_THRESHOLD = 0.55
 
 function isSimilarEnough(
   candidateTokens: Set<string>,
@@ -73,7 +74,11 @@ function isSimilarEnough(
   updateType: UpdateType,
 ): boolean {
   const threshold =
-    updateType === 'vendor' ? VENDOR_JACCARD_THRESHOLD : JACCARD_THRESHOLD
+    updateType === 'vendor'
+      ? VENDOR_JACCARD_THRESHOLD
+      : updateType === 'timeline_item'
+        ? TIMELINE_JACCARD_THRESHOLD
+        : JACCARD_THRESHOLD
   return jaccardSimilarity(candidateTokens, existingTokens) > threshold
 }
 
