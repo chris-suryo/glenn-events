@@ -5,6 +5,66 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+interface EventDateTimeFormatOptions {
+  weekday?: boolean
+  year?: boolean
+}
+
+export function formatEventDateTime(
+  dateStr: string | null,
+  options: EventDateTimeFormatOptions = {},
+): string | null {
+  if (!dateStr) return null
+
+  const parts = dateStr.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?/,
+  )
+
+  if (parts) {
+    const [, year, month, day, hour, minute, second = '0'] = parts
+    const date = new Date(Number(year), Number(month) - 1, Number(day))
+    const hasTime = !!hour && (hour !== '00' || minute !== '00' || second !== '00')
+    const dateLabel = date.toLocaleDateString('en-US', {
+      ...(options.weekday ? { weekday: 'short' as const } : {}),
+      month: 'short',
+      day: 'numeric',
+      ...(options.year !== false ? { year: 'numeric' as const } : {}),
+    })
+
+    if (!hasTime) return dateLabel
+
+    const wallClock = new Date(2000, 0, 1, Number(hour), Number(minute), Number(second))
+    const timeLabel = wallClock.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    return `${dateLabel} at ${timeLabel}`
+  }
+
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return null
+
+  const dateLabel = date.toLocaleDateString('en-US', {
+    ...(options.weekday ? { weekday: 'short' as const } : {}),
+    month: 'short',
+    day: 'numeric',
+    ...(options.year !== false ? { year: 'numeric' as const } : {}),
+  })
+
+  if (
+    date.getHours() === 0 &&
+    date.getMinutes() === 0 &&
+    date.getSeconds() === 0
+  ) {
+    return dateLabel
+  }
+
+  return `${dateLabel} at ${date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`
+}
+
 export function formatDistanceToNow(dateStr: string): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()

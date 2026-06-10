@@ -18,6 +18,7 @@ interface GlennInputProps {
   onGlennReply?: (text: string) => void
   /** Overrides the randomized placeholder, e.g. for empty-event onboarding. */
   placeholder?: string
+  variant?: 'default' | 'plain'
 }
 
 const PLACEHOLDERS = [
@@ -34,7 +35,14 @@ const CHIPS = [
   { label: 'Decision made',   prompt: 'Decision: ' },
 ]
 
-export function GlennInput({ eventId, onUserMessage, onPendingChange, onGlennReply, placeholder: placeholderOverride }: GlennInputProps) {
+export function GlennInput({
+  eventId,
+  onUserMessage,
+  onPendingChange,
+  onGlennReply,
+  placeholder: placeholderOverride,
+  variant = 'default',
+}: GlennInputProps) {
   const router = useRouter()
   const [text, setText] = useState('')
   const [isPending, startTransition] = useTransition()
@@ -101,6 +109,43 @@ export function GlennInput({ eventId, onUserMessage, onPendingChange, onGlennRep
   function handleChip(prompt: string) {
     setText(prompt)
     textareaRef.current?.focus()
+  }
+
+  if (variant === 'plain') {
+    return (
+      <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+        <form onSubmit={handleSubmit} className="p-3">
+          <Textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            className="min-h-[64px] resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
+            disabled={isPending}
+          />
+
+          <div className="mt-2 flex items-center justify-end">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!text.trim() || isPending}
+              suppressHydrationWarning
+              className="shrink-0 shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]"
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                'Tell Glenn'
+              )}
+            </Button>
+          </div>
+        </form>
+      </div>
+    )
   }
 
   return (

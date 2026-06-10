@@ -332,6 +332,8 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
               onUserMessage={handleUserMessage}
               onPendingChange={handlePendingChange}
               onGlennReply={handleGlennReply}
+              placeholder='What changed? Paste rough notes, emails, or updates for Glenn to review.'
+              variant="plain"
             />
           </div>
         </div>

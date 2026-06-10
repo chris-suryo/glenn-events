@@ -2,6 +2,7 @@ import Link from 'next/link'
 import type { Event, Task } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChevronRight } from 'lucide-react'
+import { formatEventDateTime } from '@/lib/utils'
 
 export interface CommandCenterBrief {
   openTaskCount: number
@@ -13,73 +14,33 @@ export interface CommandCenterBrief {
   pendingDecisionCount: number
 }
 
+export interface EventBriefRow {
+  label: 'Next' | 'Confirmed' | 'Needs attention' | 'Budget'
+  value: string
+  href?: string
+  tone?: 'attention' | 'neutral'
+}
+
 interface EventBriefPanelProps {
   event: Event
   commandCenterBrief?: CommandCenterBrief | null
   eventId?: string
-}
-
-function generateBrief(event: Event): string {
-  const parts: string[] = []
-
-  if (event.name) parts.push(`**${event.name}**`)
-  if (event.event_type) parts.push(`is a ${event.event_type}`)
-  if (event.event_date) {
-    const date = new Date(event.event_date)
-    const formatted = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    parts.push(`scheduled for ${formatted}`)
-  }
-  if (event.location) parts.push(`in ${event.location}`)
-  if (event.attendee_target) parts.push(`targeting ${event.attendee_target} attendees`)
-  if (event.budget_target) {
-    const budget = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(event.budget_target)
-    parts.push(`with a budget of ${budget}`)
-  }
-
-  if (parts.length === 0) return 'No event details yet. Tell Glenn what you know to get started.'
-
-  return parts.join(', ') + '.'
-}
-
-function formatCurrency(n: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  rows?: EventBriefRow[]
 }
 
 function buildIdentityLine(event: Event): string {
-  const parts: string[] = [event.name]
+  const parts: string[] = []
+  parts.push(event.event_type || event.name)
   if (event.event_date) {
-    const formatted = new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    parts.push(formatted)
+    const formatted = formatEventDateTime(event.event_date, { year: false })
+    if (formatted) parts.push(formatted)
   }
+  if (event.attendee_target) parts.push(`${event.attendee_target} guests`)
   if (event.location) parts.push(event.location)
-  if (event.attendee_target) parts.push(`~${event.attendee_target} attendees`)
   return parts.join(' · ')
 }
 
-function buildSummaryLine(brief: CommandCenterBrief): string | null {
-  const taskPart = brief.openTaskCount > 0
-    ? `${brief.openTaskCount} open task${brief.openTaskCount !== 1 ? 's' : ''}`
-    : null
-
-  const vendorPart = brief.vendorSummary.totalCount > 0
-    ? `${brief.vendorSummary.confirmedCount} of ${brief.vendorSummary.totalCount} vendor${brief.vendorSummary.totalCount !== 1 ? 's' : ''} confirmed`
-    : null
-
-  const pieces = [taskPart, vendorPart].filter(Boolean)
-  if (pieces.length === 0) return null
-  return `This event currently has ${pieces.join(', ')}.`
-}
-
-function buildBudgetLine(s: CommandCenterBrief['budgetSummary']): string {
-  if (s.estimated > 0 && s.target !== null) return `${formatCurrency(s.estimated)} of ${formatCurrency(s.target)} target`
-  if (s.estimated > 0) return formatCurrency(s.estimated)
-  if (s.unpricedCount > 0 && s.target !== null) return `$0 of ${formatCurrency(s.target)} · ${s.unpricedCount} unpriced`
-  if (s.unpricedCount > 0) return `$0 · ${s.unpricedCount} unpriced item${s.unpricedCount !== 1 ? 's' : ''}`
-  if (s.target !== null) return `$0 of ${formatCurrency(s.target)} target`
-  return '$0'
-}
-
-export function EventBriefPanel({ event, commandCenterBrief: brief, eventId }: EventBriefPanelProps) {
+export function EventBriefPanel({ event, commandCenterBrief: brief, eventId, rows = [] }: EventBriefPanelProps) {
   const hasPlanData = !!brief && (
     brief.openTaskCount > 0 ||
     brief.vendorSummary.totalCount > 0 ||
@@ -91,11 +52,8 @@ export function EventBriefPanel({ event, commandCenterBrief: brief, eventId }: E
     brief.pendingDecisionCount > 0
   )
 
-  const showBudgetRow = !!brief && (
-    brief.budgetSummary.estimated > 0 ||
-    brief.budgetSummary.target !== null ||
-    brief.budgetSummary.unpricedCount > 0
-  )
+  const identityLine = buildIdentityLine(event)
+  const showRows = rows.length > 0
 
   return (
     <Card className="border bg-primary/[0.03]">
@@ -105,35 +63,50 @@ export function EventBriefPanel({ event, commandCenterBrief: brief, eventId }: E
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {hasPlanData && brief ? (
+        {hasPlanData || showRows ? (
           <div className="flex flex-col gap-3">
             <p className="text-xs font-medium text-muted-foreground">
-              {buildIdentityLine(event)}
+              {identityLine}
             </p>
 
-            {buildSummaryLine(brief) && (
-              <p className="text-sm leading-relaxed text-foreground">
-                {buildSummaryLine(brief)}
-              </p>
-            )}
+            {showRows && (
+              <div className="divide-y rounded-lg border bg-background/60">
+                {rows.map((row) => {
+                  const content = (
+                    <div className="flex justify-between gap-4 px-3 py-2 text-xs">
+                      <span className="shrink-0 font-medium text-muted-foreground">{row.label}</span>
+                      <span className={`text-right font-medium ${row.tone === 'attention' ? 'text-amber-700' : 'text-foreground'}`}>
+                        {row.value}
+                      </span>
+                    </div>
+                  )
 
-            {showBudgetRow && (
-              <div className="flex flex-col gap-1 border-t pt-2">
-                <div className="flex justify-between gap-4 text-xs">
-                  <span className="text-muted-foreground shrink-0">Budget</span>
-                  <span className="font-medium text-right">{buildBudgetLine(brief.budgetSummary)}</span>
-                </div>
+                  return row.href ? (
+                    <Link key={row.label} href={row.href} className="block hover:bg-muted/30 transition-colors">
+                      {content}
+                    </Link>
+                  ) : (
+                    <div key={row.label}>{content}</div>
+                  )
+                })}
               </div>
             )}
+
+            {!showRows && eventId ? (
+              <Link
+                href={`/events/${eventId}/chat`}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5"
+              >
+                Add details in Ask Glenn
+                <ChevronRight className="h-3 w-3" />
+              </Link>
+            ) : null}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {generateBrief(event).split('**').map((part, i) =>
-                i % 2 === 1
-                  ? <strong key={i} className="text-foreground font-semibold">{part}</strong>
-                  : part
-              )}
+              <strong className="text-foreground font-semibold">{event.name}</strong>
+              {identityLine !== event.name ? ` · ${identityLine}` : ''}
             </p>
             {event.description && (
               <p className="text-sm text-muted-foreground leading-relaxed border-t pt-2">{event.description}</p>
@@ -143,14 +116,10 @@ export function EventBriefPanel({ event, commandCenterBrief: brief, eventId }: E
                 href={`/events/${eventId}/chat`}
                 className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5"
               >
-                Tell Glenn what changed to build your event brief.
+                Tell Glenn what you know
                 <ChevronRight className="h-3 w-3" />
               </Link>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Tell Glenn what changed to build your event brief.
-              </p>
-            )}
+            ) : null}
           </div>
         )}
       </CardContent>

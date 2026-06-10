@@ -25,8 +25,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
   Loader2,
   Pencil,
   Sparkles,
@@ -83,6 +81,26 @@ const TYPE_DESTINATION: Record<UpdateType, string> = {
   decision:      'Decisions',
   risk:          'Risks',
   open_question: 'Open Questions',
+}
+
+const TYPE_ACTION_LABEL: Record<UpdateType, string> = {
+  task:          'Add task',
+  vendor:        'Add vendor',
+  budget_item:   'Add budget',
+  timeline_item: 'Add timing',
+  decision:      'Add decision',
+  risk:          'Track risk',
+  open_question: 'Track question',
+}
+
+const TYPE_COUNT_LABEL: Record<UpdateType, string> = {
+  task:          'task',
+  vendor:        'vendor',
+  budget_item:   'budget',
+  timeline_item: 'timeline',
+  decision:      'decision',
+  risk:          'risk',
+  open_question: 'question',
 }
 
 const TYPE_PILL_CLASS: Record<UpdateType, string> = {
@@ -249,6 +267,18 @@ function buildReviewGroups(updates: ProposedUpdate[], aiRuns: AiRun[]): ReviewGr
       }
     })
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+function buildCategorySummary(updates: ProposedUpdate[]): string {
+  return UPDATE_GROUPS
+    .map((group) => {
+      const count = updates.filter((update) => update.update_type === group.type).length
+      if (count === 0) return null
+      const label = TYPE_COUNT_LABEL[group.type]
+      return `${count} ${label}${count === 1 ? '' : 's'}`
+    })
+    .filter((part): part is string => part !== null)
+    .join(' · ')
 }
 
 function SelectField<T extends string>({
@@ -532,29 +562,22 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
     <div className="flex flex-col gap-3 px-4 py-4">
       {reviewGroups.map((reviewGroup) => {
         const questionsOnly = reviewGroup.updates.every((update) => update.update_type === 'open_question')
+        const sourceSummary = reviewGroup.understoodSummary[0]
+        const categorySummary = buildCategorySummary(reviewGroup.updates)
         return (
         <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
           <div className="min-w-0">
             <p className="text-sm font-semibold leading-5">
-              {questionsOnly
-                ? `Found ${reviewGroup.updates.length} open question${reviewGroup.updates.length !== 1 ? 's' : ''} to track`
-                : `Found ${reviewGroup.updates.length} update${reviewGroup.updates.length !== 1 ? 's' : ''} in your note`}
+              {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''}
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {questionsOnly ? 'Track them in the plan, or dismiss' : 'Review and apply what looks right'}
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs font-semibold text-muted-foreground">From your update:</p>
-            <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
-              {reviewGroup.understoodSummary.slice(0, 4).map((summary) => (
-                <li key={summary} className="flex gap-2">
-                  <span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                  <span>{summary}</span>
-                </li>
-              ))}
-            </ul>
+            {categorySummary ? (
+              <p className="mt-0.5 text-xs font-medium text-muted-foreground">{categorySummary}</p>
+            ) : null}
+            {sourceSummary ? (
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                {sourceSummary}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -571,17 +594,8 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
 
               return (
                 <article key={update.id} className="rounded-lg border bg-card shadow-sm">
-                  <div className="flex items-center gap-2 p-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleSetValue(setExpandedIds, update.id)}
-                      aria-expanded={isExpanded}
-                      aria-label={isExpanded ? 'Hide details' : 'Show details'}
-                      className="flex min-w-0 flex-1 items-start gap-2 rounded-md py-0.5 text-left focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      {isExpanded
-                        ? <ChevronDown className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
-                        : <ChevronRight className="mt-1 size-3.5 shrink-0 text-muted-foreground" />}
+                  <div className="flex items-start gap-2 p-2">
+                    <div className="flex min-w-0 flex-1 items-start gap-2">
                       <Badge
                         variant="outline"
                         className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
@@ -593,8 +607,16 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
                         {detail ? (
                           <span className="block text-[11px] leading-4 text-muted-foreground">{detail}</span>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => toggleSetValue(setExpandedIds, update.id)}
+                          aria-expanded={isExpanded}
+                          className="mt-1 text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          {isExpanded ? 'Hide details' : 'Details/Edit'}
+                        </button>
                       </span>
-                    </button>
+                    </div>
                     <Button
                       size="sm"
                       className="shrink-0"
@@ -602,7 +624,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
                       onClick={() => handleSingle(update, 'approve')}
                     >
                       {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-                      Apply
+                      {TYPE_ACTION_LABEL[update.update_type]}
                     </Button>
                     <Button
                       size="icon-xs"

@@ -4,13 +4,13 @@ import { useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
-import { EventBriefPanel, type CommandCenterBrief } from './event-brief-panel'
+import { EventBriefPanel, type CommandCenterBrief, type EventBriefRow } from './event-brief-panel'
 import { ProposedUpdatesBadge } from './proposed-updates-badge'
-import { GlennInput } from './glenn-input'
 import { activityDot, activityLabel, timeAgo } from '@/lib/activity'
 import { Card, CardContent } from '@/components/ui/card'
+import { formatEventDateTime } from '@/lib/utils'
 import {
-  Activity, AlertTriangle, CheckCircle2,
+  Activity, AlertTriangle, CalendarDays, CheckCircle2,
   ChevronRight, DollarSign, HelpCircle, Sparkles, Trash2, Users,
 } from 'lucide-react'
 
@@ -23,6 +23,22 @@ const PENDING_TYPE_LABELS: Record<string, string> = {
   risk:          'risk',
   open_question: 'question',
 }
+
+const INTAKE_CHECKLIST = [
+  ['Event basics', 'date/time, location, guest count'],
+  ['Schedule', 'arrivals, setup, key moments, deadlines'],
+  ['Vendors', 'venue, catering, AV, photography, rentals'],
+  ['Budget', 'quotes, deposits, caps, unknown costs'],
+  ['Open items', 'decisions, risks, questions'],
+] as const
+
+const EXAMPLE_PROMPTS = [
+  'I only know the basics',
+  'Add vendors and costs',
+  'Build a run of show',
+  'Track open questions',
+  'Capture risks',
+] as const
 
 interface NeedsAttentionItem {
   id: string
@@ -350,6 +366,87 @@ export function CommandCenter({
     upcomingTimeline,
     pendingDecisions,
   )
+  const nextTimelineItem = upcomingTimeline[0]
+  const eventDateLabel = formatEventDateTime(event.event_date, { year: false })
+  const highRisk = openRisks.find((risk) => risk.severity === 'high')
+  const highPriorityTask = openTasks.find((task) => task.priority === 'high' || isOverdue(task.due_date))
+  const confirmedParts = [
+    confirmedVendors.length > 0 ? `${confirmedVendors.length} vendor${confirmedVendors.length !== 1 ? 's' : ''} confirmed` : null,
+    event.attendee_target ? `${event.attendee_target} guests` : null,
+    event.location,
+  ].filter((part): part is string => typeof part === 'string' && part.length > 0)
+  const budgetBriefValue = totalEstimated > 0 && event.budget_target !== null
+    ? `${formatCurrency(totalEstimated)} of ${formatCurrency(event.budget_target)}`
+    : totalEstimated > 0
+      ? formatCurrency(totalEstimated)
+      : event.budget_target !== null
+        ? `${formatCurrency(event.budget_target)} target`
+        : unpricedBudgetCount > 0
+          ? `${unpricedBudgetCount} unpriced item${unpricedBudgetCount !== 1 ? 's' : ''}`
+          : null
+
+  const eventBriefRows: EventBriefRow[] = []
+  if (nextTimelineItem) {
+    eventBriefRows.push({
+      label: 'Next',
+      value: `${nextTimelineItem.title}${nextTimelineItem.starts_at ? ` · ${shortDate(nextTimelineItem.starts_at)}` : ''}`,
+      href: `/events/${event.id}/plan?tab=timeline&highlight=${nextTimelineItem.id}`,
+    })
+  } else if (eventDateLabel) {
+    eventBriefRows.push({
+      label: 'Next',
+      value: `Event date · ${eventDateLabel}`,
+    })
+  }
+  if (confirmedParts.length > 0) {
+    eventBriefRows.push({
+      label: 'Confirmed',
+      value: confirmedParts.join(' · '),
+    })
+  }
+  if (pendingUpdates.length > 0) {
+    eventBriefRows.push({
+      label: 'Needs attention',
+      value: `${plural(pendingUpdates.length, 'update')} to review`,
+      href: `/events/${event.id}/chat`,
+      tone: 'attention',
+    })
+  } else if (highRisk) {
+    eventBriefRows.push({
+      label: 'Needs attention',
+      value: `${snippet(highRisk.title, 58) ?? highRisk.title} · high risk`,
+      href: `/events/${event.id}/plan?tab=risks&highlight=${highRisk.id}`,
+      tone: 'attention',
+    })
+  } else if (openQuestions.length > 0) {
+    eventBriefRows.push({
+      label: 'Needs attention',
+      value: snippet(openQuestions[0].question, 64) ?? openQuestions[0].question,
+      href: `/events/${event.id}/plan?tab=open-questions&highlight=${openQuestions[0].id}`,
+      tone: 'attention',
+    })
+  } else if (highPriorityTask) {
+    eventBriefRows.push({
+      label: 'Needs attention',
+      value: snippet(highPriorityTask.title, 64) ?? highPriorityTask.title,
+      href: `/events/${event.id}/plan?tab=tasks&highlight=${highPriorityTask.id}`,
+      tone: 'attention',
+    })
+  } else if (pendingDecisions.length > 0) {
+    eventBriefRows.push({
+      label: 'Needs attention',
+      value: `Decide: ${snippet(pendingDecisions[0].title, 54) ?? pendingDecisions[0].title}`,
+      href: `/events/${event.id}/plan?tab=decisions&highlight=${pendingDecisions[0].id}`,
+      tone: 'attention',
+    })
+  }
+  if (budgetBriefValue) {
+    eventBriefRows.push({
+      label: 'Budget',
+      value: budgetBriefValue,
+      href: `/events/${event.id}/plan?tab=budget`,
+    })
+  }
 
   function handleDeleteEvent() {
     if (!window.confirm(`Delete "${event.name}"? This cannot be undone — all tasks, vendors, budget, and chat history will be permanently removed.`)) return
@@ -368,9 +465,7 @@ export function CommandCenter({
           <div className="flex items-center gap-2.5 mt-1 flex-wrap">
             {event.event_date && (
               <span className="text-xs text-muted-foreground">
-                {new Date(event.event_date).toLocaleDateString('en-US', {
-                  weekday: 'short', month: 'long', day: 'numeric', year: 'numeric',
-                })}
+                {formatEventDateTime(event.event_date, { weekday: true })}
               </span>
             )}
             {event.location && (
@@ -407,110 +502,136 @@ export function CommandCenter({
       </div>
 
       <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-5xl mx-auto space-y-5">
+        {planIsEmpty ? (
+          <div className="max-w-4xl mx-auto space-y-5">
+            <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-1.5 text-primary">
+                    <Sparkles className="h-4 w-4" />
+                    <p className="text-xs font-semibold uppercase tracking-widest">Start here</p>
+                  </div>
+                  <h2 className="mt-2 text-xl font-semibold tracking-tight">Build the first plan update</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                    Command Center will become useful once Glenn has a few details to propose. Capture the messy notes in Ask Glenn, then review what should enter the plan.
+                  </p>
+                </div>
+              </div>
 
-          <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${statusClasses(readinessStatus.tone)}`}>
-            <CardContent className="py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 shrink-0">
-                    <StatusIcon tone={readinessStatus.tone} />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold leading-tight">{readinessStatus.title}</p>
-                    <p className="text-sm text-foreground/70 mt-0.5">{readinessStatus.detail}</p>
+              <Link
+                href={`/events/${event.id}/chat`}
+                className="mt-5 inline-flex items-center justify-center rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-primary/90"
+              >
+                Tell Glenn what you know
+                <ChevronRight className="ml-1.5 h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-5">
+              <div className="lg:col-span-3 rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Intake checklist</p>
+                </div>
+                <ul className="grid gap-2.5 sm:grid-cols-2">
+                  {INTAKE_CHECKLIST.map(([title, hint]) => (
+                    <li key={title} className="rounded-lg border bg-muted/20 px-3 py-2.5">
+                      <p className="text-sm font-medium leading-tight">{title}</p>
+                      <p className="mt-1 text-xs leading-snug text-muted-foreground">{hint}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="lg:col-span-2 space-y-4">
+                <div className="rounded-xl border bg-primary/[0.03] shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                  <div className="flex items-start gap-2">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <div>
+                      <p className="text-sm font-semibold">Review before save</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        Glenn proposes updates first. You approve what becomes part of the plan.
+                      </p>
+                    </div>
                   </div>
                 </div>
-                {readinessStatus.href ? (
-                  <Link
-                    href={readinessStatus.href}
-                    className="text-xs font-medium text-foreground/70 hover:text-foreground transition-colors inline-flex items-center gap-0.5 sm:shrink-0"
-                  >
-                    Open
-                    <ChevronRight className="h-3 w-3" />
-                  </Link>
-                ) : null}
+
+                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Example notes</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {EXAMPLE_PROMPTS.map((prompt) => (
+                      <span key={prompt} className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                        {prompt}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <EventBriefPanel
+                  event={event}
+                  commandCenterBrief={commandCenterBrief}
+                  eventId={event.id}
+                  rows={eventBriefRows}
+                />
               </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            {([
-              {
-                icon: CheckCircle2, label: 'Open tasks',
-                value: openTasks.length,
-                href: `/events/${event.id}/plan?tab=tasks`,
-                alert: false,
-              },
-              {
-                icon: Users, label: 'Vendors',
-                value: `${confirmedVendors.length}/${vendors.length}`,
-                href: `/events/${event.id}/plan?tab=vendors`,
-                alert: false,
-              },
-              {
-                icon: DollarSign, label: 'Est. budget',
-                value: budgetTileValue,
-                href: `/events/${event.id}/plan?tab=budget`,
-                alert: false,
-                small: unpricedBudgetCount > 0 && totalEstimated === 0,
-              },
-              {
-                icon: AlertTriangle, label: 'Open risks',
-                value: openRisks.length,
-                href: `/events/${event.id}/plan?tab=risks`,
-                alert: openRisks.length > 0,
-              },
-              {
-                icon: HelpCircle, label: 'Questions',
-                value: openQuestions.length,
-                href: `/events/${event.id}/plan?tab=open-questions`,
-                alert: false,
-              },
-            ] as const).map(({ icon: Icon, label, value, href, alert, ...rest }) => (
-              <Link key={label} href={href}>
-                <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] hover:border-primary/30 transition-colors
-                  ${alert ? 'border-rose-200 bg-rose-50/40' : ''}`}>
-                  <CardContent className="pt-4 pb-3.5">
-                    <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
-                      <Icon className={`h-3 w-3 ${alert ? 'text-rose-500' : ''}`} />
-                      <span className="text-xs font-medium">{label}</span>
-                    </div>
-                    <p className={`font-semibold tracking-tight ${alert ? 'text-rose-600' : ''} ${'small' in rest && rest.small ? 'text-sm leading-snug' : 'text-xl'}`}>
-                      {value}
-                    </p>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+            </div>
           </div>
+        ) : (
+          <div className="max-w-5xl mx-auto space-y-5">
+            <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${statusClasses(readinessStatus.tone)}`}>
+              <CardContent className="py-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 shrink-0">
+                      <StatusIcon tone={readinessStatus.tone} />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold leading-tight">{readinessStatus.title}</p>
+                      <p className="text-sm text-foreground/70 mt-0.5">{readinessStatus.detail}</p>
+                    </div>
+                  </div>
+                  {readinessStatus.href ? (
+                    <Link
+                      href={readinessStatus.href}
+                      className="text-xs font-medium text-foreground/70 hover:text-foreground transition-colors inline-flex items-center gap-0.5 sm:shrink-0"
+                    >
+                      Open
+                      <ChevronRight className="h-3 w-3" />
+                    </Link>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+              <div className="lg:col-span-2 space-y-4">
+                <EventBriefPanel
+                  event={event}
+                  commandCenterBrief={commandCenterBrief}
+                  eventId={event.id}
+                  rows={eventBriefRows}
+                />
 
-            <div className="lg:col-span-2 space-y-4 lg:order-first">
-              <EventBriefPanel
-                event={event}
-                commandCenterBrief={commandCenterBrief}
-                eventId={event.id}
-              />
-
-              {recentActivity.length > 0 && (
                 <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
                   <div className="flex items-center gap-1.5 mb-3">
                     <Activity className="h-3.5 w-3.5 text-muted-foreground" />
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recent</p>
                   </div>
-                  <div className="space-y-2.5">
-                    {recentActivity.slice(0, 5).map((entry) => (
-                      <div key={entry.id} className="flex items-start gap-2">
-                        <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${activityDot(entry.action)}`} />
-                        <span className="text-xs text-muted-foreground flex-1 leading-snug min-w-0">
-                          {activityLabel(entry)}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground/60 shrink-0">{timeAgo(entry.created_at)}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {recentActivity.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {recentActivity.slice(0, 5).map((entry) => (
+                        <div key={entry.id} className="flex items-start gap-2">
+                          <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${activityDot(entry.action)}`} />
+                          <span className="text-xs text-muted-foreground flex-1 leading-snug min-w-0">
+                            {activityLabel(entry)}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground/60 shrink-0">{timeAgo(entry.created_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs leading-relaxed text-muted-foreground">No recent review activity yet.</p>
+                  )}
                   <Link
                     href={`/events/${event.id}/activity`}
                     className="text-xs text-muted-foreground hover:text-foreground mt-3 inline-block transition-colors"
@@ -518,92 +639,139 @@ export function CommandCenter({
                     View all activity →
                   </Link>
                 </div>
-              )}
-            </div>
-
-            <div className="lg:col-span-3 space-y-4">
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    {planIsEmpty ? 'Tell Glenn what you know' : 'Tell Glenn what changed'}
-                  </p>
-                </div>
-                <GlennInput
-                  eventId={event.id}
-                  placeholder={planIsEmpty
-                    ? 'New event? Start with whatever you know — vendor, times, costs, what\'s still TBD.'
-                    : undefined}
-                />
               </div>
 
-              <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
-                <div className="flex items-center gap-1.5 mb-3">
-                  <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    {planIsEmpty ? 'What to tell Glenn first' : 'Next best actions'}
-                  </p>
-                </div>
-                {planIsEmpty ? (
-                  <ul className="space-y-2.5">
-                    {([
-                      ['Food & vendors', 'who\'s providing it, and when do they arrive?'],
-                      ['Costs', 'quotes, receipts, or a budget cap to track'],
-                      ['Schedule', 'who\'s arriving when?'],
-                      ['Still open', 'what\'s undecided or unknown?'],
-                    ] as const).map(([title, hint]) => (
-                      <li key={title} className="flex items-start gap-2">
-                        <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
-                        <p className="text-xs leading-snug">
-                          <span className="font-medium text-foreground">{title}</span>
-                          <span className="text-muted-foreground"> — {hint}</span>
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : nextBestActions.length > 0 ? (
-                  <div className="space-y-2">
-                    {nextBestActions.map((item) => (
-                      <Link
-                        key={item.id}
-                        href={item.href}
-                        className="group block rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/30 transition-colors"
-                      >
-                        <div className="flex items-start gap-2">
-                          <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${actionBadgeClasses(item.tone)}`}>
-                                {item.badge}
-                              </span>
-                              <span className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">
-                                {item.title}
-                              </span>
-                            </div>
-                            {item.context ? (
-                              <p className="text-xs text-muted-foreground mt-1 leading-snug line-clamp-2">
-                                {item.context}
+              <div className="lg:col-span-3 space-y-4">
+                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Run of show</p>
+                  </div>
+                  {upcomingTimeline.length > 0 ? (
+                    <div className="space-y-2">
+                      {upcomingTimeline.slice(0, 4).map((item) => (
+                        <Link
+                          key={item.id}
+                          href={`/events/${event.id}/plan?tab=timeline&highlight=${item.id}`}
+                          className="group block rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/30 transition-colors"
+                        >
+                          <div className="flex items-start gap-2">
+                            <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">{item.title}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {item.starts_at ? shortDate(item.starts_at) : snippet(item.description) ?? 'Timing TBD'}
                               </p>
-                            ) : null}
+                            </div>
                           </div>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-lg bg-muted/30 px-3 py-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      <p className="text-xs text-muted-foreground">No urgent actions. Keep the plan current as details change.</p>
+                        </Link>
+                      ))}
                     </div>
+                  ) : (
+                    <div className="rounded-lg bg-muted/30 px-3 py-3">
+                      <p className="text-xs text-muted-foreground">No upcoming timeline items yet. Add schedule notes in Ask Glenn.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Next best actions</p>
                   </div>
-                )}
+                  {nextBestActions.length > 0 ? (
+                    <div className="space-y-2">
+                      {nextBestActions.map((item) => (
+                        <Link
+                          key={item.id}
+                          href={item.href}
+                          className="group block rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/30 transition-colors"
+                        >
+                          <div className="flex items-start gap-2">
+                            <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${actionBadgeClasses(item.tone)}`}>
+                                  {item.badge}
+                                </span>
+                                <span className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">
+                                  {item.title}
+                                </span>
+                              </div>
+                              {item.context ? (
+                                <p className="text-xs text-muted-foreground mt-1 leading-snug line-clamp-2">
+                                  {item.context}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-muted/30 px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                        <p className="text-xs text-muted-foreground">No urgent actions. Keep the plan current as details change.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {([
+                {
+                  icon: CheckCircle2, label: 'Open tasks',
+                  value: openTasks.length,
+                  href: `/events/${event.id}/plan?tab=tasks`,
+                  alert: false,
+                },
+                {
+                  icon: Users, label: 'Vendors',
+                  value: `${confirmedVendors.length}/${vendors.length}`,
+                  href: `/events/${event.id}/plan?tab=vendors`,
+                  alert: false,
+                },
+                {
+                  icon: DollarSign, label: 'Est. budget',
+                  value: budgetTileValue,
+                  href: `/events/${event.id}/plan?tab=budget`,
+                  alert: false,
+                  small: unpricedBudgetCount > 0 && totalEstimated === 0,
+                },
+                {
+                  icon: AlertTriangle, label: 'Open risks',
+                  value: openRisks.length,
+                  href: `/events/${event.id}/plan?tab=risks`,
+                  alert: openRisks.length > 0,
+                },
+                {
+                  icon: HelpCircle, label: 'Questions',
+                  value: openQuestions.length,
+                  href: `/events/${event.id}/plan?tab=open-questions`,
+                  alert: false,
+                },
+              ] as const).map(({ icon: Icon, label, value, href, alert, ...rest }) => (
+                <Link key={label} href={href}>
+                  <Card className={`h-full border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] hover:border-primary/30 transition-colors
+                    ${alert ? 'border-rose-200 bg-rose-50/40' : ''}`}>
+                    <CardContent className="pt-4 pb-3.5">
+                      <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
+                        <Icon className={`h-3 w-3 ${alert ? 'text-rose-500' : ''}`} />
+                        <span className="text-xs font-medium">{label}</span>
+                      </div>
+                      <p className={`font-semibold tracking-tight ${alert ? 'text-rose-600' : ''} ${'small' in rest && rest.small ? 'text-sm leading-snug' : 'text-xl'}`}>
+                        {value}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
           </div>
-
-        </div>
+        )}
       </div>
 
     </div>
