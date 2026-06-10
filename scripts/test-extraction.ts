@@ -18,6 +18,8 @@ interface Scenario {
   text: string
   minCount: number
   requiredTypes: UpdateType[]
+  maxCount?: number
+  forbiddenTypes?: UpdateType[]
 }
 
 type ScenarioStatus = 'PASS' | 'WARN' | 'FAIL'
@@ -64,6 +66,20 @@ const SCENARIOS: Scenario[] = [
     text: 'Booth update: shipping deadline is Aug 12. We need to send the backdrop, tablecloth, badge scanner, and 300 one-pagers. Freeman is handling booth services, and the electrical order is estimated at $675. Sarah is checking if we can get a monitor rental instead of bringing our own. Setup window is 2-6 PM the day before the show.',
     minCount: 7,
     requiredTypes: ['vendor', 'budget_item', 'task', 'timeline_item'],
+  },
+  {
+    name: 'Vague intake ask (no concrete facts)',
+    text: 'I have the Hope Lodge Dinner tonight, I have a number of things I need to note including catering, expenses, etc. Can you help me get organized with it?',
+    minCount: 0,
+    requiredTypes: [],
+    maxCount: 0,
+  },
+  {
+    name: 'Mixed intake with one concrete fact',
+    text: 'Can you help me get organized for the team dinner? All I know so far is Chilacates is doing the food.',
+    minCount: 1,
+    requiredTypes: ['vendor'],
+    maxCount: 3,
   },
 ]
 
@@ -164,8 +180,16 @@ function evaluateScenario(
   const reasons: string[] = []
   const warnings: string[] = []
 
-  if (items.length <= 2) {
+  // Intake-style scenarios with a maxCount expect few/zero items — skip the collapse check
+  if (scenario.maxCount === undefined && items.length <= 2) {
     reasons.push('collapsed_to_1_or_2_items')
+  }
+  if (scenario.maxCount !== undefined && items.length > scenario.maxCount) {
+    reasons.push(`above_maximum=${items.length}/${scenario.maxCount}`)
+  }
+  const forbiddenFound = (scenario.forbiddenTypes ?? []).filter((type) => counts[type] > 0)
+  if (forbiddenFound.length > 0) {
+    reasons.push(`forbidden_types=${forbiddenFound.join(',')}`)
   }
   if (missingTypes.length > 0) {
     reasons.push(`missing_required_types=${missingTypes.join(',')}`)

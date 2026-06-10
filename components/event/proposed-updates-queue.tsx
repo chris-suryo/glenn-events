@@ -530,14 +530,18 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
-      {reviewGroups.map((reviewGroup) => (
+      {reviewGroups.map((reviewGroup) => {
+        const questionsOnly = reviewGroup.updates.every((update) => update.update_type === 'open_question')
+        return (
         <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
           <div className="min-w-0">
             <p className="text-sm font-semibold leading-5">
-              Found {reviewGroup.updates.length} update{reviewGroup.updates.length !== 1 ? 's' : ''} in your note
+              {questionsOnly
+                ? `Found ${reviewGroup.updates.length} open question${reviewGroup.updates.length !== 1 ? 's' : ''} to track`
+                : `Found ${reviewGroup.updates.length} update${reviewGroup.updates.length !== 1 ? 's' : ''} in your note`}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Review and apply what looks right
+              {questionsOnly ? 'Track them in the plan, or dismiss' : 'Review and apply what looks right'}
             </p>
           </div>
 
@@ -686,7 +690,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
               className="w-full"
             >
               {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-              Apply all ({reviewGroup.updates.length})
+              {questionsOnly ? `Track all (${reviewGroup.updates.length})` : `Apply all (${reviewGroup.updates.length})`}
             </Button>
             <Button
               size="sm"
@@ -700,7 +704,8 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
             </Button>
           </div>
         </section>
-      ))}
+        )
+      })}
     </div>
   )
 }

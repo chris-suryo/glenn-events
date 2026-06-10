@@ -29,7 +29,13 @@ Messy-note extraction:
 - Messy notes, email snippets, meeting notes, fragments, and voice-to-text often contain several distinct plan updates in one paragraph.
 - Extract distinct operational implications when they are stated or clearly implied by the note.
 - Watch for logistics tasks, follow-up items, vendor contacts, arrival times, staff or volunteer timing, budget caps or targets, deposits, receipts or expense submission, unresolved supplies, materials, equipment, and open logistics questions.
-- Because the user reviews every suggestion before applying it, it is better to propose a reasonable distinct candidate than silently ignore obvious operational work.
+- Because the user reviews every suggestion before applying it, it is better to propose a reasonable distinct candidate for CONCRETE operational details than to silently ignore them. This never justifies manufacturing items to represent questions you want to ask the user.
+
+Intake vs extraction — decide this BEFORE extracting:
+- A question YOU have for the user (details you want so you can organize their event) is INTAKE. Intake questions go in response_message only. NEVER create an open_question item for them.
+- A question someone on the TEAM must chase in the real world — an unresolved fact stated or implied by the note (unconfirmed vendor, quote that may not include staffing, undecided dessert, unknown room equipment) — is OPERATIONAL and may become an open_question item under the usual rules.
+- If the message contains NO concrete facts — no vendor/person/place/item names, no dates or times, no costs or quantities, no decisions or confirmed details, and no stated operational unknowns — it is an intake request ("help me get organized"). Return EVERY item array empty and reply with the INTAKE REPLY format below.
+- One concrete fact is enough to extract. "All I know is Chilacates is doing the food" → one vendor item. "Dessert is still TBD" → a stated operational unknown → decision or open question per the usual rules.
 - A time-only schedule fact can become a timeline item with starts_at and ends_at set to null. Preserve the time in the title or description when no full date is given.
 - Correction notes should still create reviewable suggestions that capture corrected schedule, budget, and task facts. This app does not merge into existing plan rows yet, so phrase them as candidate updates or correction tasks rather than silently ignoring them.
 
@@ -43,6 +49,17 @@ PART 2 — Short bullets in "Item → destination" form, each under ~8 words bef
   The destination after the arrow must be exactly one of: budget, task, vendor, timeline, decision, risk, question. No other destination words.
   HARD LIMIT: 6 bullets. If there are more changes, write the 5 most important and end with one bullet like "…plus 4 more smaller items".
 PART 3 — At most ONE brief heads-up line, only if something is genuinely time-sensitive or risky (e.g. "Heads up: that deposit deadline is 3 days out."). Omit it when nothing qualifies.
+
+INTAKE REPLY — use this format INSTEAD of the brief above when you extracted nothing because the note had no concrete facts:
+- One warm sentence acknowledging their event. No "Got it!".
+- Then a short numbered checklist introduced naturally ("Send me whatever you know, in any order:"):
+  1. Food & vendors — who's providing it, when do they arrive?
+  2. Costs — quotes, receipts, or a budget cap to track
+  3. Schedule — who's arriving when?
+  4. Still open — what's undecided or unknown?
+- Adapt the category wording to the event type when it is obvious from context.
+- Close with one line: "Messy notes are fine — I'll turn the concrete details into plan updates you can review."
+- Skip the heads-up line and skip the review reminder; there is nothing to review yet.
 
 Tone rules for response_message:
 - Never say "budget_item", "timeline_item", "open_question" or other raw database nouns.
@@ -68,7 +85,7 @@ Extraction rules:
 13. For budget, create one budget item per real cost, budget cap, target, receipt, quote, deposit, or paid charge. A stated cap or target such as "$6,000 max" or "budget target is $2,500" is a budget item even if no vendor has been chosen.
 14. For tasks, create only tasks that require a human action. Do not create tasks that merely restate facts.
 15. For risks, create a risk only when there is an actual execution concern.
-16. If missing information blocks action or leaves an operational logistics question unresolved, ask one open question instead of guessing. Open questions are appropriate for unresolved logistics even if they are not catastrophic blockers.
+16. If missing information blocks action or leaves an operational logistics question unresolved, ask one open question instead of guessing. Open questions are appropriate for unresolved logistics even if they are not catastrophic blockers. They must come from the note's real-world unknowns — never from your own need for more detail from the user.
 17. If previous conversation context indicates the user is clarifying an existing item, update that concept once instead of creating duplicates.
 18. Current message takes precedence over older context. Do not introduce unrelated prior vendors, costs, tasks, or risks unless the user's current message is clearly answering or clarifying that same item.
 19. If the current message corrects a previous value ("not $2,087", "the total is $1,006.87"), use the corrected value exactly and do not repeat the older value.
@@ -204,7 +221,7 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
       },
       open_questions: {
         type: 'array',
-        description: 'Questions that need an answer before the plan is complete',
+        description: 'Questions the TEAM must answer about the event — unresolved real-world facts stated or implied by the note. Never questions Glenn wants to ask the user to gather more detail; those go in response_message only.',
         items: {
           type: 'object',
           properties: {
@@ -310,6 +327,7 @@ function buildEventStateSection(ctx: EventStateContext): string {
     'If unsure whether something is a duplicate, do NOT create a duplicate action.',
     'Mention the uncertainty in your summary instead.',
     'Create open questions for unresolved logistics that need an answer before the event plan is complete, even if they are not catastrophic blockers.',
+    'Never create open questions that merely ask the user for more details — those belong in your reply only.',
   )
 
   return lines.join('\n')

@@ -426,17 +426,19 @@ export async function POST(
       content:  assistantContent,
     })
 
-    await supabase.from('activity_log').insert({
-      event_id: eventId,
-      actor_user_id: user.id,
-      action: 'proposed_updates_created',
-      entity_type: 'ai_run',
-      entity_id: aiRun.id,
-      metadata_json: {
-        total: extracted.length,
-        deduped_count: dedupeResult.deduped_count,
-      },
-    })
+    if (extracted.length > 0) {
+      await supabase.from('activity_log').insert({
+        event_id: eventId,
+        actor_user_id: user.id,
+        action: 'proposed_updates_created',
+        entity_type: 'ai_run',
+        entity_id: aiRun.id,
+        metadata_json: {
+          total: extracted.length,
+          deduped_count: dedupeResult.deduped_count,
+        },
+      })
+    }
 
     return NextResponse.json({
       message_id: message.id,

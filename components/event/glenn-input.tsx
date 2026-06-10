@@ -16,6 +16,8 @@ interface GlennInputProps {
   /** Called with Glenn's reply text when the API responds successfully.
    *  When provided, the caller owns router.refresh(); GlennInput won't call it. */
   onGlennReply?: (text: string) => void
+  /** Overrides the randomized placeholder, e.g. for empty-event onboarding. */
+  placeholder?: string
 }
 
 const PLACEHOLDERS = [
@@ -32,17 +34,18 @@ const CHIPS = [
   { label: 'Decision made',   prompt: 'Decision: ' },
 ]
 
-export function GlennInput({ eventId, onUserMessage, onPendingChange, onGlennReply }: GlennInputProps) {
+export function GlennInput({ eventId, onUserMessage, onPendingChange, onGlennReply, placeholder: placeholderOverride }: GlennInputProps) {
   const router = useRouter()
   const [text, setText] = useState('')
   const [isPending, startTransition] = useTransition()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [placeholder, setPlaceholder] = useState(PLACEHOLDERS[0])
+  const [randomPlaceholder, setRandomPlaceholder] = useState(PLACEHOLDERS[0])
   useEffect(() => {
     // Intentional post-hydration randomization — avoids server/client mismatch
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPlaceholder(PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)])
+    setRandomPlaceholder(PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)])
   }, [])
+  const placeholder = placeholderOverride ?? randomPlaceholder
 
   async function submit() {
     if (!text.trim() || isPending) return

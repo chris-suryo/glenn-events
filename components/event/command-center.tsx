@@ -34,9 +34,9 @@ interface NeedsAttentionItem {
 }
 
 interface ReadinessStatus {
-  title: 'Review pending' | 'Needs attention' | 'On track'
+  title: 'Review pending' | 'Needs attention' | 'On track' | 'Getting started'
   detail: string
-  tone: 'review' | 'attention' | 'track'
+  tone: 'review' | 'attention' | 'track' | 'empty'
   href: string | null
 }
 
@@ -86,6 +86,7 @@ function buildReadinessStatus(
   openTasks: Task[],
   openQuestions: OpenQuestion[],
   pendingDecisions: Decision[],
+  planIsEmpty: boolean,
 ): ReadinessStatus {
   if (pendingUpdates.length > 0) {
     return {
@@ -93,6 +94,15 @@ function buildReadinessStatus(
       detail: `${plural(pendingUpdates.length, 'update')} ${pendingUpdates.length === 1 ? 'is' : 'are'} waiting for your review`,
       tone: 'review',
       href: `/events/${eventId}/chat`,
+    }
+  }
+
+  if (planIsEmpty) {
+    return {
+      title: 'Getting started',
+      detail: 'Tell Glenn what you know — it proposes plan updates you review before anything is saved',
+      tone: 'empty',
+      href: null,
     }
   }
 
@@ -262,12 +272,14 @@ function actionBadgeClasses(tone: NeedsAttentionItem['tone']) {
 
 function statusClasses(tone: ReadinessStatus['tone']) {
   if (tone === 'review') return 'border-indigo-200 bg-indigo-50/50 text-indigo-700'
+  if (tone === 'empty') return 'border-indigo-200 bg-indigo-50/50 text-indigo-700'
   if (tone === 'attention') return 'border-amber-200 bg-amber-50/60 text-amber-700'
   return 'border-emerald-200 bg-emerald-50/50 text-emerald-700'
 }
 
 function StatusIcon({ tone }: { tone: ReadinessStatus['tone'] }) {
   if (tone === 'track') return <CheckCircle2 className="h-4 w-4" />
+  if (tone === 'empty') return <Sparkles className="h-4 w-4" />
   return <AlertTriangle className="h-4 w-4" />
 }
 
@@ -310,6 +322,16 @@ export function CommandCenter({
       ? `$0 · ${unpricedBudgetCount} unpriced item${unpricedBudgetCount !== 1 ? 's' : ''}`
       : formatCurrency(0)
 
+  const planIsEmpty =
+    openTasks.length === 0 &&
+    vendors.length === 0 &&
+    budgetItems.length === 0 &&
+    openRisks.length === 0 &&
+    openQuestions.length === 0 &&
+    pendingDecisions.length === 0 &&
+    upcomingTimeline.length === 0 &&
+    pendingUpdates.length === 0
+
   const readinessStatus = buildReadinessStatus(
     event.id,
     pendingUpdates,
@@ -317,6 +339,7 @@ export function CommandCenter({
     openTasks,
     openQuestions,
     pendingDecisions,
+    planIsEmpty,
   )
   const nextBestActions = buildNextBestActions(
     event.id,
@@ -502,17 +525,43 @@ export function CommandCenter({
               <div>
                 <div className="flex items-center gap-1.5 mb-2">
                   <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tell Glenn what changed</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {planIsEmpty ? 'Tell Glenn what you know' : 'Tell Glenn what changed'}
+                  </p>
                 </div>
-                <GlennInput eventId={event.id} />
+                <GlennInput
+                  eventId={event.id}
+                  placeholder={planIsEmpty
+                    ? 'New event? Start with whatever you know — vendor, times, costs, what\'s still TBD.'
+                    : undefined}
+                />
               </div>
 
               <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
                 <div className="flex items-center gap-1.5 mb-3">
                   <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Next best actions</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {planIsEmpty ? 'What to tell Glenn first' : 'Next best actions'}
+                  </p>
                 </div>
-                {nextBestActions.length > 0 ? (
+                {planIsEmpty ? (
+                  <ul className="space-y-2.5">
+                    {([
+                      ['Food & vendors', 'who\'s providing it, and when do they arrive?'],
+                      ['Costs', 'quotes, receipts, or a budget cap to track'],
+                      ['Schedule', 'who\'s arriving when?'],
+                      ['Still open', 'what\'s undecided or unknown?'],
+                    ] as const).map(([title, hint]) => (
+                      <li key={title} className="flex items-start gap-2">
+                        <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                        <p className="text-xs leading-snug">
+                          <span className="font-medium text-foreground">{title}</span>
+                          <span className="text-muted-foreground"> — {hint}</span>
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : nextBestActions.length > 0 ? (
                   <div className="space-y-2">
                     {nextBestActions.map((item) => (
                       <Link
