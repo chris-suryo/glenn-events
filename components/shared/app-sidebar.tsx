@@ -106,13 +106,13 @@ function EventNav({ eventId }: { eventId: string }) {
   )
 }
 
-export function AppSidebar() {
+export function AppSidebar({ className }: { className?: string }) {
   const pathname = usePathname()
   const match = pathname.match(/^\/events\/([^/]+)/)
   const currentEventId = match?.[1]
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r bg-sidebar px-3 py-5 shrink-0">
+    <aside className={cn('flex h-full w-56 flex-col border-r bg-sidebar px-3 py-5 shrink-0', className)}>
       <div className="mb-6 px-1">
         <GlennLogo size="sm" />
       </div>

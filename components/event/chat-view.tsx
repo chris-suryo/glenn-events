@@ -90,6 +90,7 @@ const STREAM_WORD_DELAY_MS = 30
 export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMessageId = null }: ChatViewProps) {
   const router = useRouter()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const reviewPanelRef = useRef<HTMLDivElement>(null)
   const prevMessageCountRef = useRef(messages.length)
 
   // Source-traceability highlight — when arriving via an "AI source" badge link
@@ -313,6 +314,17 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
             </div>
           </div>
 
+          {/* Mobile-only jump to the review panel stacked below the thread */}
+          {pendingUpdates.length > 0 && (
+            <button
+              type="button"
+              onClick={() => reviewPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="lg:hidden flex items-center justify-center gap-1 border-t bg-primary/[0.04] py-2 text-xs font-medium text-primary"
+            >
+              {pendingUpdates.length} to review ↓
+            </button>
+          )}
+
           {/* Input pinned at bottom */}
           <div className="border-t px-6 py-4 shrink-0">
             <GlennInput
@@ -324,8 +336,8 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
           </div>
         </div>
 
-        {/* ── Right: Glenn's suggestions ────────────────────────────────────── */}
-        <div className="w-full lg:w-96 flex flex-col shrink-0">
+        {/* ── Right: review panel (stacks below the thread on mobile) ───────── */}
+        <div ref={reviewPanelRef} className="w-full lg:w-96 flex flex-col shrink-0 max-h-[45dvh] lg:max-h-none border-t lg:border-t-0">
           <div className="px-6 py-3 border-b shrink-0">
             <h3 className="text-sm font-semibold">
               Review

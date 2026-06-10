@@ -281,8 +281,8 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                       </p>
                     </div>
                   </div>
-                  <div className="rounded-lg border overflow-hidden shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
-                    <table className="w-full text-sm">
+                  <div className="rounded-lg border overflow-x-auto shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
+                    <table className="w-full min-w-[540px] text-sm">
                       <thead>
                         <tr className="border-b bg-muted/40">
                           <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Item</th>

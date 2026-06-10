@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { LogOut } from 'lucide-react'
+import { MobileSidebar } from './mobile-sidebar'
 
 interface AppHeaderProps {
   userEmail?: string | null
@@ -32,12 +33,13 @@ export function AppHeader({ userEmail, title }: AppHeaderProps) {
     : 'GE'
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-background px-6 shrink-0">
-      {title ? (
-        <h1 className="text-sm font-semibold text-foreground">{title}</h1>
-      ) : (
-        <div />
-      )}
+    <header className="flex h-14 items-center justify-between border-b bg-background px-4 lg:px-6 shrink-0">
+      <div className="flex items-center gap-3">
+        <MobileSidebar />
+        {title ? (
+          <h1 className="text-sm font-semibold text-foreground">{title}</h1>
+        ) : null}
+      </div>
 
       <DropdownMenu>
         <DropdownMenuTrigger className="flex items-center gap-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

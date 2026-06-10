@@ -17,7 +17,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <AppSidebar />
+      <AppSidebar className="hidden lg:flex" />
       <div className="flex flex-1 flex-col overflow-hidden">
         <AppHeader userEmail={user.email} />
         <main className="flex-1 overflow-hidden bg-background">{children}</main>
