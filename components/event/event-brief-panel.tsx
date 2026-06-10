@@ -16,7 +16,6 @@ export interface CommandCenterBrief {
 interface EventBriefPanelProps {
   event: Event
   commandCenterBrief?: CommandCenterBrief | null
-  pendingSuggestionsCount?: number
   eventId?: string
 }
 
@@ -44,12 +43,6 @@ function generateBrief(event: Event): string {
 
 function formatCurrency(n: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
-
-function priorityDot(priority: Task['priority']): string {
-  if (priority === 'high') return 'bg-rose-500'
-  if (priority === 'medium') return 'bg-amber-400'
-  return 'bg-slate-300'
 }
 
 function buildIdentityLine(event: Event): string {
@@ -86,15 +79,7 @@ function buildBudgetLine(s: CommandCenterBrief['budgetSummary']): string {
   return '$0'
 }
 
-function buildAttentionLine(brief: CommandCenterBrief): string {
-  const parts: string[] = []
-  if (brief.openRiskCount > 0) parts.push(`${brief.openRiskCount} risk${brief.openRiskCount !== 1 ? 's' : ''}`)
-  if (brief.openQuestionCount > 0) parts.push(`${brief.openQuestionCount} question${brief.openQuestionCount !== 1 ? 's' : ''}`)
-  if (brief.pendingDecisionCount > 0) parts.push(`${brief.pendingDecisionCount} decision${brief.pendingDecisionCount !== 1 ? 's' : ''}`)
-  return parts.join(', ')
-}
-
-export function EventBriefPanel({ event, commandCenterBrief: brief, pendingSuggestionsCount = 0, eventId }: EventBriefPanelProps) {
+export function EventBriefPanel({ event, commandCenterBrief: brief, eventId }: EventBriefPanelProps) {
   const hasPlanData = !!brief && (
     brief.openTaskCount > 0 ||
     brief.vendorSummary.totalCount > 0 ||
@@ -110,12 +95,6 @@ export function EventBriefPanel({ event, commandCenterBrief: brief, pendingSugge
     brief.budgetSummary.estimated > 0 ||
     brief.budgetSummary.target !== null ||
     brief.budgetSummary.unpricedCount > 0
-  )
-
-  const showAttentionRow = !!brief && (
-    brief.openRiskCount > 0 ||
-    brief.openQuestionCount > 0 ||
-    brief.pendingDecisionCount > 0
   )
 
   return (
@@ -138,43 +117,14 @@ export function EventBriefPanel({ event, commandCenterBrief: brief, pendingSugge
               </p>
             )}
 
-            {brief.topTasks.length > 0 && (
-              <ul className="flex flex-col gap-1.5">
-                {brief.topTasks.slice(0, 3).map((t) => (
-                  <li key={t.title} className="flex items-center gap-2 text-xs text-foreground">
-                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${priorityDot(t.priority)}`} />
-                    <span className="min-w-0 truncate">{t.title}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {(showBudgetRow || showAttentionRow) && (
+            {showBudgetRow && (
               <div className="flex flex-col gap-1 border-t pt-2">
-                {showBudgetRow && (
-                  <div className="flex justify-between gap-4 text-xs">
-                    <span className="text-muted-foreground shrink-0">Budget</span>
-                    <span className="font-medium text-right">{buildBudgetLine(brief.budgetSummary)}</span>
-                  </div>
-                )}
-                {showAttentionRow && (
-                  <div className="flex justify-between gap-4 text-xs">
-                    <span className="text-muted-foreground shrink-0">Needs attention</span>
-                    <span className="font-medium text-amber-600 text-right">{buildAttentionLine(brief)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between gap-4 text-xs">
+                  <span className="text-muted-foreground shrink-0">Budget</span>
+                  <span className="font-medium text-right">{buildBudgetLine(brief.budgetSummary)}</span>
+                </div>
               </div>
             )}
-
-            {pendingSuggestionsCount > 0 && eventId ? (
-              <Link
-                href={`/events/${eventId}/chat`}
-                className="text-xs font-medium text-primary hover:text-primary/80 inline-flex items-center gap-0.5 transition-colors"
-              >
-                Review Glenn&apos;s suggestions
-                <ChevronRight className="h-3 w-3" />
-              </Link>
-            ) : null}
           </div>
         ) : (
           <div className="flex flex-col gap-2">

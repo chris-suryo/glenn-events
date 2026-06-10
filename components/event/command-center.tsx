@@ -34,8 +34,18 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
 
 interface NeedsAttentionItem {
   id: string
-  label: string
+  title: string
+  badge: string
+  context: string | null
   href: string
+  tone: 'review' | 'risk' | 'question' | 'task' | 'timeline' | 'decision'
+}
+
+interface ReadinessStatus {
+  title: 'Review pending' | 'Needs attention' | 'On track'
+  detail: string
+  tone: 'review' | 'attention' | 'track'
+  href: string | null
 }
 
 function activityDot(action: string) {
@@ -93,6 +103,25 @@ function snippet(text: string | null, max = 72): string | null {
   return line.length > max ? `${line.slice(0, max)}…` : line
 }
 
+function plural(count: number, singular: string, pluralLabel = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : pluralLabel}`
+}
+
+function joinParts(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? ''
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`
+}
+
+function isOverdue(date: string | null): boolean {
+  if (!date) return false
+  const due = new Date(date)
+  if (Number.isNaN(due.getTime())) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return due < today
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -124,49 +153,176 @@ function activityLabel(entry: ActivityLog): string {
   return entry.action.replace(/_/g, ' ')
 }
 
-function buildNeedsAttentionItems(
+function buildReadinessStatus(
+  eventId: string,
+  pendingUpdates: ProposedUpdate[],
+  openRisks: Risk[],
+  openTasks: Task[],
+  openQuestions: OpenQuestion[],
+  pendingDecisions: Decision[],
+): ReadinessStatus {
+  if (pendingUpdates.length > 0) {
+    return {
+      title: 'Review pending',
+      detail: `${plural(pendingUpdates.length, 'suggestion')} ${pendingUpdates.length === 1 ? 'is' : 'are'} waiting`,
+      tone: 'review',
+      href: `/events/${eventId}/chat`,
+    }
+  }
+
+  const highRiskCount = openRisks.filter((risk) => risk.severity === 'high').length
+  const overdueTaskCount = openTasks.filter((task) => isOverdue(task.due_date)).length
+  const highPriorityTaskCount = openTasks.filter((task) => task.priority === 'high' && !isOverdue(task.due_date)).length
+  const parts = [
+    highRiskCount > 0 ? plural(highRiskCount, 'high risk') : null,
+    openQuestions.length > 0 ? plural(openQuestions.length, 'question') : null,
+    overdueTaskCount > 0 ? plural(overdueTaskCount, 'overdue task') : null,
+    highPriorityTaskCount > 0 ? plural(highPriorityTaskCount, 'high-priority task') : null,
+    pendingDecisions.length > 0 ? plural(pendingDecisions.length, 'decision') : null,
+  ].filter((part): part is string => Boolean(part))
+
+  if (parts.length > 0) {
+    const href = highRiskCount > 0
+      ? `/events/${eventId}/plan?tab=risks`
+      : openQuestions.length > 0
+        ? `/events/${eventId}/plan?tab=open-questions`
+        : overdueTaskCount > 0 || highPriorityTaskCount > 0
+          ? `/events/${eventId}/plan?tab=tasks`
+          : `/events/${eventId}/plan?tab=decisions`
+
+    return {
+      title: 'Needs attention',
+      detail: `${joinParts(parts)} ${parts.length === 1 ? 'needs' : 'need'} review`,
+      tone: 'attention',
+      href,
+    }
+  }
+
+  return {
+    title: 'On track',
+    detail: 'No urgent blockers detected',
+    tone: 'track',
+    href: null,
+  }
+}
+
+function buildNextBestActions(
   eventId: string,
   pendingUpdates: ProposedUpdate[],
   openQuestions: OpenQuestion[],
   openRisks: Risk[],
   openTasks: Task[],
+  upcomingTimeline: TimelineItem[],
+  pendingDecisions: Decision[],
 ): NeedsAttentionItem[] {
   const items: NeedsAttentionItem[] = []
 
   if (pendingUpdates.length > 0) {
     items.push({
       id: 'pending-updates',
-      label: `Review ${pendingUpdates.length} suggestion${pendingUpdates.length !== 1 ? 's' : ''} from Glenn`,
+      title: `Review ${plural(pendingUpdates.length, 'suggestion')}`,
+      badge: 'Review suggestions',
+      context: 'Approve or dismiss new plan updates.',
       href: `/events/${eventId}/chat`,
+      tone: 'review',
+    })
+  }
+
+  for (const risk of openRisks.filter((r) => r.severity === 'high')) {
+    items.push({
+      id: `risk-${risk.id}`,
+      title: risk.title,
+      badge: 'Resolve risk',
+      context: snippet(risk.mitigation) ?? snippet(risk.description),
+      href: `/events/${eventId}/plan?tab=risks`,
+      tone: 'risk',
     })
   }
 
   for (const question of openQuestions) {
     items.push({
       id: `question-${question.id}`,
-      label: `Answer: ${question.question}`,
+      title: question.question,
+      badge: 'Needs answer',
+      context: null,
       href: `/events/${eventId}/plan?tab=open-questions`,
+      tone: 'question',
     })
   }
 
-  for (const risk of openRisks) {
-    const prefix = risk.severity === 'high' ? 'Resolve' : 'Monitor'
-    items.push({
-      id: `risk-${risk.id}`,
-      label: `${prefix}: ${risk.title}`,
-      href: `/events/${eventId}/plan?tab=risks`,
+  const priorityTasks = openTasks
+    .filter((task) => task.priority === 'high' || isOverdue(task.due_date))
+    .sort((a, b) => {
+      const aOverdue = isOverdue(a.due_date)
+      const bOverdue = isOverdue(b.due_date)
+      if (aOverdue !== bOverdue) return aOverdue ? -1 : 1
+      if (a.priority !== b.priority) return a.priority === 'high' ? -1 : 1
+      return (a.due_date ?? '').localeCompare(b.due_date ?? '')
     })
-  }
 
-  for (const task of openTasks.filter((t) => t.priority === 'high')) {
+  for (const task of priorityTasks) {
     items.push({
       id: `task-${task.id}`,
-      label: `Task: ${task.title}`,
+      title: task.title,
+      badge: isOverdue(task.due_date) ? 'Overdue task' : 'Confirm',
+      context: task.due_date ? `Due ${shortDate(task.due_date)}` : snippet(task.description),
       href: `/events/${eventId}/plan?tab=tasks`,
+      tone: 'task',
+    })
+  }
+
+  const timelineItems = [...upcomingTimeline]
+    .sort((a, b) => {
+      if (a.type !== b.type) {
+        if (a.type === 'deadline') return -1
+        if (b.type === 'deadline') return 1
+      }
+      return (a.starts_at ?? '').localeCompare(b.starts_at ?? '')
+    })
+
+  for (const item of timelineItems) {
+    items.push({
+      id: `timeline-${item.id}`,
+      title: item.title,
+      badge: item.type === 'deadline' ? 'Deadline' : 'Upcoming',
+      context: item.starts_at ? shortDate(item.starts_at) : snippet(item.description),
+      href: `/events/${eventId}/plan?tab=timeline`,
+      tone: 'timeline',
+    })
+  }
+
+  for (const decision of pendingDecisions) {
+    items.push({
+      id: `decision-${decision.id}`,
+      title: `Decide: ${decision.title}`,
+      badge: 'Decide',
+      context: snippet(decision.description),
+      href: `/events/${eventId}/plan?tab=decisions`,
+      tone: 'decision',
     })
   }
 
   return items.slice(0, 5)
+}
+
+function actionBadgeClasses(tone: NeedsAttentionItem['tone']) {
+  if (tone === 'review') return 'bg-indigo-50 text-indigo-700'
+  if (tone === 'risk') return 'bg-rose-50 text-rose-700'
+  if (tone === 'question') return 'bg-amber-50 text-amber-700'
+  if (tone === 'task') return 'bg-sky-50 text-sky-700'
+  if (tone === 'timeline') return 'bg-emerald-50 text-emerald-700'
+  return 'bg-slate-100 text-slate-700'
+}
+
+function statusClasses(tone: ReadinessStatus['tone']) {
+  if (tone === 'review') return 'border-indigo-200 bg-indigo-50/50 text-indigo-700'
+  if (tone === 'attention') return 'border-amber-200 bg-amber-50/60 text-amber-700'
+  return 'border-emerald-200 bg-emerald-50/50 text-emerald-700'
+}
+
+function StatusIcon({ tone }: { tone: ReadinessStatus['tone'] }) {
+  if (tone === 'track') return <CheckCircle2 className="h-4 w-4" />
+  return <AlertTriangle className="h-4 w-4" />
 }
 
 const TIMELINE_COLORS: Record<TimelineItem['type'], string> = {
@@ -231,12 +387,22 @@ export function CommandCenter({
       ? `$0 · ${unpricedBudgetCount} unpriced item${unpricedBudgetCount !== 1 ? 's' : ''}`
       : formatCurrency(0)
 
-  const needsAttention = buildNeedsAttentionItems(
+  const readinessStatus = buildReadinessStatus(
+    event.id,
+    pendingUpdates,
+    openRisks,
+    openTasks,
+    openQuestions,
+    pendingDecisions,
+  )
+  const nextBestActions = buildNextBestActions(
     event.id,
     pendingUpdates,
     openQuestions,
     openRisks,
     openTasks,
+    upcomingTimeline,
+    pendingDecisions,
   )
 
   function handleDeleteEvent() {
@@ -305,6 +471,31 @@ export function CommandCenter({
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-5xl mx-auto space-y-5">
 
+          <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${statusClasses(readinessStatus.tone)}`}>
+            <CardContent className="py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 shrink-0">
+                    <StatusIcon tone={readinessStatus.tone} />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold leading-tight">{readinessStatus.title}</p>
+                    <p className="text-sm text-foreground/70 mt-0.5">{readinessStatus.detail}</p>
+                  </div>
+                </div>
+                {readinessStatus.href ? (
+                  <Link
+                    href={readinessStatus.href}
+                    className="text-xs font-medium text-foreground/70 hover:text-foreground transition-colors inline-flex items-center gap-0.5 sm:shrink-0"
+                  >
+                    Open
+                    <ChevronRight className="h-3 w-3" />
+                  </Link>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {([
               {
@@ -362,30 +553,52 @@ export function CommandCenter({
               <EventBriefPanel
                 event={event}
                 commandCenterBrief={commandCenterBrief}
-                pendingSuggestionsCount={pendingUpdates.length}
                 eventId={event.id}
               />
 
-              {needsAttention.length > 0 && (
-                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needs attention</p>
-                  </div>
+              <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                <div className="flex items-center gap-1.5 mb-3">
+                  <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Next best actions</p>
+                </div>
+                {nextBestActions.length > 0 ? (
                   <div className="space-y-2">
-                    {needsAttention.map((item) => (
+                    {nextBestActions.map((item) => (
                       <Link
                         key={item.id}
                         href={item.href}
-                        className="flex items-start gap-2 rounded-md px-1 py-1 text-xs text-foreground hover:text-primary transition-colors group"
+                        className="group block rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/30 transition-colors"
                       >
-                        <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                        <span className="leading-snug min-w-0">{item.label}</span>
+                        <div className="flex items-start gap-2">
+                          <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${actionBadgeClasses(item.tone)}`}>
+                                {item.badge}
+                              </span>
+                              <span className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">
+                                {item.title}
+                              </span>
+                            </div>
+                            {item.context ? (
+                              <p className="text-xs text-muted-foreground mt-1 leading-snug line-clamp-2">
+                                {item.context}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
                       </Link>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="rounded-lg bg-muted/30 px-3 py-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      <p className="text-xs text-muted-foreground">No urgent actions. Keep the plan current as details change.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {recentActivity.length > 0 && (
                 <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
