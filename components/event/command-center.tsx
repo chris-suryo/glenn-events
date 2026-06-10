@@ -11,8 +11,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { formatEventDateTime } from '@/lib/utils'
 import {
   Activity, AlertTriangle, CalendarDays, CheckCircle2,
-  ChevronRight, DollarSign, HelpCircle, Sparkles, Trash2, Users,
+  ChevronRight, DollarSign, HelpCircle, MoreHorizontal, Sparkles, Trash2, Users,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
 
 const PENDING_TYPE_LABELS: Record<string, string> = {
   task:          'task',
@@ -459,7 +465,7 @@ export function CommandCenter({
   return (
     <div className="flex flex-col h-full">
 
-      <div className="border-b px-6 py-4 flex items-center justify-between shrink-0 bg-card/50">
+      <div className="border-b px-6 py-4 flex flex-wrap items-center justify-between gap-y-2 shrink-0 bg-card/50">
         <div>
           <h1 className="text-base font-semibold leading-tight tracking-tight">{event.name}</h1>
           <div className="flex items-center gap-2.5 mt-1 flex-wrap">
@@ -490,14 +496,30 @@ export function CommandCenter({
           {pendingUpdates.length > 0 && (
             <ProposedUpdatesBadge count={pendingUpdates.length} eventId={event.id} />
           )}
-          <button
-            onClick={handleDeleteEvent}
-            disabled={isDeleting}
-            title="Delete event"
-            className="flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-40"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {!planIsEmpty && (
+            <Link
+              href={`/events/${event.id}/chat`}
+              className="inline-flex items-center rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset] transition-colors hover:bg-primary/90"
+            >
+              <span className="sm:hidden">Tell Glenn</span>
+              <span className="hidden sm:inline">Tell Glenn what changed</span>
+              <ChevronRight className="ml-1 h-4 w-4" />
+            </Link>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Event options"
+              className="flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end">
+              <DropdownMenuItem variant="destructive" disabled={isDeleting} onClick={handleDeleteEvent}>
+                <Trash2 />
+                Delete event
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -557,14 +579,12 @@ export function CommandCenter({
                 </div>
 
                 <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Example notes</p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Things you can tell Glenn</p>
+                  <ul className="mt-2.5 space-y-1.5">
                     {EXAMPLE_PROMPTS.map((prompt) => (
-                      <span key={prompt} className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
-                        {prompt}
-                      </span>
+                      <li key={prompt} className="text-xs leading-snug text-muted-foreground">&ldquo;{prompt}&rdquo;</li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
 
                 <EventBriefPanel
