@@ -11,6 +11,7 @@ import { RiskStatusButton } from '@/components/event/risk-status-button'
 import { DecisionResolveButton } from '@/components/event/decision-resolve-button'
 import { OpenQuestionResolveButton } from '@/components/event/open-question-resolve-button'
 import { AiSourceBadge } from '@/components/event/ai-source-badge'
+import { RecordEditButton } from '@/components/event/record-edit-button'
 import { ScrollToHighlight } from '@/components/event/scroll-to-highlight'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -200,6 +201,12 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                           </p>
                         )}
                       </div>
+                      <RecordEditButton
+                        eventId={eventId}
+                        recordType="task"
+                        recordId={task.id}
+                        initial={{ title: task.title, description: task.description, due_date: task.due_date, priority: task.priority }}
+                      />
                       <TaskAssignButton
                         taskId={task.id}
                         eventId={eventId}
@@ -232,7 +239,15 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                             <p className="text-sm font-semibold tracking-tight">{vendor.name}</p>
                             {vendor.category && <p className="text-xs text-muted-foreground">{vendor.category}</p>}
                           </div>
-                          <VendorStatusButton vendorId={vendor.id} eventId={eventId} currentStatus={vendor.status} />
+                          <div className="flex items-center gap-1">
+                            <RecordEditButton
+                              eventId={eventId}
+                              recordType="vendor"
+                              recordId={vendor.id}
+                              initial={{ name: vendor.name, category: vendor.category, contact_name: vendor.contact_name, email: vendor.email, phone: vendor.phone, estimated_cost: vendor.estimated_cost, notes: vendor.notes }}
+                            />
+                            <VendorStatusButton vendorId={vendor.id} eventId={eventId} currentStatus={vendor.status} />
+                          </div>
                         </div>
                         {vendor.estimated_cost && (
                           <p className="text-xs text-muted-foreground">Est. {fmt(vendor.estimated_cost)}</p>
@@ -307,7 +322,15 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                             <td className="px-4 py-3 text-right font-medium">{fmt(item.estimated_cost)}</td>
                             <td className="px-4 py-3 text-right text-muted-foreground">{fmt(item.actual_cost)}</td>
                             <td className="px-4 py-3">
-                              <BudgetStatusButton itemId={item.id} eventId={eventId} currentStatus={item.status} />
+                              <div className="flex items-center gap-1">
+                                <BudgetStatusButton itemId={item.id} eventId={eventId} currentStatus={item.status} />
+                                <RecordEditButton
+                                  eventId={eventId}
+                                  recordType="budget_item"
+                                  recordId={item.id}
+                                  initial={{ description: item.description, category: item.category, estimated_cost: item.estimated_cost, actual_cost: item.actual_cost }}
+                                />
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -349,9 +372,17 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                               </div>
                             )}
                           </div>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize shrink-0 ${TYPE_COLORS[item.type]}`}>
-                            {item.type}
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${TYPE_COLORS[item.type]}`}>
+                              {item.type}
+                            </span>
+                            <RecordEditButton
+                              eventId={eventId}
+                              recordType="timeline_item"
+                              recordId={item.id}
+                              initial={{ title: item.title, description: item.description, starts_at: item.starts_at, ends_at: item.ends_at, type: item.type }}
+                            />
+                          </div>
                         </div>
                         {item.ai_generated && (
                           <div className="mt-1.5">
@@ -383,10 +414,18 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                     <div key={dec.id} id={`record-${dec.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightRing(dec.id)}`}>
                       <div className="flex items-start gap-2">
                         <p className="text-sm font-medium flex-1 tracking-tight">{dec.title}</p>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize shrink-0
-                          ${dec.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                          {dec.status}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize
+                            ${dec.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                            {dec.status}
+                          </span>
+                          <RecordEditButton
+                            eventId={eventId}
+                            recordType="decision"
+                            recordId={dec.id}
+                            initial={{ title: dec.title, description: dec.description, decision: dec.decision }}
+                          />
+                        </div>
                       </div>
                       {dec.description && <p className="text-xs text-muted-foreground">{dec.description}</p>}
                       {dec.decision && (
@@ -438,6 +477,12 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                           >
                             {risk.severity}
                           </Badge>
+                          <RecordEditButton
+                            eventId={eventId}
+                            recordType="risk"
+                            recordId={risk.id}
+                            initial={{ title: risk.title, description: risk.description, severity: risk.severity, mitigation: risk.mitigation }}
+                          />
                           <RiskStatusButton riskId={risk.id} eventId={eventId} currentStatus={risk.status} />
                         </div>
                       </div>
@@ -491,6 +536,12 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                             ${question.status === 'open' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                             {question.status}
                           </span>
+                          <RecordEditButton
+                            eventId={eventId}
+                            recordType="open_question"
+                            recordId={question.id}
+                            initial={{ question: question.question }}
+                          />
                         </div>
                       </div>
                       {question.status === 'open' && (
