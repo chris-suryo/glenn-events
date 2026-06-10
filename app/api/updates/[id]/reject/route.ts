@@ -1,6 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import type { ProposedUpdate } from '@/lib/types'
+import type { ProposedUpdate, UpdatePayload } from '@/lib/types'
+
+function recordLabel(payload: UpdatePayload): string {
+  const p = payload as unknown as Record<string, unknown>
+  const raw = p.title ?? p.name ?? p.question ?? p.description ?? null
+  return typeof raw === 'string' && raw.trim().length > 0
+    ? raw.trim().slice(0, 120)
+    : 'Untitled record'
+}
 
 export async function POST(
   _request: NextRequest,
@@ -19,7 +27,7 @@ export async function POST(
   //    only members can read it; non-members and missing rows both return null
   const { data: update } = await supabase
     .from('proposed_updates')
-    .select('id, event_id, ai_run_id, update_type, status')
+    .select('id, event_id, ai_run_id, update_type, status, payload_json')
     .eq('id', id)
     .single()
 
@@ -27,7 +35,7 @@ export async function POST(
     return NextResponse.json({ error: 'Update not found or access denied' }, { status: 404 })
   }
 
-  const typedUpdate = update as Pick<ProposedUpdate, 'id' | 'event_id' | 'ai_run_id' | 'update_type' | 'status'>
+  const typedUpdate = update as Pick<ProposedUpdate, 'id' | 'event_id' | 'ai_run_id' | 'update_type' | 'status' | 'payload_json'>
 
   // 3. Idempotency — prevent double-rejecting
   if (typedUpdate.status !== 'pending') {
@@ -59,7 +67,10 @@ export async function POST(
     action:        'proposed_update_rejected',
     entity_type:   'proposed_update',
     entity_id:     typedUpdate.id,
-    metadata_json: { update_type: typedUpdate.update_type },
+    metadata_json: {
+      update_type: typedUpdate.update_type,
+      label:       recordLabel(typedUpdate.payload_json),
+    },
   })
 
   // Close out the ai_run if all its proposed_updates are now reviewed (best-effort)

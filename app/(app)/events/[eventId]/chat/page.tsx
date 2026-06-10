@@ -5,10 +5,12 @@ import { ChatView } from '@/components/event/chat-view'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
+  searchParams: Promise<{ source?: string }>
 }
 
-export default async function EventChatPage({ params }: PageProps) {
+export default async function EventChatPage({ params, searchParams }: PageProps) {
   const { eventId } = await params
+  const { source } = await searchParams
   const supabase = await createClient()
 
   const [{ data: event }, { data: messages }, { data: pendingUpdates }] = await Promise.all([
@@ -37,6 +39,7 @@ export default async function EventChatPage({ params }: PageProps) {
       messages={(messages ?? []) as Message[]}
       pendingUpdates={(pendingUpdates ?? []) as ProposedUpdate[]}
       aiRuns={(aiRuns ?? []) as AiRun[]}
+      highlightMessageId={source ?? null}
     />
   )
 }

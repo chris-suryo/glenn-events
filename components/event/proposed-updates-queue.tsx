@@ -489,18 +489,25 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
 
   async function handleBulk(action: ReviewAction, scopedUpdates: ProposedUpdate[]) {
     startBulkTransition(async () => {
-      try {
-        await Promise.all(scopedUpdates.map((update) => reviewUpdate(update.id, action)))
+      const results = await Promise.allSettled(
+        scopedUpdates.map((update) => reviewUpdate(update.id, action))
+      )
+      const failed = scopedUpdates.filter((_, index) => results[index].status === 'rejected')
+      const appliedCount = scopedUpdates.length - failed.length
+      const verb = action === 'approve' ? 'Applied' : 'Dismissed'
+
+      if (failed.length === 0) {
         toast.success(
           action === 'approve'
-            ? `Applied ${scopedUpdates.length} update${scopedUpdates.length !== 1 ? 's' : ''} to the event plan.`
-            : `Dismissed ${scopedUpdates.length} update${scopedUpdates.length !== 1 ? 's' : ''}. The plan is unchanged.`
+            ? `Applied ${appliedCount} update${appliedCount !== 1 ? 's' : ''} to the event plan.`
+            : `Dismissed ${appliedCount} update${appliedCount !== 1 ? 's' : ''}. The plan is unchanged.`
         )
-        router.refresh()
-      } catch {
-        toast.error('Some suggestions could not be processed.')
-        router.refresh()
+      } else {
+        const names = failed.slice(0, 2).map((update) => getUpdateName(update)).join(', ')
+        const overflow = failed.length > 2 ? ` and ${failed.length - 2} more` : ''
+        toast.error(`${verb} ${appliedCount} of ${scopedUpdates.length} · failed: ${names}${overflow}. The failed items are still pending.`)
       }
+      router.refresh()
     })
   }
 

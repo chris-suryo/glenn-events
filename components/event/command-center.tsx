@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
 import { EventBriefPanel, type CommandCenterBrief } from './event-brief-panel'
 import { ProposedUpdatesBadge } from './proposed-updates-badge'
+import { activityDot, activityLabel, timeAgo } from '@/lib/activity'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Activity, AlertTriangle, CheckCircle2,
@@ -22,16 +23,6 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'decisions', label: 'Decisions' },
 ]
 
-const ENTITY_TYPE_LABELS: Record<string, string> = {
-  task:          'task',
-  vendor:        'vendor',
-  budget_item:   'budget item',
-  timeline_item: 'timeline item',
-  decision:      'decision',
-  risk:          'risk',
-  open_question: 'open question',
-}
-
 interface NeedsAttentionItem {
   id: string
   title: string
@@ -46,22 +37,6 @@ interface ReadinessStatus {
   detail: string
   tone: 'review' | 'attention' | 'track'
   href: string | null
-}
-
-function activityDot(action: string) {
-  if (action === 'proposed_update_applied')  return 'bg-emerald-500'
-  if (action === 'proposed_update_rejected') return 'bg-rose-400'
-  return 'bg-indigo-400'
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1)  return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24)  return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
 }
 
 function shortDate(iso: string) {
@@ -120,37 +95,6 @@ function isOverdue(date: string | null): boolean {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return due < today
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function activityLabel(entry: ActivityLog): string {
-  if (entry.action === 'proposed_updates_created') {
-    const total = isRecord(entry.metadata_json) && typeof entry.metadata_json.total === 'number'
-      ? entry.metadata_json.total
-      : null
-    if (total !== null) {
-      return `Glenn proposed ${total} update${total !== 1 ? 's' : ''}`
-    }
-    return 'Glenn proposed updates'
-  }
-
-  if (entry.action === 'proposed_update_applied') {
-    const entityLabel = ENTITY_TYPE_LABELS[entry.entity_type]
-    return entityLabel ? `Applied ${entityLabel} update` : 'Applied plan update'
-  }
-
-  if (entry.action === 'proposed_update_rejected') {
-    const updateType = isRecord(entry.metadata_json) && typeof entry.metadata_json.update_type === 'string'
-      ? entry.metadata_json.update_type
-      : entry.entity_type
-    const entityLabel = ENTITY_TYPE_LABELS[updateType]
-    return entityLabel ? `Dismissed ${entityLabel} suggestion` : 'Dismissed suggestion'
-  }
-
-  return entry.action.replace(/_/g, ' ')
 }
 
 function buildReadinessStatus(

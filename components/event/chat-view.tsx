@@ -13,6 +13,7 @@ interface ChatViewProps {
   messages: Message[]
   pendingUpdates: ProposedUpdate[]
   aiRuns: AiRun[]
+  highlightMessageId?: string | null
 }
 
 // ── Markdown helpers ────────────────────────────────────────────────────────────
@@ -86,10 +87,21 @@ function GlennMessageContent({ text }: { text: string }) {
 const STREAM_WORD_DELAY_MS = 30
 
 // ── Component ───────────────────────────────────────────────────────────────────
-export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewProps) {
+export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMessageId = null }: ChatViewProps) {
   const router = useRouter()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const prevMessageCountRef = useRef(messages.length)
+
+  // Source-traceability highlight — when arriving via an "AI source" badge link
+  const [activeHighlight, setActiveHighlight] = useState<string | null>(highlightMessageId)
+  const skipAutoScrollRef = useRef(!!highlightMessageId)
+
+  useEffect(() => {
+    if (!highlightMessageId) return
+    document.getElementById(`msg-${highlightMessageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const timer = setTimeout(() => setActiveHighlight(null), 4000)
+    return () => clearTimeout(timer)
+  }, [highlightMessageId])
 
   // Streaming state
   const [isThinking, setIsThinking]       = useState(false)
@@ -99,8 +111,13 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewPr
   // Optimistic user message — shown immediately on submit, cleared when DB refreshes
   const [optimisticMsg, setOptimisticMsg] = useState<string | null>(null)
 
-  // Scroll to bottom whenever new content arrives
+  // Scroll to bottom whenever new content arrives — skipped on first render
+  // when a source-highlight link owns the initial scroll position
   useEffect(() => {
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false
+      return
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, optimisticMsg])
 
@@ -214,19 +231,21 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewPr
                       items.push(
                         <div
                           key={msg.id}
+                          id={`msg-${msg.id}`}
                           className={`flex flex-col gap-1 ${msg.role === 'assistant' ? 'items-start' : 'items-end'}`}
                         >
-                          <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                          <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-shadow duration-700 ${
                             msg.role === 'user'
                               ? 'bg-primary text-primary-foreground rounded-br-sm'
                               : 'bg-muted text-foreground rounded-bl-sm'
-                          }`}>
+                          } ${activeHighlight === msg.id ? 'ring-2 ring-primary/60 shadow-[0_0_0_4px_rgba(99,102,241,0.12)]' : ''}`}>
                             {msg.role === 'assistant'
                               ? <GlennMessageContent text={msg.content} />
                               : msg.content
                             }
                           </div>
-                          <span className="text-xs text-muted-foreground px-1">
+                          {/* suppressHydrationWarning: relative time drifts between server render and hydration */}
+                          <span className="text-xs text-muted-foreground px-1" suppressHydrationWarning>
                             {msg.role === 'assistant' ? 'Glenn · ' : ''}
                             {formatDistanceToNow(msg.created_at)}
                           </span>

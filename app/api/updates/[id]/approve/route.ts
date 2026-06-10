@@ -66,6 +66,14 @@ const OpenQuestionPayloadSchema = z.object({
   owner_name: z.string().trim().nullable(),
 })
 
+function recordLabel(payload: UpdatePayload): string {
+  const p = payload as unknown as Record<string, unknown>
+  const raw = p.title ?? p.name ?? p.question ?? p.description ?? null
+  return typeof raw === 'string' && raw.trim().length > 0
+    ? raw.trim().slice(0, 120)
+    : 'Untitled record'
+}
+
 function validatePayloadForType(updateType: UpdateType, payload: unknown): UpdatePayload | null {
   switch (updateType) {
     case 'task': {
@@ -215,6 +223,7 @@ export async function POST(
     metadata_json: {
       proposed_update_id: id,
       update_type:        typedUpdate.update_type,
+      label:              recordLabel(updateForApply.payload_json),
     },
   })
 
