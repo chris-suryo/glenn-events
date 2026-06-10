@@ -45,7 +45,6 @@ type ReviewAction = 'approve' | 'reject'
 interface UpdateGroup {
   type: UpdateType
   title: string
-  pill: string
 }
 
 interface ReviewGroup {
@@ -53,19 +52,28 @@ interface ReviewGroup {
   aiRun: AiRun | null
   updates: ProposedUpdate[]
   understoodSummary: string[]
-  recommendedSummary: string[]
   createdAt: string
 }
 
 const UPDATE_GROUPS: UpdateGroup[] = [
-  { type: 'task', title: 'Tasks', pill: 'Task' },
-  { type: 'vendor', title: 'Vendors', pill: 'Vendor' },
-  { type: 'budget_item', title: 'Budget', pill: 'Budget' },
-  { type: 'timeline_item', title: 'Timeline', pill: 'Timeline' },
-  { type: 'decision', title: 'Decisions', pill: 'Decision' },
-  { type: 'risk', title: 'Risks', pill: 'Risk' },
-  { type: 'open_question', title: 'Open Questions', pill: 'Question' },
+  { type: 'task', title: 'Tasks' },
+  { type: 'vendor', title: 'Vendors' },
+  { type: 'budget_item', title: 'Budget' },
+  { type: 'timeline_item', title: 'Timeline' },
+  { type: 'decision', title: 'Decisions' },
+  { type: 'risk', title: 'Risks' },
+  { type: 'open_question', title: 'Open Questions' },
 ]
+
+const TYPE_PILL_LABEL: Record<UpdateType, string> = {
+  task:          'Task',
+  vendor:        'Vendor',
+  budget_item:   'Budget',
+  timeline_item: 'Timeline',
+  decision:      'Decision',
+  risk:          'Risk',
+  open_question: 'Question',
+}
 
 const TYPE_DESTINATION: Record<UpdateType, string> = {
   task:          'Tasks',
@@ -158,49 +166,25 @@ function getUpdateDescription(update: ProposedUpdate, payload: UpdatePayload = u
   return null
 }
 
-function getReviewRecommendation(update: ProposedUpdate): string {
-  const name = getUpdateName(update)
-  switch (update.update_type) {
-    case 'task':
-      return `Create task: ${name}`
-    case 'vendor':
-      return `Add vendor: ${name}`
-    case 'budget_item': {
-      const detail = getUpdateDetail(update)
-      return detail ? `Add budget item: ${name} (${detail})` : `Add budget item: ${name}`
-    }
-    case 'timeline_item':
-      return `Add timeline item: ${name}`
-    case 'decision':
-      return `Record decision: ${name}`
-    case 'risk':
-      return `Flag risk: ${name}`
-    case 'open_question':
-      return `Ask: ${name}`
-  }
-}
-
-function getOutputReview(aiRun: AiRun | null): Pick<AiRunReviewOutput, 'understood_summary' | 'recommended_summary'> {
+function getOutputReview(aiRun: AiRun | null): Pick<AiRunReviewOutput, 'understood_summary'> {
   if (!aiRun || !isRecord(aiRun.output_json)) {
     return {}
   }
 
   return {
     understood_summary: stringArray(aiRun.output_json.understood_summary),
-    recommended_summary: stringArray(aiRun.output_json.recommended_summary),
   }
 }
 
-function buildFallbackReview(updates: ProposedUpdate[]): { understoodSummary: string[]; recommendedSummary: string[] } {
+function buildFallbackReview(updates: ProposedUpdate[]): { understoodSummary: string[] } {
   const touched = UPDATE_GROUPS
     .filter((group) => updates.some((update) => update.update_type === group.type))
     .map((group) => group.title)
 
   return {
     understoodSummary: touched.length > 0
-      ? [`Glenn found plan changes touching ${touched.join(', ')}.`]
-      : ['Glenn reviewed this update for plan changes.'],
-    recommendedSummary: updates.map(getReviewRecommendation).slice(0, 6),
+      ? [`This note has plan changes touching ${touched.join(', ')}.`]
+      : ['This note was reviewed for plan changes.'],
   }
 }
 
@@ -233,11 +217,10 @@ async function reviewUpdate(updateId: string, action: ReviewAction, payload?: Up
   }
 }
 
-function groupByType(scopedUpdates: ProposedUpdate[]) {
-  return UPDATE_GROUPS.map((group) => ({
-    ...group,
-    updates: scopedUpdates.filter((update) => update.update_type === group.type),
-  })).filter((group) => group.updates.length > 0)
+function orderByType(scopedUpdates: ProposedUpdate[]): ProposedUpdate[] {
+  return UPDATE_GROUPS.flatMap((group) =>
+    scopedUpdates.filter((update) => update.update_type === group.type)
+  )
 }
 
 function buildReviewGroups(updates: ProposedUpdate[], aiRuns: AiRun[]): ReviewGroup[] {
@@ -262,9 +245,6 @@ function buildReviewGroups(updates: ProposedUpdate[], aiRuns: AiRun[]): ReviewGr
         understoodSummary: outputReview.understood_summary && outputReview.understood_summary.length > 0
           ? outputReview.understood_summary
           : fallbackReview.understoodSummary,
-        recommendedSummary: outputReview.recommended_summary && outputReview.recommended_summary.length > 0
-          ? outputReview.recommended_summary
-          : fallbackReview.recommendedSummary,
         createdAt: aiRun?.created_at ?? runUpdates[0]?.created_at ?? '',
       }
     })
@@ -447,10 +427,8 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
   const router = useRouter()
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-  const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(new Set())
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set())
   const [draftPayloads, setDraftPayloads] = useState<Record<string, UpdatePayload>>({})
-  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set())
   const [isPendingBulk, startBulkTransition] = useTransition()
   const reviewGroups = buildReviewGroups(updates, aiRuns)
 
@@ -515,8 +493,8 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
         await Promise.all(scopedUpdates.map((update) => reviewUpdate(update.id, action)))
         toast.success(
           action === 'approve'
-            ? `Applied ${scopedUpdates.length} stored suggestion${scopedUpdates.length !== 1 ? 's' : ''} to the event plan.`
-            : `Dismissed ${scopedUpdates.length} suggestion${scopedUpdates.length !== 1 ? 's' : ''}. The plan is unchanged.`
+            ? `Applied ${scopedUpdates.length} update${scopedUpdates.length !== 1 ? 's' : ''} to the event plan.`
+            : `Dismissed ${scopedUpdates.length} update${scopedUpdates.length !== 1 ? 's' : ''}. The plan is unchanged.`
         )
         router.refresh()
       } catch {
@@ -532,299 +510,190 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
       <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
         <CheckCircle2 className="size-7 text-emerald-500/60" />
         <p className="text-sm font-medium text-foreground">All caught up</p>
-        <p className="max-w-[200px] text-xs text-muted-foreground">All suggestions have been reviewed. Tell Glenn what changed and new ones will appear here.</p>
-        <p className="text-xs text-primary/70">Tell Glenn about new updates ↓</p>
+        <p className="max-w-[200px] text-xs text-muted-foreground">Everything has been reviewed. Tell Glenn what changed and new updates will appear here.</p>
       </div>
     ) : (
       <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
         <Sparkles className="size-7 text-muted-foreground/25" />
-        <p className="text-sm font-medium text-muted-foreground">No suggestions yet</p>
-        <p className="max-w-[200px] text-xs text-muted-foreground">Tell Glenn what changed and suggestions will appear here for your review.</p>
+        <p className="text-sm font-medium text-muted-foreground">Nothing to review yet</p>
+        <p className="max-w-[200px] text-xs text-muted-foreground">Tell Glenn what changed and proposed updates will appear here for your review.</p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
-      {reviewGroups.length > 1 && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/30 px-3 py-2.5">
-          <p className="text-sm text-muted-foreground">
-            {updates.length} suggestion{updates.length !== 1 ? 's' : ''} across {reviewGroups.length} update{reviewGroups.length !== 1 ? 's' : ''}
-          </p>
-          <Button
-            size="sm"
-            variant="default"
-            disabled={isPendingBulk}
-            onClick={() => handleBulk('approve', updates)}
-          >
-            {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-            Apply all
-          </Button>
-        </div>
-      )}
-      <div className="flex flex-col gap-3">
-        {reviewGroups.map((reviewGroup) => {
-          const detailsOpen = expandedRunIds.has(reviewGroup.aiRunId)
-          const groupedUpdates = groupByType(reviewGroup.updates)
-          return (
-            <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
-              <div className="flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold leading-5">
-                      Glenn found {reviewGroup.updates.length} suggestion{reviewGroup.updates.length !== 1 ? 's' : ''} from your update
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Review and apply what looks right
-                    </p>
-                  </div>
-                  <Badge variant="secondary" className="shrink-0 rounded-md px-2 text-xs">
-                    {reviewGroup.updates.length}
-                  </Badge>
-                </div>
+      {reviewGroups.map((reviewGroup) => (
+        <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold leading-5">
+              Found {reviewGroup.updates.length} update{reviewGroup.updates.length !== 1 ? 's' : ''} in your note
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Review and apply what looks right
+            </p>
+          </div>
 
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground">From your update:</p>
-                    <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
-                      {reviewGroup.understoodSummary.slice(0, 4).map((summary) => (
-                        <li key={summary} className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                          <span>{summary}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs font-semibold text-muted-foreground">From your update:</p>
+            <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
+              {reviewGroup.understoodSummary.slice(0, 4).map((summary) => (
+                <li key={summary} className="flex gap-2">
+                  <span className="mt-2 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                  <span>{summary}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <p className="text-xs font-semibold text-muted-foreground">Glenn recommends:</p>
-                    <ul className="flex flex-col gap-1 text-sm leading-5 text-foreground">
-                      {reviewGroup.recommendedSummary.slice(0, 6).map((summary) => (
-                        <li key={summary} className="flex gap-2">
-                          <span className="mt-2 size-1 shrink-0 rounded-full bg-primary/70" />
-                          <span>{summary}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
+          <div className="flex flex-col gap-2">
+            {orderByType(reviewGroup.updates).map((update) => {
+              const isProcessing = processingIds.has(update.id)
+              const isExpanded = expandedIds.has(update.id)
+              const isEditing = editingIds.has(update.id)
+              const draftPayload = draftPayloads[update.id]
+              const activePayload = draftPayload ?? update.payload_json
+              const name = getUpdateName(update, activePayload)
+              const detail = getUpdateDetail(update, activePayload)
+              const description = getUpdateDescription(update, activePayload)
+              const dest = TYPE_DESTINATION[update.update_type]
 
-                <div className="grid grid-cols-1 gap-2">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    disabled={isPendingBulk}
-                    onClick={() => handleBulk('approve', reviewGroup.updates)}
-                    className="w-full"
-                  >
-                    {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                    Apply all
-                  </Button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => toggleSetValue(setExpandedRunIds, reviewGroup.aiRunId)}
-                      aria-expanded={detailsOpen}
-                      className="w-full"
+              return (
+                <article key={update.id} className="rounded-lg border bg-card shadow-sm">
+                  <div className="flex items-center gap-2 p-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleSetValue(setExpandedIds, update.id)}
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? 'Hide details' : 'Show details'}
+                      className="flex min-w-0 flex-1 items-start gap-2 rounded-md py-0.5 text-left focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
-                      {detailsOpen ? <ChevronDown data-icon="inline-start" /> : <ChevronRight data-icon="inline-start" />}
-                      Review/edit details
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isPendingBulk}
-                      onClick={() => handleBulk('reject', reviewGroup.updates)}
-                      className="w-full"
-                    >
-                      <XCircle data-icon="inline-start" />
-                      Dismiss all
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {detailsOpen ? (
-                <div className="flex flex-col gap-3 border-t pt-3">
-                  <div className="flex flex-col gap-2 rounded-lg bg-muted/30 p-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-muted-foreground">Detailed suggestions</p>
-                      <p className="text-[11px] text-muted-foreground">{reviewGroup.updates.length} pending</p>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <Button
-                        size="sm"
-                        variant="default"
-                        disabled={isPendingBulk}
-                        onClick={() => handleBulk('approve', reviewGroup.updates)}
-                        className="w-full"
-                      >
-                        {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-                        Apply all details
-                      </Button>
-                      <Button
-                        size="sm"
+                      {isExpanded
+                        ? <ChevronDown className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
+                        : <ChevronRight className="mt-1 size-3.5 shrink-0 text-muted-foreground" />}
+                      <Badge
                         variant="outline"
-                        disabled={isPendingBulk}
-                        onClick={() => handleBulk('reject', reviewGroup.updates)}
-                        className="w-full"
+                        className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
                       >
-                        Dismiss all details
-                      </Button>
-                    </div>
+                        {TYPE_PILL_LABEL[update.update_type]}
+                      </Badge>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium leading-5">{name}</span>
+                        {detail ? (
+                          <span className="block text-[11px] leading-4 text-muted-foreground">{detail}</span>
+                        ) : null}
+                      </span>
+                    </button>
+                    <Button
+                      size="sm"
+                      className="shrink-0"
+                      disabled={isProcessing || isEditing}
+                      onClick={() => handleSingle(update, 'approve')}
+                    >
+                      {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+                      Apply
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      className="shrink-0 text-muted-foreground"
+                      aria-label="Dismiss"
+                      disabled={isProcessing}
+                      onClick={() => handleSingle(update, 'reject')}
+                    >
+                      <XCircle />
+                    </Button>
                   </div>
 
-                  {groupedUpdates.map((group) => {
-                    const groupKey = `${reviewGroup.aiRunId}:${group.type}`
-                    const groupOpen = !closedGroups.has(groupKey)
-                    return (
-                      <section key={groupKey} className="flex flex-col gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleSetValue(setClosedGroups, groupKey)}
-                          className="flex w-full items-center justify-between rounded-md px-1 py-1 text-left text-xs font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  {isExpanded ? (
+                    <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
+                      <div className="flex flex-col gap-2 text-xs">
+                        {description ? (
+                          <div className="flex flex-col gap-1">
+                            <p className="font-medium text-foreground">Details</p>
+                            <p className="leading-relaxed text-muted-foreground">{description}</p>
+                          </div>
+                        ) : null}
+                        {update.rationale ? (
+                          <div className="flex flex-col gap-1">
+                            <p className="font-medium text-foreground">Why this was suggested</p>
+                            <p className="leading-relaxed text-muted-foreground">{update.rationale}</p>
+                          </div>
+                        ) : null}
+                        <p className="text-muted-foreground">This will go to {dest} when applied.</p>
+                      </div>
+
+                      {isEditing ? (
+                        <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+                          <EditFields
+                            update={update}
+                            payload={activePayload}
+                            onChange={(payload) => setDraftPayloads((current) => ({ ...current, [update.id]: payload }))}
+                          />
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <Button
+                              size="sm"
+                              className="w-full"
+                              disabled={isProcessing}
+                              onClick={() => handleSingle(update, 'approve', activePayload)}
+                            >
+                              {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                              Save & Apply
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              disabled={isProcessing}
+                              onClick={() => cancelEdit(update.id)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-fit"
+                          disabled={isProcessing}
+                          onClick={() => startEdit(update)}
                         >
-                          <span>{group.title} ({group.updates.length})</span>
-                          {groupOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                        </button>
+                          <Pencil data-icon="inline-start" />
+                          Edit
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+                </article>
+              )
+            })}
+          </div>
 
-                        {groupOpen ? (
-                          <div className="flex flex-col gap-2">
-                            {group.updates.map((update) => {
-                    const isProcessing = processingIds.has(update.id)
-                    const isExpanded = expandedIds.has(update.id)
-                    const isEditing = editingIds.has(update.id)
-                    const draftPayload = draftPayloads[update.id]
-                    const activePayload = draftPayload ?? update.payload_json
-                    const name = getUpdateName(update, activePayload)
-                    const detail = getUpdateDetail(update, activePayload)
-                    const description = getUpdateDescription(update, activePayload)
-                    const dest = TYPE_DESTINATION[update.update_type]
-
-                    return (
-                      <article key={update.id} className="flex flex-col gap-2 rounded-lg border bg-card p-2.5 shadow-sm">
-                        <div className="flex items-start gap-2">
-                          <Badge
-                            variant="outline"
-                            className={cn('mt-0.5 h-5 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
-                          >
-                            {group.pill}
-                          </Badge>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium leading-5">{name}</p>
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                              <span>Goes to {dest}</span>
-                              {detail ? <span>{detail}</span> : null}
-                            </div>
-                          </div>
-                          <Button
-                            size="icon-xs"
-                            variant="ghost"
-                            aria-label={isExpanded ? 'Hide details' : 'Show details'}
-                            aria-expanded={isExpanded}
-                            onClick={() => toggleSetValue(setExpandedIds, update.id)}
-                          >
-                            {isExpanded ? <ChevronDown /> : <ChevronRight />}
-                          </Button>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <Button
-                            size="sm"
-                            className="w-full"
-                            disabled={isProcessing || isEditing}
-                            onClick={() => handleSingle(update, 'approve')}
-                          >
-                            {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                            Apply
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full"
-                            disabled={isProcessing}
-                            onClick={() => handleSingle(update, 'reject')}
-                          >
-                            <XCircle data-icon="inline-start" />
-                            Dismiss
-                          </Button>
-                        </div>
-
-                        {isExpanded ? (
-                          <div className="flex flex-col gap-3 border-t pt-3">
-                            <div className="flex flex-col gap-2 text-xs">
-                              {description ? (
-                                <div className="flex flex-col gap-1">
-                                  <p className="font-medium text-foreground">Details</p>
-                                  <p className="leading-relaxed text-muted-foreground">{description}</p>
-                                </div>
-                              ) : null}
-                              {update.rationale ? (
-                                <div className="flex flex-col gap-1">
-                                  <p className="font-medium text-foreground">Why Glenn suggested it</p>
-                                  <p className="leading-relaxed text-muted-foreground">{update.rationale}</p>
-                                </div>
-                              ) : null}
-                              <p className="text-muted-foreground">This will go to {dest} when applied.</p>
-                            </div>
-
-                            {isEditing ? (
-                              <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
-                                <EditFields
-                                  update={update}
-                                  payload={activePayload}
-                                  onChange={(payload) => setDraftPayloads((current) => ({ ...current, [update.id]: payload }))}
-                                />
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                  <Button
-                                    size="sm"
-                                    className="w-full"
-                                    disabled={isProcessing}
-                                    onClick={() => handleSingle(update, 'approve', activePayload)}
-                                  >
-                                    {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                                    Save & Apply
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="w-full"
-                                    disabled={isProcessing}
-                                    onClick={() => cancelEdit(update.id)}
-                                  >
-                                    Cancel
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="w-fit"
-                                disabled={isProcessing}
-                                onClick={() => startEdit(update)}
-                              >
-                                <Pencil data-icon="inline-start" />
-                                Edit
-                              </Button>
-                            )}
-                          </div>
-                        ) : null}
-                      </article>
-                    )
-                            })}
-                          </div>
-                        ) : null}
-                      </section>
-                    )
-                  })}
-                </div>
-              ) : null}
-            </section>
-          )
-        })}
-      </div>
+          <div className="grid grid-cols-2 gap-2 border-t pt-3">
+            <Button
+              size="sm"
+              variant="default"
+              disabled={isPendingBulk}
+              onClick={() => handleBulk('approve', reviewGroup.updates)}
+              className="w-full"
+            >
+              {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+              Apply all ({reviewGroup.updates.length})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isPendingBulk}
+              onClick={() => handleBulk('reject', reviewGroup.updates)}
+              className="w-full"
+            >
+              <XCircle data-icon="inline-start" />
+              Dismiss all
+            </Button>
+          </div>
+        </section>
+      ))}
     </div>
   )
 }

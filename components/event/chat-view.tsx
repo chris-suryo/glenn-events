@@ -241,7 +241,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewPr
                             <div className="h-px flex-1 bg-emerald-500/20" />
                             <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600/70">
                               <CheckCircle2 className="size-3" />
-                              All suggestions reviewed
+                              All updates reviewed
                             </span>
                             <div className="h-px flex-1 bg-emerald-500/20" />
                           </div>
@@ -309,7 +309,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns }: ChatViewPr
         <div className="w-full lg:w-96 flex flex-col shrink-0">
           <div className="px-6 py-3 border-b shrink-0">
             <h3 className="text-sm font-semibold">
-              Glenn&apos;s suggestions
+              Review
               {pendingUpdates.length > 0 && (
                 <span className="ml-2 inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary text-primary-foreground text-xs">
                   {pendingUpdates.length}

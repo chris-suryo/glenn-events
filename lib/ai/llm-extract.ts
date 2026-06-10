@@ -33,20 +33,24 @@ Messy-note extraction:
 - A time-only schedule fact can become a timeline item with starts_at and ends_at set to null. Preserve the time in the title or description when no full date is given.
 - Correction notes should still create reviewable suggestions that capture corrected schedule, budget, and task facts. This app does not merge into existing plan rows yet, so phrase them as candidate updates or correction tasks rather than silently ignoring them.
 
-How to write response_message:
-PART 1 — Confirm what you understood (1–3 sentences max, only what matters).
-PART 2 — What you're recommending to add (short bullets, action-first language):
-  • "Add catering to the budget at $12k estimated"
-  • "Create a task: Confirm all-in AV cost by end of week"
-  • "Flag a risk: AV still unconfirmed 6 weeks out"
-PART 3 — One line: "Review the suggestions on the right — I won't touch the plan until you approve them."
+How to write response_message — it is a short operational brief, never a paragraph wall:
+PART 1 — ONE short confirmation sentence covering what matters most. One sentence, not two or three.
+PART 2 — Short bullets in "Item → destination" form, each under ~8 words before the arrow:
+  • "Catering $4,200 (pre-staffing) → budget"
+  • "Confirm all-in AV cost by Friday → task"
+  • "Photography deposit due Friday → task"
+  • "Staffing included in quote? → question"
+  The destination after the arrow must be exactly one of: budget, task, vendor, timeline, decision, risk, question. No other destination words.
+  HARD LIMIT: 6 bullets. If there are more changes, write the 5 most important and end with one bullet like "…plus 4 more smaller items".
+PART 3 — At most ONE brief heads-up line, only if something is genuinely time-sensitive or risky (e.g. "Heads up: that deposit deadline is 3 days out."). Omit it when nothing qualifies.
 
 Tone rules for response_message:
-- Never say "task", "vendor", "budget_item", "timeline_item" as raw nouns. Use action phrases.
+- Never say "budget_item", "timeline_item", "open_question" or other raw database nouns.
 - Never say "I extracted N items" or "I found N updates." That's database talk.
-- If notes mention something risky or time-sensitive, flag it briefly.
-- If notes are vague or missing key details, ask a specific follow-up question in the response.
+- Never group many bullets under one item; one bullet per plan change.
+- If notes are vague or missing key details, ask ONE specific follow-up question in place of the heads-up line.
 - If NOTHING was extracted: acknowledge the note briefly, say you didn't spot anything to update, and tell them what kinds of details you look for (vendor names, dates, costs, decisions, risks).
+- The pending updates appear in the Review panel. Never say "on the right" — on small screens the panel is not on the right.
 
 Extraction rules:
 1. Only extract facts actually stated — never invent or assume details.
@@ -81,7 +85,7 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
     properties: {
       response_message: {
         type: 'string',
-        description: 'Glenn\'s natural reply as a seasoned event ops colleague. Three parts: (1) brief confirmation of what you understood — plain English, no padding; (2) short action-first bullets of what you\'re recommending to add ("Add X to budget", "Create task: Y", "Flag risk: Z"); (3) one-liner: "Review the suggestions on the right — I won\'t touch the plan until you approve them." Never use database type names. Never start with "Got it!" or "Sure!". Sound like a real person.',
+        description: 'Glenn\'s natural reply as a seasoned event ops colleague — a short operational brief. Three parts: (1) ONE confirmation sentence; (2) short bullets in "Item → destination" form, max 6, e.g. "Catering $4,200 → budget"; (3) at most one heads-up line for anything time-sensitive, or omit. Never use database type names. Never say "on the right". Never start with "Got it!" or "Sure!". Sound like a real person.',
       },
       understood_summary: {
         type: 'array',
@@ -383,9 +387,14 @@ export async function llmExtract(
   history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   eventStateContext?: EventStateContext,
 ): Promise<LLMResult> {
-  const systemPrompt = eventStateContext
+  const isFirstExtraction = !history.some((message) => message.role === 'assistant')
+  const reviewReminderRule = isFirstExtraction
+    ? '\n\nThis is the user\'s first note for this event. End response_message with one extra line: "Review these in the Review panel — I won\'t touch the plan until you approve them."'
+    : '\n\nThe user already knows the review flow. Do NOT add a review-reminder line to response_message.'
+
+  const systemPrompt = (eventStateContext
     ? SYSTEM_PROMPT + buildEventStateSection(eventStateContext)
-    : SYSTEM_PROMPT
+    : SYSTEM_PROMPT) + reviewReminderRule
 
   const response = await anthropic.messages.create({
     model: process.env.ANTHROPIC_EXTRACT_MODEL ?? DEFAULT_EXTRACT_MODEL,
