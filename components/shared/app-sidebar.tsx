@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import {
   LayoutDashboard,
-  CalendarDays,
   Settings,
   ChevronRight,
 } from 'lucide-react'
@@ -15,7 +14,6 @@ import { createClient } from '@/lib/supabase/client'
 
 const topNav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/events', label: 'Events', icon: CalendarDays },
 ]
 
 const bottomNav = [

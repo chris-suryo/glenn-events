@@ -13,6 +13,7 @@ import { OpenQuestionResolveButton } from '@/components/event/open-question-reso
 import { AiSourceBadge } from '@/components/event/ai-source-badge'
 import { RecordEditButton } from '@/components/event/record-edit-button'
 import { ScrollToHighlight } from '@/components/event/scroll-to-highlight'
+import { TimelineCalendar } from '@/components/event/timeline-calendar'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatTimelineDateTime } from '@/lib/timeline-format'
@@ -354,7 +355,9 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                   <p className="text-sm text-muted-foreground">No timeline items yet. Tell Glenn about key dates and milestones.</p>
                 </div>
               ) : (
-                <div className="relative space-y-2.5 pl-6">
+                <>
+                  <TimelineCalendar items={timelineItems} eventId={eventId} />
+                  <div className="relative space-y-2.5 pl-6">
                   <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
                   {timelineItems.map((item) => {
                     const timelineWhen = formatTimelineDateTime(item.starts_at, item.ends_at, ev.location)
@@ -394,7 +397,8 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                       </div>
                     )
                   })}
-                </div>
+                  </div>
+                </>
               )}
             </>
           )}
