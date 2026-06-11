@@ -47,7 +47,8 @@ const TYPE_COLORS: Record<TimelineItem['type'], string> = {
 export default async function PlanPage({ params, searchParams }: PageProps) {
   const { eventId } = await params
   const { tab: rawTab, filter, highlight } = await searchParams
-  const tab = TABS.some((t) => t.key === rawTab) ? rawTab! : 'tasks'
+  const normalizedTab = rawTab === 'questions' ? 'open-questions' : rawTab
+  const tab = TABS.some((t) => t.key === normalizedTab) ? normalizedTab! : 'tasks'
 
   const highlightRing = (id: string) =>
     highlight === id ? 'ring-2 ring-primary/50' : ''

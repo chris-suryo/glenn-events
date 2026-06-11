@@ -2,6 +2,7 @@
 
 import type { Dispatch, SetStateAction } from 'react'
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type {
   AiRun,
@@ -19,12 +20,13 @@ import type {
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   CheckCircle2,
+  ChevronDown,
   Loader2,
   Pencil,
   Sparkles,
@@ -45,12 +47,26 @@ interface UpdateGroup {
   title: string
 }
 
+interface PlanningAreaGroup {
+  key: string
+  title: string
+  action: 'Add' | 'Track'
+  types: UpdateType[]
+}
+
 interface ReviewGroup {
   aiRunId: string
   aiRun: AiRun | null
   updates: ProposedUpdate[]
   understoodSummary: string[]
   createdAt: string
+}
+
+interface ReviewUpdateResponse {
+  ok?: boolean
+  status?: string
+  entity_type?: UpdateType
+  entity_id?: string | null
 }
 
 const UPDATE_GROUPS: UpdateGroup[] = [
@@ -61,6 +77,14 @@ const UPDATE_GROUPS: UpdateGroup[] = [
   { type: 'decision', title: 'Decisions' },
   { type: 'risk', title: 'Risks' },
   { type: 'open_question', title: 'Open Questions' },
+]
+
+const PLANNING_AREAS: PlanningAreaGroup[] = [
+  { key: 'schedule', title: 'Schedule', action: 'Add', types: ['timeline_item'] },
+  { key: 'vendors-budget', title: 'Vendors & budget', action: 'Add', types: ['vendor', 'budget_item'] },
+  { key: 'tasks', title: 'Tasks', action: 'Add', types: ['task'] },
+  { key: 'decisions', title: 'Decisions', action: 'Add', types: ['decision'] },
+  { key: 'risks-questions', title: 'Risks & questions', action: 'Track', types: ['risk', 'open_question'] },
 ]
 
 const TYPE_PILL_LABEL: Record<UpdateType, string> = {
@@ -81,6 +105,16 @@ const TYPE_DESTINATION: Record<UpdateType, string> = {
   decision:      'Decisions',
   risk:          'Risks',
   open_question: 'Open Questions',
+}
+
+const TYPE_PLAN_TAB: Record<UpdateType, string> = {
+  task:          'tasks',
+  vendor:        'vendors',
+  budget_item:   'budget',
+  timeline_item: 'timeline',
+  decision:      'decisions',
+  risk:          'risks',
+  open_question: 'questions',
 }
 
 const TYPE_ACTION_LABEL: Record<UpdateType, string> = {
@@ -194,6 +228,14 @@ function getOutputReview(aiRun: AiRun | null): Pick<AiRunReviewOutput, 'understo
   }
 }
 
+function needsCheck(update: ProposedUpdate): boolean {
+  return update.confidence == null || update.confidence < 0.75
+}
+
+function getReadyUpdates(updates: ProposedUpdate[]): ProposedUpdate[] {
+  return updates.filter((update) => !needsCheck(update))
+}
+
 function buildFallbackReview(updates: ProposedUpdate[]): { understoodSummary: string[] } {
   const touched = UPDATE_GROUPS
     .filter((group) => updates.some((update) => update.update_type === group.type))
@@ -221,7 +263,7 @@ function nullableNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-async function reviewUpdate(updateId: string, action: ReviewAction, payload?: UpdatePayload) {
+async function reviewUpdate(updateId: string, action: ReviewAction, payload?: UpdatePayload): Promise<ReviewUpdateResponse> {
   const init: RequestInit = { method: 'POST' }
   if (action === 'approve' && payload) {
     init.headers = { 'Content-Type': 'application/json' }
@@ -229,10 +271,11 @@ async function reviewUpdate(updateId: string, action: ReviewAction, payload?: Up
   }
 
   const res = await fetch(`/api/updates/${updateId}/${action}`, init)
+  const data = await res.json().catch(() => ({})) as ReviewUpdateResponse & { error?: string }
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
     throw new Error(data.error ?? 'Failed to update')
   }
+  return data
 }
 
 function orderByType(scopedUpdates: ProposedUpdate[]): ProposedUpdate[] {
@@ -279,6 +322,26 @@ function buildCategorySummary(updates: ProposedUpdate[]): string {
     })
     .filter((part): part is string => part !== null)
     .join(' · ')
+}
+
+function buildAreaGroups(updates: ProposedUpdate[]): Array<PlanningAreaGroup & { updates: ProposedUpdate[] }> {
+  return PLANNING_AREAS
+    .map((area) => ({
+      ...area,
+      updates: orderByType(updates.filter((update) => area.types.includes(update.update_type))),
+    }))
+    .filter((area) => area.updates.length > 0)
+}
+
+function getBulkActionVerb(updates: ProposedUpdate[]): 'Add' | 'Track' {
+  return updates.length > 0 && updates.every((update) => update.update_type === 'risk' || update.update_type === 'open_question')
+    ? 'Track'
+    : 'Add'
+}
+
+function getPlanHref(eventId: string, updateType: UpdateType, entityId: string | null | undefined): string | null {
+  if (!entityId) return null
+  return `/events/${eventId}/plan?tab=${TYPE_PLAN_TAB[updateType]}&highlight=${entityId}`
 }
 
 function SelectField<T extends string>({
@@ -453,7 +516,7 @@ function EditFields({
   }
 }
 
-export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueueProps) {
+export function ProposedUpdatesQueue({ updates, aiRuns, eventId }: ProposedUpdatesQueueProps) {
   const router = useRouter()
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
@@ -498,9 +561,15 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
     const name = getUpdateName(update, payload)
     const dest = TYPE_DESTINATION[update.update_type]
     try {
-      await reviewUpdate(update.id, action, payload)
+      const result = await reviewUpdate(update.id, action, payload)
       if (action === 'approve') {
-        toast.success(`Added to ${dest}: ${name}`)
+        const planHref = getPlanHref(eventId, update.update_type, result.entity_id)
+        toast.success(`Added to ${dest}: ${name}`, planHref ? {
+          action: {
+            label: 'View',
+            onClick: () => router.push(planHref),
+          },
+        } : undefined)
       } else {
         toast.success('Dismissed. The plan is unchanged.')
       }
@@ -525,12 +594,28 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
       const failed = scopedUpdates.filter((_, index) => results[index].status === 'rejected')
       const appliedCount = scopedUpdates.length - failed.length
       const verb = action === 'approve' ? 'Applied' : 'Dismissed'
+      const firstAppliedHref = action === 'approve'
+        ? scopedUpdates
+            .map((update, index) => {
+              const result = results[index]
+              return result.status === 'fulfilled'
+                ? getPlanHref(eventId, update.update_type, result.value.entity_id)
+                : null
+            })
+            .find((href): href is string => href !== null)
+        : null
 
       if (failed.length === 0) {
         toast.success(
           action === 'approve'
             ? `Applied ${appliedCount} update${appliedCount !== 1 ? 's' : ''} to the event plan.`
-            : `Dismissed ${appliedCount} update${appliedCount !== 1 ? 's' : ''}. The plan is unchanged.`
+            : `Dismissed ${appliedCount} update${appliedCount !== 1 ? 's' : ''}. The plan is unchanged.`,
+          firstAppliedHref ? {
+            action: {
+              label: 'View',
+              onClick: () => router.push(firstAppliedHref),
+            },
+          } : undefined
         )
       } else {
         const names = failed.slice(0, 2).map((update) => getUpdateName(update)).join(', ')
@@ -541,6 +626,175 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
     })
   }
 
+  function renderUpdateRow(update: ProposedUpdate) {
+    const isProcessing = processingIds.has(update.id)
+    const isExpanded = expandedIds.has(update.id)
+    const isEditing = editingIds.has(update.id)
+    const draftPayload = draftPayloads[update.id]
+    const activePayload = draftPayload ?? update.payload_json
+    const name = getUpdateName(update, activePayload)
+    const detail = getUpdateDetail(update, activePayload)
+    const description = getUpdateDescription(update, activePayload)
+    const dest = TYPE_DESTINATION[update.update_type]
+    const checkNeeded = needsCheck(update)
+
+    return (
+      <article
+        key={update.id}
+        className={cn(
+          'rounded-lg border bg-card shadow-sm transition-colors',
+          checkNeeded && 'border-amber-200 bg-amber-50/35'
+        )}
+      >
+        <div className="flex flex-col gap-2 p-2 sm:flex-row sm:items-start">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-expanded={isExpanded}
+            onClick={() => toggleSetValue(setExpandedIds, update.id)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                toggleSetValue(setExpandedIds, update.id)
+              }
+            }}
+            className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <ChevronDown
+              className={cn(
+                'mt-1 size-3.5 shrink-0 text-muted-foreground transition-transform',
+                isExpanded && 'rotate-180'
+              )}
+              aria-hidden="true"
+            />
+            <Badge
+              variant="outline"
+              className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
+            >
+              {TYPE_PILL_LABEL[update.update_type]}
+            </Badge>
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="block min-w-0 truncate text-sm font-medium leading-5">{name}</span>
+                {checkNeeded ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                    <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                    Check
+                  </span>
+                ) : null}
+              </span>
+              {detail ? (
+                <span className="block text-[11px] leading-4 text-muted-foreground">{detail}</span>
+              ) : null}
+              {checkNeeded && update.rationale ? (
+                <span className="mt-1 block text-[11px] leading-relaxed text-amber-800 line-clamp-2">
+                  {update.rationale}
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:shrink-0 sm:items-center">
+            <Button
+              size="sm"
+              className="w-full sm:w-auto"
+              disabled={isProcessing || isEditing}
+              onClick={(event) => {
+                event.stopPropagation()
+                handleSingle(update, 'approve')
+              }}
+            >
+              {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+              {TYPE_ACTION_LABEL[update.update_type]}
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              className="shrink-0 text-muted-foreground"
+              aria-label="Dismiss"
+              disabled={isProcessing}
+              onClick={(event) => {
+                event.stopPropagation()
+                handleSingle(update, 'reject')
+              }}
+            >
+              <XCircle />
+            </Button>
+          </div>
+        </div>
+
+        {isExpanded ? (
+          <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
+            <div className="flex flex-col gap-2 text-xs">
+              {description ? (
+                <div className="flex flex-col gap-1">
+                  <p className="font-medium text-foreground">Details</p>
+                  <p className="leading-relaxed text-muted-foreground">{description}</p>
+                </div>
+              ) : null}
+              {update.rationale ? (
+                <div className="flex flex-col gap-1">
+                  <p className="font-medium text-foreground">Why this was suggested</p>
+                  <p className="leading-relaxed text-muted-foreground">{update.rationale}</p>
+                </div>
+              ) : null}
+              <p className="text-muted-foreground">This will go to {dest} when applied.</p>
+            </div>
+
+            {isEditing ? (
+              <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+                <EditFields
+                  update={update}
+                  payload={activePayload}
+                  onChange={(payload) => setDraftPayloads((current) => ({ ...current, [update.id]: payload }))}
+                />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={isProcessing}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleSingle(update, 'approve', activePayload)
+                    }}
+                  >
+                    {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                    Save & Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    disabled={isProcessing}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      cancelEdit(update.id)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-fit"
+                disabled={isProcessing}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  startEdit(update)
+                }}
+              >
+                <Pencil data-icon="inline-start" />
+                Edit
+              </Button>
+            )}
+          </div>
+        ) : null}
+      </article>
+    )
+  }
+
   if (updates.length === 0) {
     const hasHistory = aiRuns.some(r => r.status === 'completed')
     return hasHistory ? (
@@ -548,6 +802,12 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
         <CheckCircle2 className="size-7 text-emerald-500/60" />
         <p className="text-sm font-medium text-foreground">All caught up</p>
         <p className="max-w-[200px] text-xs text-muted-foreground">Everything has been reviewed. Tell Glenn what changed and new updates will appear here.</p>
+        <Link
+          href={`/events/${eventId}/plan`}
+          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-1')}
+        >
+          See the plan →
+        </Link>
       </div>
     ) : (
       <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
@@ -561,14 +821,18 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
       {reviewGroups.map((reviewGroup) => {
-        const questionsOnly = reviewGroup.updates.every((update) => update.update_type === 'open_question')
         const sourceSummary = reviewGroup.understoodSummary[0]
         const categorySummary = buildCategorySummary(reviewGroup.updates)
+        const readyUpdates = getReadyUpdates(reviewGroup.updates)
+        const needsCheckCount = reviewGroup.updates.length - readyUpdates.length
+        const areaGroups = buildAreaGroups(reviewGroup.updates)
+        const lightweightList = reviewGroup.updates.length <= 3 && areaGroups.length === 1
+        const allReadyVerb = getBulkActionVerb(readyUpdates)
         return (
         <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
           <div className="min-w-0">
             <p className="text-sm font-semibold leading-5">
-              {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''}
+              {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''} · {readyUpdates.length} ready · {needsCheckCount} need a check
             </p>
             {categorySummary ? (
               <p className="mt-0.5 text-xs font-medium text-muted-foreground">{categorySummary}</p>
@@ -581,138 +845,50 @@ export function ProposedUpdatesQueue({ updates, aiRuns }: ProposedUpdatesQueuePr
           </div>
 
           <div className="flex flex-col gap-2">
-            {orderByType(reviewGroup.updates).map((update) => {
-              const isProcessing = processingIds.has(update.id)
-              const isExpanded = expandedIds.has(update.id)
-              const isEditing = editingIds.has(update.id)
-              const draftPayload = draftPayloads[update.id]
-              const activePayload = draftPayload ?? update.payload_json
-              const name = getUpdateName(update, activePayload)
-              const detail = getUpdateDetail(update, activePayload)
-              const description = getUpdateDescription(update, activePayload)
-              const dest = TYPE_DESTINATION[update.update_type]
-
-              return (
-                <article key={update.id} className="rounded-lg border bg-card shadow-sm">
-                  <div className="flex items-start gap-2 p-2">
-                    <div className="flex min-w-0 flex-1 items-start gap-2">
-                      <Badge
-                        variant="outline"
-                        className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
-                      >
-                        {TYPE_PILL_LABEL[update.update_type]}
-                      </Badge>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium leading-5">{name}</span>
-                        {detail ? (
-                          <span className="block text-[11px] leading-4 text-muted-foreground">{detail}</span>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => toggleSetValue(setExpandedIds, update.id)}
-                          aria-expanded={isExpanded}
-                          className="mt-1 text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                        >
-                          {isExpanded ? 'Hide details' : 'Details/Edit'}
-                        </button>
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="shrink-0"
-                      disabled={isProcessing || isEditing}
-                      onClick={() => handleSingle(update, 'approve')}
-                    >
-                      {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-                      {TYPE_ACTION_LABEL[update.update_type]}
-                    </Button>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      className="shrink-0 text-muted-foreground"
-                      aria-label="Dismiss"
-                      disabled={isProcessing}
-                      onClick={() => handleSingle(update, 'reject')}
-                    >
-                      <XCircle />
-                    </Button>
-                  </div>
-
-                  {isExpanded ? (
-                    <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
-                      <div className="flex flex-col gap-2 text-xs">
-                        {description ? (
-                          <div className="flex flex-col gap-1">
-                            <p className="font-medium text-foreground">Details</p>
-                            <p className="leading-relaxed text-muted-foreground">{description}</p>
-                          </div>
-                        ) : null}
-                        {update.rationale ? (
-                          <div className="flex flex-col gap-1">
-                            <p className="font-medium text-foreground">Why this was suggested</p>
-                            <p className="leading-relaxed text-muted-foreground">{update.rationale}</p>
-                          </div>
-                        ) : null}
-                        <p className="text-muted-foreground">This will go to {dest} when applied.</p>
+            {lightweightList
+              ? orderByType(reviewGroup.updates).map(renderUpdateRow)
+              : areaGroups.map((area) => {
+                const areaReadyUpdates = getReadyUpdates(area.updates)
+                return (
+                  <section key={area.key} className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">{area.title}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {area.updates.length} update{area.updates.length !== 1 ? 's' : ''} · {areaReadyUpdates.length} ready
+                        </p>
                       </div>
-
-                      {isEditing ? (
-                        <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
-                          <EditFields
-                            update={update}
-                            payload={activePayload}
-                            onChange={(payload) => setDraftPayloads((current) => ({ ...current, [update.id]: payload }))}
-                          />
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            <Button
-                              size="sm"
-                              className="w-full"
-                              disabled={isProcessing}
-                              onClick={() => handleSingle(update, 'approve', activePayload)}
-                            >
-                              {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                              Save & Apply
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full"
-                              disabled={isProcessing}
-                              onClick={() => cancelEdit(update.id)}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
+                      {areaReadyUpdates.length >= 2 ? (
                         <Button
-                          size="sm"
+                          size="xs"
                           variant="outline"
-                          className="w-fit"
-                          disabled={isProcessing}
-                          onClick={() => startEdit(update)}
+                          disabled={isPendingBulk}
+                          onClick={() => handleBulk('approve', areaReadyUpdates)}
+                          className="w-full sm:w-auto"
                         >
-                          <Pencil data-icon="inline-start" />
-                          Edit
+                          {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                          {area.action} {areaReadyUpdates.length} ready
                         </Button>
-                      )}
+                      ) : null}
                     </div>
-                  ) : null}
-                </article>
-              )
-            })}
+                    <div className="flex flex-col gap-2">
+                      {area.updates.map(renderUpdateRow)}
+                    </div>
+                  </section>
+                )
+              })}
           </div>
 
           <div className="grid grid-cols-2 gap-2 border-t pt-3">
             <Button
               size="sm"
               variant="default"
-              disabled={isPendingBulk}
-              onClick={() => handleBulk('approve', reviewGroup.updates)}
+              disabled={isPendingBulk || readyUpdates.length === 0}
+              onClick={() => handleBulk('approve', readyUpdates)}
               className="w-full"
             >
               {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-              {questionsOnly ? `Track all (${reviewGroup.updates.length})` : `Apply all (${reviewGroup.updates.length})`}
+              {allReadyVerb} all ready ({readyUpdates.length})
             </Button>
             <Button
               size="sm"
