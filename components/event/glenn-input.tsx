@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,8 @@ interface GlennInputProps {
   /** Called with Glenn's reply text when the API responds successfully.
    *  When provided, the caller owns router.refresh(); GlennInput won't call it. */
   onGlennReply?: (text: string) => void
+  /** Called when the submit request fails after the optimistic user message is shown. */
+  onSubmitError?: () => void
   /** Overrides the randomized placeholder, e.g. for empty-event onboarding. */
   placeholder?: string
   variant?: 'default' | 'plain'
@@ -40,12 +42,14 @@ export function GlennInput({
   onUserMessage,
   onPendingChange,
   onGlennReply,
+  onSubmitError,
   placeholder: placeholderOverride,
   variant = 'default',
 }: GlennInputProps) {
   const router = useRouter()
   const [text, setText] = useState('')
-  const [isPending, startTransition] = useTransition()
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const submitInFlightRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [randomPlaceholder, setRandomPlaceholder] = useState(PLACEHOLDERS[0])
   useEffect(() => {
@@ -56,41 +60,47 @@ export function GlennInput({
   const placeholder = placeholderOverride ?? randomPlaceholder
 
   async function submit() {
-    if (!text.trim() || isPending) return
+    if (!text.trim() || submitInFlightRef.current) return
+    submitInFlightRef.current = true
+    setIsSubmitting(true)
+
     const input = text.trim()
     setText('')
     onUserMessage?.(input)
     onPendingChange?.(true)
 
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/events/${eventId}/extract-updates`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input_text: input }),
-        })
+    try {
+      const res = await fetch(`/api/events/${eventId}/extract-updates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input_text: input }),
+      })
 
-        const data = await res.json()
-        onPendingChange?.(false)
+      const data = await res.json()
+      onPendingChange?.(false)
 
-        if (!res.ok) {
-          toast.error(data.error ?? 'Something went wrong. Please try again.')
-          return
-        }
-
-        if (onGlennReply) {
-          // ChatView owns the refresh; deliver the reply for streaming
-          onGlennReply(data.assistant_message ?? '')
-        } else {
-          // Standalone usage (Command Center) — route to Ask Glenn where the
-          // reply and suggestions are visible. The /chat page loads fresh DB data.
-          router.push(`/events/${eventId}/chat`)
-        }
-      } catch {
-        onPendingChange?.(false)
-        toast.error('Network error. Please try again.')
+      if (!res.ok) {
+        onSubmitError?.()
+        toast.error(data.error ?? 'Something went wrong. Please try again.')
+        return
       }
-    })
+
+      if (onGlennReply) {
+        // ChatView owns the refresh; deliver the reply for streaming
+        onGlennReply(data.assistant_message ?? '')
+      } else {
+        // Standalone usage (Command Center) — route to Ask Glenn where the
+        // reply and suggestions are visible. The /chat page loads fresh DB data.
+        router.push(`/events/${eventId}/chat`)
+      }
+    } catch {
+      onPendingChange?.(false)
+      onSubmitError?.()
+      toast.error('Network error. Please try again.')
+    } finally {
+      submitInFlightRef.current = false
+      setIsSubmitting(false)
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -122,18 +132,18 @@ export function GlennInput({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className="min-h-[64px] resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
-            disabled={isPending}
+            disabled={isSubmitting}
           />
 
           <div className="mt-2 flex items-center justify-end">
             <Button
               type="submit"
               size="sm"
-              disabled={!text.trim() || isPending}
+              disabled={!text.trim() || isSubmitting}
               suppressHydrationWarning
               className="shrink-0 shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]"
             >
-              {isPending ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                   Sending…
@@ -162,7 +172,7 @@ export function GlennInput({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className="resize-none border-0 shadow-none focus-visible:ring-0 p-0 text-sm leading-relaxed min-h-[80px] bg-transparent"
-            disabled={isPending}
+            disabled={isSubmitting}
           />
         </div>
 
@@ -173,7 +183,7 @@ export function GlennInput({
               <button
                 key={chip.label}
                 type="button"
-                disabled={isPending}
+                disabled={isSubmitting}
                 onClick={() => handleChip(chip.prompt)}
                 className="text-xs px-2.5 py-1 rounded-full border border-muted-foreground/20 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors disabled:opacity-40"
               >
@@ -191,11 +201,11 @@ export function GlennInput({
           <Button
             type="submit"
             size="sm"
-            disabled={!text.trim() || isPending}
+            disabled={!text.trim() || isSubmitting}
             suppressHydrationWarning
             className="shrink-0 shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]"
           >
-            {isPending ? (
+            {isSubmitting ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                 Sending…

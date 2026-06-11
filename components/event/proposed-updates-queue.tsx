@@ -924,7 +924,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         key={update.id}
         className="rounded-lg border bg-card shadow-sm transition-colors"
       >
-        <div className="flex flex-col gap-2 p-2 sm:flex-row sm:items-start">
+        <div className="flex flex-col gap-2 p-2 xl:flex-row xl:items-start">
           <div
             role="button"
             tabIndex={0}
@@ -953,14 +953,14 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
             </Badge>
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="block min-w-0 truncate text-sm font-medium leading-5">{name}</span>
+                <span className="line-clamp-2 min-w-0 text-sm font-medium leading-5">{name}</span>
               </span>
               {detail ? (
                 <span className="block text-[11px] leading-4 text-muted-foreground">{detail}</span>
               ) : null}
             </span>
           </div>
-          <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:shrink-0 sm:items-center">
+          <div className="grid grid-cols-[1fr_auto] gap-2 xl:flex xl:shrink-0 xl:items-center">
             <Button
               size="sm"
               className="w-full sm:w-auto"

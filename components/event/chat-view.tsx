@@ -184,6 +184,11 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
     setTimeout(tick, delay)
   }, [router])
 
+  const handleSubmitError = useCallback(() => {
+    setOptimisticMsg(null)
+    router.refresh()
+  }, [router])
+
   const handleClarifyReviewItem = useCallback(async ({
     title,
     answer,
@@ -237,7 +242,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
       <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
 
         {/* ── Left: message thread ─────────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-h-0 border-r">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r">
 
           {/* Scrollable area — iMessage-style: content anchors at the bottom.
               The inner flex-col has min-h-full so the flex-1 spacer fills
@@ -377,6 +382,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
               onUserMessage={handleUserMessage}
               onPendingChange={handlePendingChange}
               onGlennReply={handleGlennReply}
+              onSubmitError={handleSubmitError}
               placeholder='What changed? Paste rough notes, emails, or updates for Glenn to review.'
               variant="plain"
             />
@@ -384,7 +390,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
         </div>
 
         {/* ── Right: review panel (stacks below the thread on mobile) ───────── */}
-        <div ref={reviewPanelRef} className="w-full lg:w-96 flex flex-col shrink-0 max-h-[45dvh] lg:max-h-none border-t lg:border-t-0">
+        <div ref={reviewPanelRef} className="w-full lg:w-[480px] xl:w-[560px] flex flex-col shrink-0 max-h-[45dvh] lg:max-h-none border-t lg:border-t-0">
           <div className="px-6 py-3 border-b shrink-0">
             <h3 className="text-sm font-semibold">
               Review
