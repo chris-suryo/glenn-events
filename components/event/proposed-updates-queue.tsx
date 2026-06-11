@@ -18,7 +18,7 @@ import type {
   UpdateType,
   VendorPayload,
 } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, formatDistanceToNow } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -369,6 +369,12 @@ function getReadyUpdates(updates: ProposedUpdate[]): ProposedUpdate[] {
   return updates.filter((update) => !needsCheck(update))
 }
 
+// Ready rows first, needs-check rows clustered after — keeps the amber
+// clarification cards from interleaving with one-click rows.
+function readyFirst(updates: ProposedUpdate[]): ProposedUpdate[] {
+  return [...updates.filter((update) => !needsCheck(update)), ...updates.filter(needsCheck)]
+}
+
 function buildFallbackReview(updates: ProposedUpdate[]): { understoodSummary: string[] } {
   const touched = UPDATE_GROUPS
     .filter((group) => updates.some((update) => update.update_type === group.type))
@@ -442,7 +448,9 @@ function buildReviewGroups(updates: ProposedUpdate[], aiRuns: AiRun[]): ReviewGr
         createdAt: aiRun?.created_at ?? runUpdates[0]?.created_at ?? '',
       }
     })
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    // Newest batch first — when Glenn replies, the relevant batch is at the top
+    // of the panel instead of below every older pending batch.
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 function buildCategorySummary(updates: ProposedUpdate[]): string {
@@ -1162,7 +1170,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
-      {reviewGroups.map((reviewGroup) => {
+      {reviewGroups.map((reviewGroup, groupIndex) => {
         const sourceSummary = reviewGroup.understoodSummary[0]
         const categorySummary = buildCategorySummary(reviewGroup.updates)
         const readyUpdates = getReadyUpdates(reviewGroup.updates)
@@ -1170,12 +1178,25 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         const areaGroups = buildAreaGroups(reviewGroup.updates)
         const lightweightList = reviewGroup.updates.length <= 3 && areaGroups.length === 1
         const allReadyVerb = getReadyBulkLabel(readyUpdates, getBulkActionVerb(readyUpdates))
+        const isLatest = groupIndex === 0 && reviewGroups.length > 1
         return (
         <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
           <div className="min-w-0">
-            <p className="text-sm font-semibold leading-5">
-              {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''} · {readyUpdates.length} ready · {needsCheckCount} need a check
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-semibold leading-5">
+                {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''} · {readyUpdates.length} ready · {needsCheckCount} need a check
+              </p>
+              <span className="flex shrink-0 items-center gap-1.5 pt-0.5">
+                {isLatest ? (
+                  <Badge className="h-5 rounded-md px-1.5 text-[11px]">Latest</Badge>
+                ) : null}
+                {reviewGroup.createdAt ? (
+                  <span className="text-[11px] text-muted-foreground" suppressHydrationWarning>
+                    {formatDistanceToNow(reviewGroup.createdAt)}
+                  </span>
+                ) : null}
+              </span>
+            </div>
             {categorySummary ? (
               <p className="mt-0.5 text-xs font-medium text-muted-foreground">{categorySummary}</p>
             ) : null}
@@ -1188,7 +1209,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
 
           <div className="flex flex-col gap-2">
             {lightweightList
-              ? orderByType(reviewGroup.updates).map(renderUpdateRow)
+              ? readyFirst(orderByType(reviewGroup.updates)).map(renderUpdateRow)
               : areaGroups.map((area) => {
                 const areaReadyUpdates = getReadyUpdates(area.updates)
                 const areaReadyVerb = getReadyBulkLabel(areaReadyUpdates, area.action)
@@ -1215,7 +1236,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                       ) : null}
                     </div>
                     <div className="flex flex-col gap-2">
-                      {area.updates.map(renderUpdateRow)}
+                      {readyFirst(area.updates).map(renderUpdateRow)}
                     </div>
                   </section>
                 )

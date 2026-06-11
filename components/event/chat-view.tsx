@@ -94,9 +94,18 @@ const STREAM_WORD_DELAY_MS = 30
 // ── Component ───────────────────────────────────────────────────────────────────
 export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMessageId = null }: ChatViewProps) {
   const router = useRouter()
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const threadScrollRef = useRef<HTMLDivElement>(null)
   const reviewPanelRef = useRef<HTMLDivElement>(null)
+  const reviewScrollRef = useRef<HTMLDivElement>(null)
   const prevMessageCountRef = useRef(messages.length)
+
+  // Scroll ONLY the thread scroller. scrollIntoView is off-limits here: it also
+  // scrolls overflow-hidden ancestors (the app shell), which have no scrollbars
+  // to recover with — the layout ends up stranded with a blank area below.
+  const scrollThreadToBottom = useCallback(() => {
+    const el = threadScrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [])
 
   // Source-traceability highlight — when arriving via an "AI source" badge link
   const [activeHighlight, setActiveHighlight] = useState<string | null>(highlightMessageId)
@@ -104,7 +113,13 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
 
   useEffect(() => {
     if (!highlightMessageId) return
-    document.getElementById(`msg-${highlightMessageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const target = document.getElementById(`msg-${highlightMessageId}`)
+    const scroller = threadScrollRef.current
+    if (target && scroller) {
+      const delta = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+      const top = scroller.scrollTop + delta - (scroller.clientHeight - target.clientHeight) / 2
+      scroller.scrollTo({ top, behavior: 'smooth' })
+    }
     const timer = setTimeout(() => setActiveHighlight(null), 4000)
     return () => clearTimeout(timer)
   }, [highlightMessageId])
@@ -124,8 +139,8 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
       skipAutoScrollRef.current = false
       return
     }
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, optimisticMsg])
+    scrollThreadToBottom()
+  }, [messages.length, optimisticMsg, scrollThreadToBottom])
 
   // Clear streaming overlay + optimistic message when DB messages land
   useEffect(() => {
@@ -140,9 +155,20 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
   // Keep scrolled to bottom while streaming text grows
   useEffect(() => {
     if (streamingText) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollThreadToBottom()
     }
-  }, [streamingText])
+  }, [streamingText, scrollThreadToBottom])
+
+  // When a new extraction batch lands, surface it: groups render newest-first,
+  // so jumping the review panel to the top shows the latest batch.
+  const newestRunId = pendingUpdates.length > 0 ? pendingUpdates[pendingUpdates.length - 1].ai_run_id : null
+  const prevNewestRunRef = useRef(newestRunId)
+  useEffect(() => {
+    if (newestRunId && newestRunId !== prevNewestRunRef.current) {
+      reviewScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    prevNewestRunRef.current = newestRunId
+  }, [newestRunId])
 
   // ── Callbacks for GlennInput ────────────────────────────────────────────────
   const handleUserMessage = useCallback((text: string) => {
@@ -239,7 +265,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col lg:flex-row">
 
         {/* ── Left: message thread ─────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r">
@@ -248,7 +274,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
               The inner flex-col has min-h-full so the flex-1 spacer fills
               empty space, pushing messages down. When messages overflow,
               the spacer shrinks and the overflow-y-auto parent scrolls. */}
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div ref={threadScrollRef} className="flex-1 overflow-y-auto overscroll-contain min-h-0">
             <div className="flex flex-col min-h-full px-6 py-4">
 
               {/* Spacer + empty state */}
@@ -360,7 +386,6 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
                 </div>
               )}
 
-              <div ref={messagesEndRef} />
             </div>
           </div>
 
@@ -368,7 +393,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
           {pendingUpdates.length > 0 && (
             <button
               type="button"
-              onClick={() => reviewPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              onClick={() => reviewPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })}
               className="lg:hidden flex items-center justify-center gap-1 border-t bg-primary/[0.04] py-2 text-xs font-medium text-primary"
             >
               {pendingUpdates.length} to review ↓
@@ -404,7 +429,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
               Apply adds to plan · Dismiss leaves it unchanged
             </p>
           </div>
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div ref={reviewScrollRef} className="flex-1 overflow-y-auto overscroll-contain min-h-0">
             <ProposedUpdatesQueue
               updates={pendingUpdates}
               aiRuns={aiRuns}
