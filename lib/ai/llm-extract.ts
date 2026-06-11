@@ -72,14 +72,14 @@ Tone rules for response_message:
 
 Extraction rules:
 1. Only extract facts actually stated — never invent or assume details.
-2. If information is incomplete or ambiguous, create an open_question instead of guessing.
+2. If one missing fact blocks an otherwise concrete item, still propose the item with the known fields, lower confidence, and a rationale written as one direct question. Do not create a separate confirm-task for the same gap.
 3. One message can produce several items, but only when they are distinct real-world plan changes.
 4. Dates and times: use ISO 8601 format. Use YYYY-MM-DD for date-only facts and YYYY-MM-DDTHH:mm:ss for time-specific facts when the date is known. Return null only if no date can be inferred.
 5. confidence: 0.0–1.0 representing how certain you are about this extraction.
-6. rationale: one short phrase explaining why you extracted this item.
+6. rationale: one short phrase explaining why you extracted this item. For lower-confidence clarification items, write one direct question the user can answer.
 7. All status fields must exactly match the allowed enum values.
-8. CRITICAL — no placeholder values: if a vendor name is unknown, create an open_question asking for it. Never put "<UNKNOWN>", "TBD", "Unknown", "N/A", or any placeholder in an extracted field. Unknown fields must be null or omitted.
-9. CRITICAL — use conversation history: if earlier messages show you asked a follow-up question and the user is now answering it, extract the complete combined information now. Connect the dots across turns.
+8. CRITICAL — no placeholder values: if a vendor name is unknown but the item is otherwise concrete, use the best representable known fields, lower confidence, and make rationale the missing-fact question. Never put "<UNKNOWN>", "TBD", "Unknown", "N/A", or any placeholder in an extracted field. Unknown fields must be null or omitted.
+9. CRITICAL — use conversation history: if earlier messages show you asked a follow-up question and the user is now answering it, extract the complete combined information now. Connect the dots across turns and re-propose the complete item with known details merged.
 10. CRITICAL — do not create duplicate suggestions for the same real-world item in one message.
 11. Prefer one consolidated suggestion over multiple overlapping suggestions for the same real-world item. This does not mean collapsing unrelated vendor, task, timeline, budget, decision, risk, or open-question items into one suggestion.
 11a. Timeline duplicate guard: if one actor/event/time window is described more than once, create one clearer timeline item rather than near-duplicates. Example: "IBM volunteers arrive 5:00–5:15 PM" and "IBM volunteers arrive closer to 5:00 PM for setup" should become one volunteer-arrival timing unless they are truly separate events.
@@ -87,7 +87,7 @@ Extraction rules:
 13. For budget, create one budget item per real cost, budget cap, target, receipt, quote, deposit, or paid charge. A stated cap or target such as "$6,000 max" or "budget target is $2,500" is a budget item even if no vendor has been chosen.
 14. For tasks, create only tasks that require a human action. Do not create tasks that merely restate facts.
 15. For risks, create a risk only when there is an actual execution concern.
-16. If missing information blocks action or leaves an operational logistics question unresolved, ask one open question instead of guessing. Open questions are appropriate for unresolved logistics even if they are not catastrophic blockers. They must come from the note's real-world unknowns — never from your own need for more detail from the user.
+16. If missing information blocks action or leaves an operational logistics question unresolved and there is no concrete item to represent yet, ask one open question instead of guessing. Open questions are appropriate for unresolved logistics even if they are not catastrophic blockers. They must come from the note's real-world unknowns — never from your own need for more detail from the user.
 17. If previous conversation context indicates the user is clarifying an existing item, update that concept once instead of creating duplicates.
 18. Current message takes precedence over older context. Do not introduce unrelated prior vendors, costs, tasks, or risks unless the user's current message is clearly answering or clarifying that same item.
 19. If the current message corrects a previous value ("not $2,087", "the total is $1,006.87"), use the corrected value exactly and do not repeat the older value.
