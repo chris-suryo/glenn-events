@@ -426,7 +426,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
               )}
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Apply adds to plan · Dismiss leaves it unchanged
+              Review what Glenn found before it changes the plan.
             </p>
           </div>
           <div ref={reviewScrollRef} className="flex-1 overflow-y-auto overscroll-contain min-h-0">

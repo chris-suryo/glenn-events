@@ -347,6 +347,83 @@ function getSafeReadyUpdates(updates: ProposedUpdate[]): ProposedUpdate[] {
   return updates.filter((update) => !needsCheck(update) && !isArchive(update))
 }
 
+function cleanBatchTitleText(value: string | null | undefined): string | null {
+  if (!value) return null
+  const withoutMarkdown = value
+    .replace(/^[\s"'`*_–—-]+|[\s"'`*_–—-]+$/g, '')
+    .replace(/^re:\s*/i, '')
+    .replace(/^glenn (found|understood|heard|noticed)\s+/i, '')
+    .replace(/^this note (has|was|is)\s+/i, '')
+    .trim()
+
+  if (!withoutMarkdown || /^plan changes touching/i.test(withoutMarkdown)) return null
+
+  const firstPhrase = withoutMarkdown
+    .split(/[.!?\n]/)[0]
+    .split(/\s+[–—-]\s+/)[0]
+    .split(/\s+(?:and|but|with)\s+/i)[0]
+    .trim()
+
+  if (!firstPhrase || firstPhrase.length < 3) return null
+  if (/\b(?:for|at|to|from|with|and|or|the|a|an)$/i.test(firstPhrase)) return null
+
+  const words = firstPhrase.split(/\s+/)
+  const title = words.length > 5 ? words.slice(0, 5).join(' ') : firstPhrase
+  return /\b(?:for|at|to|from|with|and|or|the|a|an)$/i.test(title) ? null : title
+}
+
+function getBatchDisplaySummary(summary: string | undefined): string | null {
+  if (!summary || /^This note has plan changes touching/i.test(summary)) return null
+  return summary
+}
+
+function buildBatchTitle(reviewGroup: ReviewGroup): string {
+  const summaryTitle = cleanBatchTitleText(reviewGroup.understoodSummary[0])
+  if (summaryTitle) return summaryTitle
+
+  const sourceTitle = cleanBatchTitleText(reviewGroup.aiRun?.input_text)
+  if (sourceTitle) return sourceTitle
+
+  if (reviewGroup.updates.some(isCorrection)) return 'Plan correction'
+  if (reviewGroup.updates.some(isArchive)) return 'Removal to review'
+  if (reviewGroup.updates.some(needsCheck)) return 'Needs your answer'
+
+  const firstUpdate = orderByType(reviewGroup.updates)[0]
+  if (firstUpdate) return getUpdateName(firstUpdate)
+  return 'Glenn found updates'
+}
+
+function buildBatchActionCue({
+  safeReadyCount,
+  removalCount,
+  needsCheckCount,
+}: {
+  safeReadyCount: number
+  removalCount: number
+  needsCheckCount: number
+}): string {
+  if (removalCount > 0) return 'Removal requires review'
+  if (needsCheckCount > 0) return 'Needs your answer'
+  if (safeReadyCount > 0) return 'Ready to apply'
+  return 'Review when ready'
+}
+
+function buildBatchStatusParts({
+  safeReadyCount,
+  removalCount,
+  needsCheckCount,
+}: {
+  safeReadyCount: number
+  removalCount: number
+  needsCheckCount: number
+}): string[] {
+  const parts: string[] = []
+  if (safeReadyCount > 0) parts.push(`${safeReadyCount} ready`)
+  if (needsCheckCount > 0) parts.push(`${needsCheckCount} need${needsCheckCount === 1 ? 's' : ''} your answer`)
+  if (removalCount > 0) parts.push(`${removalCount} removal${removalCount !== 1 ? 's' : ''}`)
+  return parts
+}
+
 function buildFallbackReview(updates: ProposedUpdate[]): { understoodSummary: string[] } {
   const touched = UPDATE_GROUPS
     .filter((group) => updates.some((update) => update.update_type === group.type))
@@ -423,18 +500,6 @@ function buildReviewGroups(updates: ProposedUpdate[], aiRuns: AiRun[]): ReviewGr
     // Newest batch first — when Glenn replies, the relevant batch is at the top
     // of the panel instead of below every older pending batch.
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-}
-
-function buildCategorySummary(updates: ProposedUpdate[]): string {
-  return UPDATE_GROUPS
-    .map((group) => {
-      const count = updates.filter((update) => update.update_type === group.type).length
-      if (count === 0) return null
-      const label = TYPE_COUNT_LABEL[group.type]
-      return `${count} ${label}${count === 1 ? '' : 's'}`
-    })
-    .filter((part): part is string => part !== null)
-    .join(' · ')
 }
 
 function getPlanHref(eventId: string, updateType: UpdateType, entityId: string | null | undefined): string | null {
@@ -1157,50 +1222,65 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
       {reviewGroups.map((reviewGroup, groupIndex) => {
-        const sourceSummary = reviewGroup.understoodSummary[0]
-        const categorySummary = buildCategorySummary(reviewGroup.updates)
+        const sourceSummary = getBatchDisplaySummary(reviewGroup.understoodSummary[0])
         const readyUpdates = getReadyUpdates(reviewGroup.updates)
         const safeReadyUpdates = getSafeReadyUpdates(reviewGroup.updates)
         const removalUpdates = orderByType(readyUpdates.filter(isArchive))
         const regularReadyUpdates = orderByType(safeReadyUpdates)
         const needsCheckUpdates = orderByType(reviewGroup.updates.filter(needsCheck))
         const needsCheckCount = reviewGroup.updates.length - readyUpdates.length
+        const batchTitle = buildBatchTitle(reviewGroup)
+        const actionCue = buildBatchActionCue({
+          safeReadyCount: safeReadyUpdates.length,
+          removalCount: removalUpdates.length,
+          needsCheckCount,
+        })
+        const statusParts = buildBatchStatusParts({
+          safeReadyCount: safeReadyUpdates.length,
+          removalCount: removalUpdates.length,
+          needsCheckCount,
+        })
+        const showActionCue = actionCue !== batchTitle
         const isLatest = groupIndex === 0
         const isExpanded = batchExpansionOverrides[reviewGroup.aiRunId] ?? isLatest
         return (
-        <section key={reviewGroup.aiRunId} className="rounded-xl border bg-card shadow-sm">
+        <section key={reviewGroup.aiRunId} className="rounded-lg border bg-card shadow-sm">
           <button
             type="button"
             aria-expanded={isExpanded}
             onClick={() => setBatchExpanded(reviewGroup.aiRunId, !isExpanded)}
-            className="flex w-full items-start gap-2 rounded-t-xl p-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="flex w-full items-start gap-2 rounded-t-lg p-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <ChevronDown
               className={cn('mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform', isExpanded && 'rotate-180')}
               aria-hidden="true"
             />
             <span className="min-w-0 flex-1">
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-sm font-semibold leading-5">
-                  {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''}
+              <span className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                <span className="min-w-0 flex-1 text-sm font-semibold leading-5 text-foreground">
+                  {batchTitle}
                 </span>
-                {isLatest ? (
-                  <Badge className="h-5 rounded-md px-1.5 text-[11px]">Latest</Badge>
-                ) : null}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {showActionCue ? (
+                    <Badge variant={safeReadyUpdates.length > 0 && removalUpdates.length === 0 && needsCheckCount === 0 ? 'default' : 'outline'} className="h-5 rounded-md px-1.5 text-[11px]">
+                      {actionCue}
+                    </Badge>
+                  ) : null}
+                  {isLatest ? (
+                    <Badge className="h-5 rounded-md px-1.5 text-[11px]">Latest</Badge>
+                  ) : null}
+                </span>
               </span>
               <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                 {reviewGroup.createdAt ? (
                   <span suppressHydrationWarning>{formatDistanceToNow(reviewGroup.createdAt)}</span>
                 ) : null}
-                <span>{safeReadyUpdates.length} ready</span>
-                {removalUpdates.length > 0 ? <span>{removalUpdates.length} removal{removalUpdates.length !== 1 ? 's' : ''}</span> : null}
-                <span>{needsCheckCount} need{needsCheckCount === 1 ? 's' : ''} your answer</span>
+                {statusParts.map((part) => (
+                  <span key={part}>{part}</span>
+                ))}
               </span>
-              {!isExpanded && categorySummary ? (
-                <span className="mt-1 block text-xs font-medium text-muted-foreground">{categorySummary}</span>
-              ) : null}
               {sourceSummary ? (
-                <span className="mt-1 block text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                <span className={cn('mt-1 block text-xs leading-relaxed text-muted-foreground', isExpanded ? 'line-clamp-2' : 'line-clamp-1')}>
                   {sourceSummary}
                 </span>
               ) : null}
@@ -1213,9 +1293,9 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                 <section className="flex flex-col gap-2">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-xs font-semibold text-foreground">Ready</p>
+                      <p className="text-xs font-semibold text-foreground">Ready to apply</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {regularReadyUpdates.length} safe change{regularReadyUpdates.length !== 1 ? 's' : ''} ready to apply
+                        {regularReadyUpdates.length} safe change{regularReadyUpdates.length !== 1 ? 's' : ''}
                       </p>
                     </div>
                     <Button
@@ -1225,7 +1305,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                       className="w-full sm:w-auto"
                     >
                       {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                      Apply {regularReadyUpdates.length} ready
+                      Apply {regularReadyUpdates.length} safe change{regularReadyUpdates.length !== 1 ? 's' : ''}
                     </Button>
                   </div>
                   <div className="flex flex-col gap-2">
@@ -1239,7 +1319,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                   <div>
                     <p className="text-xs font-semibold text-rose-900">Removals</p>
                     <p className="text-[11px] text-rose-700">
-                      Not included in bulk apply. Review and remove each item deliberately.
+                      Review and remove deliberately
                     </p>
                   </div>
                   <div className="flex flex-col gap-2">
@@ -1253,7 +1333,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                   <div className="border-b border-amber-200/70 py-2">
                     <p className="text-xs font-semibold text-amber-950">Needs your answer</p>
                     <p className="text-[11px] text-amber-900/80">
-                      Answer what Glenn needs, then review any replacement proposals.
+                      Answer these so Glenn can update the plan.
                     </p>
                   </div>
                   <div>
