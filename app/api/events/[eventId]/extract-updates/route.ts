@@ -4,7 +4,7 @@ import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { mockExtract, groupExtracted, summarizeExtracted, type ExtractedItem } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
 import { dedupeExtractedItems } from '@/lib/ai/dedupe'
-import type { EventStateContext, UpdateType } from '@/lib/types'
+import type { EventStateContext, UpdateType, VendorPayload, Json } from '@/lib/types'
 
 type CountByType = Record<UpdateType, number>
 type ExtractionMode = 'anthropic' | 'mock'
@@ -22,6 +22,27 @@ interface ExtractionDiagnostics {
     reason: string
   }>
   inserted_count: number
+}
+
+type ProposedOperation = 'insert' | 'update'
+
+interface VendorCorrectionTarget {
+  id: string
+  name: string
+  category: string | null
+  status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
+  estimated_cost: number | null
+  contact_name: string | null
+  email: string | null
+  phone: string | null
+  notes: string | null
+}
+
+type ExtractedItemWithOperation = ExtractedItem & {
+  operation?: ProposedOperation
+  target_record_type?: UpdateType | null
+  target_record_id?: string | null
+  target_snapshot_json?: Json | null
 }
 
 const EMPTY_COUNTS: CountByType = {
@@ -59,6 +80,82 @@ function itemLabel(item: ExtractedItem): string {
   return typeof raw === 'string' && raw.trim().length > 0
     ? raw.trim().slice(0, 120)
     : 'Untitled suggestion'
+}
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function isPlaceholderVendorName(name: string | null | undefined): boolean {
+  const normalized = normalizeText(name)
+  return normalized.length === 0 || normalized === 'unknown'
+}
+
+function hasRealVendorName(name: string | null | undefined): boolean {
+  const normalized = normalizeText(name)
+  return normalized.length > 1 && !isPlaceholderVendorName(name)
+}
+
+function sharedVendorServiceEvidence(candidate: VendorPayload, target: VendorCorrectionTarget): boolean {
+  const haystack = normalizeText([
+    candidate.name,
+    candidate.category,
+    candidate.notes,
+    target.category,
+    target.notes,
+  ].filter(Boolean).join(' '))
+
+  const serviceTerms = ['floral', 'florist', 'flower', 'flowers', 'delivery', 'dropoff', 'drop off']
+  return serviceTerms.some((term) => haystack.includes(term))
+}
+
+function findVendorCorrectionTarget(
+  item: ExtractedItem,
+  existingVendors: VendorCorrectionTarget[],
+): VendorCorrectionTarget | null {
+  if (item.update_type !== 'vendor') return null
+  const candidate = item.payload as VendorPayload
+  if (!hasRealVendorName(candidate.name)) return null
+
+  for (const target of existingVendors) {
+    if (!isPlaceholderVendorName(target.name)) continue
+
+    const categoryMatch =
+      candidate.category !== null &&
+      target.category !== null &&
+      normalizeText(candidate.category) === normalizeText(target.category)
+    const costMatch =
+      candidate.estimated_cost !== null &&
+      target.estimated_cost !== null &&
+      Number(candidate.estimated_cost) === Number(target.estimated_cost)
+    const serviceEvidence = sharedVendorServiceEvidence(candidate, target)
+
+    if (categoryMatch && (costMatch || serviceEvidence)) {
+      return target
+    }
+    if (costMatch && serviceEvidence) {
+      return target
+    }
+  }
+
+  return null
+}
+
+function applyVendorCorrectionOperations(
+  items: ExtractedItem[],
+  existingVendors: VendorCorrectionTarget[],
+): ExtractedItemWithOperation[] {
+  return items.map((item) => {
+    const target = findVendorCorrectionTarget(item, existingVendors)
+    if (!target) return { ...item, operation: 'insert' }
+    return {
+      ...item,
+      operation: 'update',
+      target_record_type: 'vendor',
+      target_record_id: target.id,
+      target_snapshot_json: target as unknown as Json,
+    }
+  })
 }
 
 export async function POST(
@@ -132,7 +229,7 @@ export async function POST(
         .limit(15),
       supabase
         .from('vendors')
-        .select('name, category, status, estimated_cost, contact_name, notes')
+        .select('id, name, category, status, estimated_cost, contact_name, email, phone, notes')
         .eq('event_id', eventId)
         .order('created_at', { ascending: false })
         .limit(10),
@@ -211,11 +308,14 @@ export async function POST(
         description: (t.description as string | null) ?? null,
       })),
       existing_vendors: (existingVendorRows ?? []).map((v) => ({
+        id: v.id as string,
         name: v.name as string,
         category: (v.category as string | null) ?? null,
         status: v.status as 'prospect' | 'contacted' | 'confirmed' | 'declined',
         estimated_cost: (v.estimated_cost as number | null) ?? null,
         contact_name: (v.contact_name as string | null) ?? null,
+        email: (v.email as string | null) ?? null,
+        phone: (v.phone as string | null) ?? null,
         notes: (v.notes as string | null) ?? null,
       })),
       existing_budget_items: (existingBudgetRows ?? []).map((b) => ({
@@ -311,7 +411,10 @@ export async function POST(
 
     // 3b. App-side dedupe — runs for both LLM and mock paths
     const dedupeResult = dedupeExtractedItems(rawExtracted, eventStateContext)
-    const extracted = dedupeResult.kept
+    const extracted = applyVendorCorrectionOperations(
+      dedupeResult.kept,
+      eventStateContext.existing_vendors,
+    )
 
     if (extractionMode === 'mock') {
       // Fallback response for mock mode (uses deduped count)
@@ -389,6 +492,10 @@ export async function POST(
         update_type: item.update_type,
         payload_json: item.payload,
         confidence: item.confidence,
+        operation: item.operation ?? 'insert',
+        target_record_type: item.target_record_type ?? null,
+        target_record_id: item.target_record_id ?? null,
+        target_snapshot_json: item.target_snapshot_json ?? null,
         status: 'pending',
         rationale: item.rationale,
       }))

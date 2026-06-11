@@ -60,7 +60,7 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       .from('activity_log')
       .select('*')
       .eq('event_id', eventId)
-      .in('action', ['proposed_updates_created', 'proposed_update_applied', 'proposed_update_rejected'])
+      .in('action', ['proposed_updates_created', 'proposed_update_applied', 'proposed_update_corrected', 'proposed_update_rejected'])
       .order('created_at', { ascending: false })
       .limit(8),
   ])

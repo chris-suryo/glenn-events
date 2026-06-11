@@ -234,6 +234,79 @@ function getClarificationPrompt(update: ProposedUpdate): string {
   return rationale
 }
 
+function isVendorCorrection(update: ProposedUpdate): boolean {
+  return update.operation === 'update' && update.update_type === 'vendor'
+}
+
+function getVendorSnapshot(update: ProposedUpdate): Record<string, unknown> | null {
+  return isRecord(update.target_snapshot_json) ? update.target_snapshot_json : null
+}
+
+function formatPreservedVendorFacts(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string | null {
+  if (!isVendorCorrection(update)) return null
+  const snapshot = getVendorSnapshot(update)
+  const p = payloadRecord(payload)
+  const category =
+    (typeof snapshot?.category === 'string' && snapshot.category) ||
+    (typeof p.category === 'string' && p.category) ||
+    null
+  const cost =
+    typeof snapshot?.estimated_cost === 'number'
+      ? formatMoney(snapshot.estimated_cost)
+      : formatMoney(p.estimated_cost)
+  return [category, cost].filter(Boolean).join(' · ') || null
+}
+
+function vendorCorrectionLabels(update: ProposedUpdate, payload: UpdatePayload = update.payload_json) {
+  const snapshot = getVendorSnapshot(update)
+  const p = payloadRecord(payload)
+  const before = typeof snapshot?.name === 'string' && snapshot.name.trim() ? snapshot.name : 'Existing vendor'
+  const after = typeof p.name === 'string' && p.name.trim() ? p.name : getUpdateName(update, payload)
+  return { before, after }
+}
+
+function vendorCorrectionChangedFields(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string[] {
+  if (!isVendorCorrection(update)) return []
+  const snapshot = getVendorSnapshot(update)
+  const p = payloadRecord(payload)
+  if (!snapshot) return []
+
+  const labels: Record<string, string> = {
+    name: 'Name',
+    contact_name: 'Contact',
+    email: 'Email',
+    phone: 'Phone',
+    status: 'Status',
+    estimated_cost: 'Cost',
+    notes: 'Notes',
+    category: 'Category',
+  }
+
+  return Object.entries(labels)
+    .filter(([key]) => p[key] !== null && p[key] !== undefined && p[key] !== snapshot[key])
+    .map(([key, label]) => {
+      const before = key === 'estimated_cost' ? formatMoney(snapshot[key]) : snapshot[key]
+      const after = key === 'estimated_cost' ? formatMoney(p[key]) : p[key]
+      return before === null || before === undefined || before === ''
+        ? `${label}: ${String(after)}`
+        : `${label}: ${String(before)} → ${String(after)}`
+    })
+}
+
+function getActionLabel(update: ProposedUpdate): string {
+  if (isVendorCorrection(update)) return 'Update vendor'
+  return TYPE_ACTION_LABEL[update.update_type]
+}
+
+function getReadyBulkLabel(updates: ProposedUpdate[], fallbackAction: 'Add' | 'Track'): string {
+  if (updates.length === 0) return fallbackAction
+  const hasInsert = updates.some((update) => update.operation !== 'update')
+  const hasUpdate = updates.some((update) => update.operation === 'update')
+  if (hasInsert && hasUpdate) return 'Apply'
+  if (hasUpdate) return 'Update'
+  return getBulkActionVerb(updates)
+}
+
 function getOutputReview(aiRun: AiRun | null): Pick<AiRunReviewOutput, 'understood_summary'> {
   if (!aiRun || !isRecord(aiRun.output_json)) {
     return {}
@@ -582,7 +655,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
       const result = await reviewUpdate(update.id, action, payload)
       if (action === 'approve') {
         const planHref = getPlanHref(eventId, update.update_type, result.entity_id)
-        toast.success(`Added to ${dest}: ${name}`, planHref ? {
+        toast.success(isVendorCorrection(update) ? `Updated vendor: ${name}` : `Added to ${dest}: ${name}`, planHref ? {
           action: {
             label: 'View',
             onClick: () => router.push(planHref),
@@ -813,7 +886,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                   onClick={() => handleSingle(update, 'approve')}
                 >
                   {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                  Add anyway
+                  {isVendorCorrection(update) ? 'Update anyway' : 'Add anyway'}
                 </Button>
               </div>
             )}
@@ -833,9 +906,18 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
     const isEditing = editingIds.has(update.id)
     const draftPayload = draftPayloads[update.id]
     const activePayload = draftPayload ?? update.payload_json
-    const name = getUpdateName(update, activePayload)
-    const detail = getUpdateDetail(update, activePayload)
+    const correctionLabels = isVendorCorrection(update)
+      ? vendorCorrectionLabels(update, activePayload)
+      : null
+    const name = correctionLabels
+      ? `${correctionLabels.before} → ${correctionLabels.after}`
+      : getUpdateName(update, activePayload)
+    const detail = correctionLabels
+      ? formatPreservedVendorFacts(update, activePayload)
+      : getUpdateDetail(update, activePayload)
     const description = getUpdateDescription(update, activePayload)
+    const correctionChangedFields = vendorCorrectionChangedFields(update, activePayload)
+    const preservedFacts = formatPreservedVendorFacts(update, activePayload)
 
     return (
       <article
@@ -889,7 +971,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
               }}
             >
               {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-              {TYPE_ACTION_LABEL[update.update_type]}
+              {getActionLabel(update)}
             </Button>
             <Button
               size="icon-xs"
@@ -910,6 +992,19 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         {isExpanded ? (
           <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
             <div className="flex flex-col gap-2 text-xs">
+              {correctionChangedFields.length > 0 ? (
+                <div className="rounded-lg border bg-muted/30 p-2.5">
+                  <p className="font-medium text-foreground">Changed fields</p>
+                  <div className="mt-1 space-y-0.5 text-muted-foreground">
+                    {correctionChangedFields.map((field) => (
+                      <p key={field}>{field}</p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {preservedFacts ? (
+                <p className="leading-relaxed text-muted-foreground">Preserved: {preservedFacts}</p>
+              ) : null}
               {description ? (
                 <p className="leading-relaxed text-muted-foreground">{description}</p>
               ) : null}
@@ -1005,7 +1100,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         const needsCheckCount = reviewGroup.updates.length - readyUpdates.length
         const areaGroups = buildAreaGroups(reviewGroup.updates)
         const lightweightList = reviewGroup.updates.length <= 3 && areaGroups.length === 1
-        const allReadyVerb = getBulkActionVerb(readyUpdates)
+        const allReadyVerb = getReadyBulkLabel(readyUpdates, getBulkActionVerb(readyUpdates))
         return (
         <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
           <div className="min-w-0">
@@ -1027,6 +1122,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
               ? orderByType(reviewGroup.updates).map(renderUpdateRow)
               : areaGroups.map((area) => {
                 const areaReadyUpdates = getReadyUpdates(area.updates)
+                const areaReadyVerb = getReadyBulkLabel(areaReadyUpdates, area.action)
                 return (
                   <section key={area.key} className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-2">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1045,7 +1141,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                           className="w-full sm:w-auto"
                         >
                           {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                          {area.action} {areaReadyUpdates.length} ready
+                          {areaReadyVerb} {areaReadyUpdates.length} ready
                         </Button>
                       ) : null}
                     </div>

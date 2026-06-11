@@ -50,6 +50,17 @@ export function activityLabel(entry: ActivityLog): string {
     return entityLabel ? `Applied ${entityLabel} update` : 'Applied plan update'
   }
 
+  if (entry.action === 'proposed_update_corrected') {
+    const entityLabel = ENTITY_TYPE_LABELS[entry.entity_type]
+    const beforeLabel = metadataString(entry, 'before_label')
+    const afterLabel = metadataString(entry, 'after_label')
+    if (entityLabel && beforeLabel && afterLabel) {
+      return `Updated ${entityLabel}: ${beforeLabel} → ${afterLabel}`
+    }
+    if (label && entityLabel) return `Updated ${entityLabel}: ${label}`
+    return entityLabel ? `Updated ${entityLabel}` : 'Updated plan record'
+  }
+
   if (entry.action === 'proposed_update_rejected') {
     const updateType = metadataString(entry, 'update_type') ?? entry.entity_type
     const entityLabel = ENTITY_TYPE_LABELS[updateType]
@@ -68,6 +79,7 @@ export function activityLabel(entry: ActivityLog): string {
 
 export function activityDot(action: string): string {
   if (action === 'proposed_update_applied')  return 'bg-emerald-500'
+  if (action === 'proposed_update_corrected') return 'bg-sky-500'
   if (action === 'proposed_update_rejected') return 'bg-rose-400'
   if (action === 'record_updated')           return 'bg-sky-400'
   return 'bg-indigo-400'

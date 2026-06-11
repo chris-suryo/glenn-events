@@ -80,6 +80,7 @@ Extraction rules:
 7. All status fields must exactly match the allowed enum values.
 8. CRITICAL — no placeholder values: if a vendor name is unknown but the item is otherwise concrete, use the best representable known fields, lower confidence, and make rationale the missing-fact question. Never put "<UNKNOWN>", "TBD", "Unknown", "N/A", or any placeholder in an extracted field. Unknown fields must be null or omitted.
 9. CRITICAL — use conversation history: if earlier messages show you asked a follow-up question and the user is now answering it, extract the complete combined information now. Connect the dots across turns and re-propose the complete item with known details merged.
+9a. If the user clarifies an incomplete placeholder vendor already in the plan (for example an unknown florist with known category/cost), create a complete vendor suggestion with the clarified name/contact and preserved known facts. The review system will treat it as an update, not a duplicate insert.
 10. CRITICAL — do not create duplicate suggestions for the same real-world item in one message.
 11. Prefer one consolidated suggestion over multiple overlapping suggestions for the same real-world item. This does not mean collapsing unrelated vendor, task, timeline, budget, decision, risk, or open-question items into one suggestion.
 11a. Timeline duplicate guard: if one actor/event/time window is described more than once, create one clearer timeline item rather than near-duplicates. Example: "IBM volunteers arrive 5:00–5:15 PM" and "IBM volunteers arrive closer to 5:00 PM for setup" should become one volunteer-arrival timing unless they are truly separate events.
@@ -319,7 +320,8 @@ function buildEventStateSection(ctx: EventStateContext): string {
     '### Deduplication rules (apply before proposing anything):',
     'Compare the new message against the current event state above before creating suggestions.',
     'Do NOT propose items that already exist in the plan or are already queued for review above.',
-    'If the user provides new details for an existing item, mention it in your summary only.',
+    'If the user provides new details for an existing complete item, mention it in your summary only.',
+    'If the user fills in a placeholder or incomplete vendor, create a complete vendor suggestion with the corrected details.',
     'Only create a new proposed update if the schema can safely represent it without duplicating.',
     'Do NOT restate facts as tasks. Tasks must be real human actions someone needs to take.',
     'Vendors: one suggestion per real vendor. Budget: one per real cost, quote, receipt, or line.',

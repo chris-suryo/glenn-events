@@ -169,6 +169,11 @@ export interface ProposedUpdate {
   payload_json: UpdatePayload
   confidence: number | null
   status: 'pending' | 'approved' | 'rejected' | 'applied' | 'failed'
+  operation: 'insert' | 'update'
+  target_record_type: UpdateType | null
+  target_record_id: string | null
+  target_snapshot_json: Json | null
+  supersedes_proposed_update_id: string | null
   rationale: string | null
   created_at: string
   reviewed_by: string | null
@@ -336,11 +341,14 @@ export interface EventStateContext {
     description: string | null
   }>
   existing_vendors: Array<{
+    id: string
     name: string
     category: string | null
     status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
     estimated_cost: number | null
     contact_name: string | null
+    email: string | null
+    phone: string | null
     notes: string | null
   }>
   existing_budget_items: Array<{

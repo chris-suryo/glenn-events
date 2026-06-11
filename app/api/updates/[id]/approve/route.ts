@@ -74,6 +74,24 @@ function recordLabel(payload: UpdatePayload): string {
     : 'Untitled record'
 }
 
+function nonNullVendorUpdate(payload: UpdatePayload, trace: Record<string, unknown>): Record<string, unknown> {
+  const p = payload as unknown as Record<string, unknown>
+  const updateData: Record<string, unknown> = { ...trace }
+  for (const key of ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes']) {
+    if (p[key] !== null && p[key] !== undefined) {
+      updateData[key] = p[key]
+    }
+  }
+  return updateData
+}
+
+function changedFields(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  return Object.keys(after).filter((key) => {
+    if (['proposed_update_id', 'source_message_id', 'ai_run_id', 'ai_generated'].includes(key)) return false
+    return before[key] !== after[key]
+  })
+}
+
 function validatePayloadForType(updateType: UpdateType, payload: unknown): UpdatePayload | null {
   switch (updateType) {
     case 'task': {
@@ -160,6 +178,104 @@ export async function POST(
   const updateForApply: ProposedUpdate = editedPayload
     ? { ...typedUpdate, payload_json: editedPayload }
     : typedUpdate
+
+  if (updateForApply.operation === 'update') {
+    if (updateForApply.update_type !== 'vendor' || updateForApply.target_record_type !== 'vendor' || !updateForApply.target_record_id) {
+      return NextResponse.json({ error: 'Unsupported correction proposal' }, { status: 400 })
+    }
+
+    const { data: targetVendor, error: targetErr } = await supabase
+      .from('vendors')
+      .select('*')
+      .eq('id', updateForApply.target_record_id)
+      .eq('event_id', updateForApply.event_id)
+      .single()
+
+    if (targetErr || !targetVendor) {
+      if (targetErr) console.error('approve correction: target vendor fetch error:', targetErr)
+      return NextResponse.json({ error: 'Target vendor not found or access denied' }, { status: 404 })
+    }
+
+    const trace = {
+      proposed_update_id: updateForApply.id,
+      source_message_id:  updateForApply.source_message_id,
+      ai_run_id:          updateForApply.ai_run_id,
+      ai_generated:       true,
+    }
+    const updateData = nonNullVendorUpdate(updateForApply.payload_json, trace)
+    const beforeVendor = targetVendor as Record<string, unknown>
+    const fieldsChanged = changedFields(beforeVendor, updateData)
+    const beforeLabel = typeof beforeVendor.name === 'string' ? beforeVendor.name : 'Untitled vendor'
+    const afterLabel = typeof updateData.name === 'string' ? updateData.name : beforeLabel
+
+    const { data: updatedVendor, error: vendorUpdateErr } = await supabase
+      .from('vendors')
+      .update(updateData)
+      .eq('id', updateForApply.target_record_id)
+      .eq('event_id', updateForApply.event_id)
+      .select('id')
+      .single()
+
+    if (vendorUpdateErr || !updatedVendor) {
+      if (vendorUpdateErr) console.error('approve correction: vendor update error:', vendorUpdateErr)
+      return NextResponse.json({ error: 'Failed to update vendor' }, { status: 500 })
+    }
+
+    const proposalUpdate: Record<string, unknown> = {
+      status:      'applied',
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString(),
+    }
+    if (editedPayload) {
+      proposalUpdate.payload_json = editedPayload
+    }
+
+    const { error: updateErr } = await supabase
+      .from('proposed_updates')
+      .update(proposalUpdate)
+      .eq('id', id)
+      .eq('status', 'pending')
+
+    if (updateErr) {
+      console.error('approve correction: status update error:', updateErr)
+    }
+
+    await supabase.from('activity_log').insert({
+      event_id:      typedUpdate.event_id,
+      actor_user_id: user.id,
+      action:        'proposed_update_corrected',
+      entity_type:   'vendor',
+      entity_id:     updateForApply.target_record_id,
+      metadata_json: {
+        proposed_update_id: id,
+        update_type:        updateForApply.update_type,
+        target_record_id:   updateForApply.target_record_id,
+        before_label:       beforeLabel,
+        after_label:        afterLabel,
+        changed_fields:     fieldsChanged,
+      },
+    })
+
+    const { count: pendingCount } = await supabase
+      .from('proposed_updates')
+      .select('id', { count: 'exact', head: true })
+      .eq('ai_run_id', typedUpdate.ai_run_id)
+      .eq('status', 'pending')
+
+    if (pendingCount === 0) {
+      await supabase
+        .from('ai_runs')
+        .update({ status: 'completed' })
+        .eq('id', typedUpdate.ai_run_id)
+    }
+
+    return NextResponse.json({
+      ok:          true,
+      status:      'applied',
+      entity_type: 'vendor',
+      entity_id:   updateForApply.target_record_id,
+    })
+  }
 
   // 4. Build destination row
   let applyResult: ReturnType<typeof buildDestinationRow>
