@@ -49,13 +49,6 @@ interface UpdateGroup {
   title: string
 }
 
-interface PlanningAreaGroup {
-  key: string
-  title: string
-  action: 'Add' | 'Track'
-  types: UpdateType[]
-}
-
 interface ReviewGroup {
   aiRunId: string
   aiRun: AiRun | null
@@ -81,14 +74,6 @@ const UPDATE_GROUPS: UpdateGroup[] = [
   { type: 'decision', title: 'Decisions' },
   { type: 'risk', title: 'Risks' },
   { type: 'open_question', title: 'Open Questions' },
-]
-
-const PLANNING_AREAS: PlanningAreaGroup[] = [
-  { key: 'schedule', title: 'Schedule', action: 'Add', types: ['timeline_item'] },
-  { key: 'vendors-budget', title: 'Vendors & budget', action: 'Add', types: ['vendor', 'budget_item'] },
-  { key: 'tasks', title: 'Tasks', action: 'Add', types: ['task'] },
-  { key: 'decisions', title: 'Decisions', action: 'Add', types: ['decision'] },
-  { key: 'risks-questions', title: 'Risks & questions', action: 'Track', types: ['risk', 'open_question'] },
 ]
 
 const TYPE_PILL_LABEL: Record<UpdateType, string> = {
@@ -340,17 +325,6 @@ function getActionLabel(update: ProposedUpdate): string {
   return TYPE_ACTION_LABEL[update.update_type]
 }
 
-function getReadyBulkLabel(updates: ProposedUpdate[], fallbackAction: 'Add' | 'Track'): string {
-  if (updates.length === 0) return fallbackAction
-  const hasInsert = updates.some((update) => update.operation !== 'update' && update.operation !== 'archive')
-  const hasUpdate = updates.some((update) => update.operation === 'update')
-  const hasArchive = updates.some((update) => update.operation === 'archive')
-  if ([hasInsert, hasUpdate, hasArchive].filter(Boolean).length > 1) return 'Apply'
-  if (hasArchive) return 'Remove'
-  if (hasUpdate) return 'Update'
-  return getBulkActionVerb(updates)
-}
-
 function getOutputReview(aiRun: AiRun | null): Pick<AiRunReviewOutput, 'understood_summary'> {
   if (!aiRun || !isRecord(aiRun.output_json)) {
     return {}
@@ -369,10 +343,8 @@ function getReadyUpdates(updates: ProposedUpdate[]): ProposedUpdate[] {
   return updates.filter((update) => !needsCheck(update))
 }
 
-// Ready rows first, needs-check rows clustered after — keeps the amber
-// clarification cards from interleaving with one-click rows.
-function readyFirst(updates: ProposedUpdate[]): ProposedUpdate[] {
-  return [...updates.filter((update) => !needsCheck(update)), ...updates.filter(needsCheck)]
+function getSafeReadyUpdates(updates: ProposedUpdate[]): ProposedUpdate[] {
+  return updates.filter((update) => !needsCheck(update) && !isArchive(update))
 }
 
 function buildFallbackReview(updates: ProposedUpdate[]): { understoodSummary: string[] } {
@@ -463,21 +435,6 @@ function buildCategorySummary(updates: ProposedUpdate[]): string {
     })
     .filter((part): part is string => part !== null)
     .join(' · ')
-}
-
-function buildAreaGroups(updates: ProposedUpdate[]): Array<PlanningAreaGroup & { updates: ProposedUpdate[] }> {
-  return PLANNING_AREAS
-    .map((area) => ({
-      ...area,
-      updates: orderByType(updates.filter((update) => area.types.includes(update.update_type))),
-    }))
-    .filter((area) => area.updates.length > 0)
-}
-
-function getBulkActionVerb(updates: ProposedUpdate[]): 'Add' | 'Track' {
-  return updates.length > 0 && updates.every((update) => update.update_type === 'risk' || update.update_type === 'open_question')
-    ? 'Track'
-    : 'Add'
 }
 
 function getPlanHref(eventId: string, updateType: UpdateType, entityId: string | null | undefined): string | null {
@@ -665,6 +622,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
   const [draftPayloads, setDraftPayloads] = useState<Record<string, UpdatePayload>>({})
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({})
   const [clarifyingIds, setClarifyingIds] = useState<Record<string, ClarifyingState>>({})
+  const [batchExpansionOverrides, setBatchExpansionOverrides] = useState<Record<string, boolean>>({})
   const [isPendingBulk, startBulkTransition] = useTransition()
   const reviewGroups = buildReviewGroups(updates, aiRuns)
 
@@ -697,6 +655,10 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
       delete next[updateId]
       return next
     })
+  }
+
+  function setBatchExpanded(aiRunId: string, expanded: boolean) {
+    setBatchExpansionOverrides((current) => ({ ...current, [aiRunId]: expanded }))
   }
 
   async function handleSingle(update: ProposedUpdate, action: ReviewAction, payload?: UpdatePayload) {
@@ -824,15 +786,15 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
     return (
       <article
         key={update.id}
-        className="rounded-lg border border-amber-200 bg-amber-50/30 shadow-sm transition-colors"
+        className="border-t border-amber-200/70 first:border-t-0"
       >
-        <div className="flex flex-col gap-2 p-2.5">
+        <div className="flex flex-col gap-2 py-3">
           <div className="flex min-w-0 items-start gap-2">
             <button
               type="button"
               aria-expanded={isExpanded}
               onClick={() => toggleSetValue(setExpandedIds, update.id)}
-              className="mt-0.5 rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="mt-0.5 shrink-0 rounded-md text-amber-800/70 transition-colors hover:text-amber-950 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <ChevronDown
                 className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')}
@@ -851,7 +813,8 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
               onClick={() => toggleSetValue(setExpandedIds, update.id)}
               className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              <span className="line-clamp-2 text-sm font-medium leading-5 text-foreground">{title}</span>
+              <span className="line-clamp-1 text-sm font-medium leading-5 text-foreground">{title}</span>
+              <span className="line-clamp-2 text-xs leading-4 text-amber-900/90">{prompt}</span>
             </button>
             <Button
               size="icon-xs"
@@ -865,10 +828,8 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
             </Button>
           </div>
 
-          <p className="text-xs leading-relaxed text-amber-900">{prompt}</p>
-
           <form
-            className="grid grid-cols-[1fr_auto] gap-2"
+            className="grid grid-cols-[1fr_auto] gap-2 pl-5"
             onSubmit={(event) => {
               event.preventDefault()
               handleClarifySubmit(update)
@@ -898,7 +859,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         </div>
 
         {isExpanded ? (
-          <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
+          <div className="flex flex-col gap-3 border-t border-amber-200/70 pb-3 pt-3">
             {isEditing ? (
               <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
                 <EditFields
@@ -928,7 +889,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                 </div>
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pl-5">
                 <Button
                   size="sm"
                   variant="outline"
@@ -956,10 +917,6 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
   }
 
   function renderUpdateRow(update: ProposedUpdate) {
-    if (needsCheck(update)) {
-      return renderNeedsCheckRow(update)
-    }
-
     const isProcessing = processingIds.has(update.id)
     const isExpanded = expandedIds.has(update.id)
     const isEditing = editingIds.has(update.id)
@@ -987,6 +944,8 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
     const description = getUpdateDescription(update, activePayload)
     const changedFieldsList = correctionChangedFields(update, activePayload)
     const preservedFacts = formatPreservedFacts(update, activePayload)
+    const operationLabel = archive ? 'Remove' : correction ? 'Update' : 'Add'
+    const isBusy = isProcessing || isEditing
 
     return (
       <article
@@ -996,7 +955,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
           archive ? 'border-rose-200 bg-rose-50/40' : 'bg-card'
         )}
       >
-        <div className="flex flex-col gap-2 p-2 xl:flex-row xl:items-start">
+        <div className="flex items-start gap-2 p-2.5">
           <div
             role="button"
             tabIndex={0}
@@ -1017,6 +976,14 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
               )}
               aria-hidden="true"
             />
+            <span
+              className={cn(
+                'mt-1.5 flex size-2 shrink-0 rounded-full',
+                archive ? 'bg-rose-500' : correction ? 'bg-blue-500' : 'bg-emerald-500'
+              )}
+            >
+              <span className="sr-only">{operationLabel}</span>
+            </span>
             <Badge
               variant="outline"
               className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
@@ -1028,23 +995,25 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                 <span className="line-clamp-2 min-w-0 text-sm font-medium leading-5">{name}</span>
               </span>
               {detail ? (
-                <span className="block text-[11px] leading-4 text-muted-foreground">{detail}</span>
+                <span className={cn('block text-[11px] leading-4', archive ? 'text-rose-700' : 'text-muted-foreground')}>{detail}</span>
               ) : null}
             </span>
           </div>
-          <div className="grid grid-cols-[1fr_auto] gap-2 xl:flex xl:shrink-0 xl:items-center">
-            <Button
-              size="sm"
-              className="w-full sm:w-auto"
-              disabled={isProcessing || isEditing}
-              onClick={(event) => {
-                event.stopPropagation()
-                handleSingle(update, 'approve')
-              }}
-            >
-              {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-              {getActionLabel(update)}
-            </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {archive ? (
+              <Button
+                size="xs"
+                variant="destructive"
+                disabled={isBusy}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  handleSingle(update, 'approve')
+                }}
+              >
+                {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+                {getActionLabel(update)}
+              </Button>
+            ) : null}
             <Button
               size="icon-xs"
               variant="ghost"
@@ -1124,20 +1093,37 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                   </Button>
                 </div>
               </div>
-            ) : archive ? null : (
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-fit"
-                disabled={isProcessing}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  startEdit(update)
-                }}
-              >
-                <Pencil data-icon="inline-start" />
-                Edit
-              </Button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {!archive ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={isProcessing}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      startEdit(update)
+                    }}
+                  >
+                    <Pencil data-icon="inline-start" />
+                    Edit
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant={archive ? 'destructive' : 'outline'}
+                  className="w-full sm:w-auto"
+                  disabled={isProcessing}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleSingle(update, 'approve')
+                  }}
+                >
+                  {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                  {getActionLabel(update)}
+                </Button>
+              </div>
             )}
           </div>
         ) : null}
@@ -1174,97 +1160,120 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         const sourceSummary = reviewGroup.understoodSummary[0]
         const categorySummary = buildCategorySummary(reviewGroup.updates)
         const readyUpdates = getReadyUpdates(reviewGroup.updates)
+        const safeReadyUpdates = getSafeReadyUpdates(reviewGroup.updates)
+        const removalUpdates = orderByType(readyUpdates.filter(isArchive))
+        const regularReadyUpdates = orderByType(safeReadyUpdates)
+        const needsCheckUpdates = orderByType(reviewGroup.updates.filter(needsCheck))
         const needsCheckCount = reviewGroup.updates.length - readyUpdates.length
-        const areaGroups = buildAreaGroups(reviewGroup.updates)
-        const lightweightList = reviewGroup.updates.length <= 3 && areaGroups.length === 1
-        const allReadyVerb = getReadyBulkLabel(readyUpdates, getBulkActionVerb(readyUpdates))
-        const isLatest = groupIndex === 0 && reviewGroups.length > 1
+        const isLatest = groupIndex === 0
+        const isExpanded = batchExpansionOverrides[reviewGroup.aiRunId] ?? isLatest
         return (
-        <section key={reviewGroup.aiRunId} className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm">
-          <div className="min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-semibold leading-5">
-                {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''} · {readyUpdates.length} ready · {needsCheckCount} need a check
-              </p>
-              <span className="flex shrink-0 items-center gap-1.5 pt-0.5">
+        <section key={reviewGroup.aiRunId} className="rounded-xl border bg-card shadow-sm">
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            onClick={() => setBatchExpanded(reviewGroup.aiRunId, !isExpanded)}
+            className="flex w-full items-start gap-2 rounded-t-xl p-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <ChevronDown
+              className={cn('mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform', isExpanded && 'rotate-180')}
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-sm font-semibold leading-5">
+                  {reviewGroup.updates.length} suggested update{reviewGroup.updates.length !== 1 ? 's' : ''}
+                </span>
                 {isLatest ? (
                   <Badge className="h-5 rounded-md px-1.5 text-[11px]">Latest</Badge>
                 ) : null}
-                {reviewGroup.createdAt ? (
-                  <span className="text-[11px] text-muted-foreground" suppressHydrationWarning>
-                    {formatDistanceToNow(reviewGroup.createdAt)}
-                  </span>
-                ) : null}
               </span>
+              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                {reviewGroup.createdAt ? (
+                  <span suppressHydrationWarning>{formatDistanceToNow(reviewGroup.createdAt)}</span>
+                ) : null}
+                <span>{safeReadyUpdates.length} ready</span>
+                {removalUpdates.length > 0 ? <span>{removalUpdates.length} removal{removalUpdates.length !== 1 ? 's' : ''}</span> : null}
+                <span>{needsCheckCount} need{needsCheckCount === 1 ? 's' : ''} your answer</span>
+              </span>
+              {!isExpanded && categorySummary ? (
+                <span className="mt-1 block text-xs font-medium text-muted-foreground">{categorySummary}</span>
+              ) : null}
+              {sourceSummary ? (
+                <span className="mt-1 block text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                  {sourceSummary}
+                </span>
+              ) : null}
+            </span>
+          </button>
+
+          {isExpanded ? (
+            <div className="flex flex-col gap-3 border-t p-3">
+              {regularReadyUpdates.length > 0 ? (
+                <section className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Ready</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {regularReadyUpdates.length} safe change{regularReadyUpdates.length !== 1 ? 's' : ''} ready to apply
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={isPendingBulk}
+                      onClick={() => handleBulk('approve', regularReadyUpdates)}
+                      className="w-full sm:w-auto"
+                    >
+                      {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                      Apply {regularReadyUpdates.length} ready
+                    </Button>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {regularReadyUpdates.map(renderUpdateRow)}
+                  </div>
+                </section>
+              ) : null}
+
+              {removalUpdates.length > 0 ? (
+                <section className="flex flex-col gap-2 rounded-lg border border-rose-200 bg-rose-50/25 p-2">
+                  <div>
+                    <p className="text-xs font-semibold text-rose-900">Removals</p>
+                    <p className="text-[11px] text-rose-700">
+                      Not included in bulk apply. Review and remove each item deliberately.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {removalUpdates.map(renderUpdateRow)}
+                  </div>
+                </section>
+              ) : null}
+
+              {needsCheckUpdates.length > 0 ? (
+                <section className="rounded-lg border border-amber-200 bg-amber-50/35 px-3">
+                  <div className="border-b border-amber-200/70 py-2">
+                    <p className="text-xs font-semibold text-amber-950">Needs your answer</p>
+                    <p className="text-[11px] text-amber-900/80">
+                      Answer what Glenn needs, then review any replacement proposals.
+                    </p>
+                  </div>
+                  <div>
+                    {needsCheckUpdates.map(renderNeedsCheckRow)}
+                  </div>
+                </section>
+              ) : null}
+
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isPendingBulk}
+                onClick={() => handleBulk('reject', reviewGroup.updates)}
+                className="w-full"
+              >
+                <XCircle data-icon="inline-start" />
+                Dismiss all
+              </Button>
             </div>
-            {categorySummary ? (
-              <p className="mt-0.5 text-xs font-medium text-muted-foreground">{categorySummary}</p>
-            ) : null}
-            {sourceSummary ? (
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                {sourceSummary}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {lightweightList
-              ? readyFirst(orderByType(reviewGroup.updates)).map(renderUpdateRow)
-              : areaGroups.map((area) => {
-                const areaReadyUpdates = getReadyUpdates(area.updates)
-                const areaReadyVerb = getReadyBulkLabel(areaReadyUpdates, area.action)
-                return (
-                  <section key={area.key} className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-2">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-xs font-semibold text-foreground">{area.title}</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {area.updates.length} update{area.updates.length !== 1 ? 's' : ''} · {areaReadyUpdates.length} ready
-                        </p>
-                      </div>
-                      {areaReadyUpdates.length >= 2 ? (
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          disabled={isPendingBulk}
-                          onClick={() => handleBulk('approve', areaReadyUpdates)}
-                          className="w-full sm:w-auto"
-                        >
-                          {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                          {areaReadyVerb} {areaReadyUpdates.length} ready
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {readyFirst(area.updates).map(renderUpdateRow)}
-                    </div>
-                  </section>
-                )
-              })}
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 border-t pt-3">
-            <Button
-              size="sm"
-              variant="default"
-              disabled={isPendingBulk || readyUpdates.length === 0}
-              onClick={() => handleBulk('approve', readyUpdates)}
-              className="w-full"
-            >
-              {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-              {allReadyVerb} all ready ({readyUpdates.length})
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isPendingBulk}
-              onClick={() => handleBulk('reject', reviewGroup.updates)}
-              className="w-full"
-            >
-              <XCircle data-icon="inline-start" />
-              Dismiss all
-            </Button>
-          </div>
+          ) : null}
         </section>
         )
       })}
