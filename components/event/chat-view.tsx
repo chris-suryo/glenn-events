@@ -8,6 +8,11 @@ import { ProposedUpdatesQueue } from './proposed-updates-queue'
 import { formatDistanceToNow } from '@/lib/utils'
 import { CheckCircle2, Sparkles } from 'lucide-react'
 
+interface ExtractUpdatesResponse {
+  assistant_message?: string
+  grouped?: Record<string, unknown[] | undefined>
+}
+
 interface ChatViewProps {
   event: Event
   messages: Message[]
@@ -178,6 +183,46 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
     }
     setTimeout(tick, delay)
   }, [router])
+
+  const handleClarifyReviewItem = useCallback(async ({
+    title,
+    answer,
+  }: {
+    title: string
+    answer: string
+  }) => {
+    const input = `Re: ${title} — ${answer}`
+    setOptimisticMsg(input)
+    setIsThinking(true)
+    setStreamingText('')
+
+    try {
+      const res = await fetch(`/api/events/${event.id}/extract-updates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input_text: input }),
+      })
+
+      const data = await res.json().catch(() => ({})) as ExtractUpdatesResponse & { error?: string }
+      setIsThinking(false)
+
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Failed to send clarification.')
+      }
+
+      const createdCount = Object.values(data.grouped ?? {}).reduce(
+        (total, items) => total + (Array.isArray(items) ? items.length : 0),
+        0
+      )
+
+      handleGlennReply(data.assistant_message ?? '')
+      return { createdCount }
+    } catch (err) {
+      setIsThinking(false)
+      setIsStreaming(false)
+      throw err
+    }
+  }, [event.id, handleGlennReply])
 
   const hasContent = messages.length > 0 || !!optimisticMsg || isThinking || !!streamingText
 
@@ -354,7 +399,12 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
             </p>
           </div>
           <div className="flex-1 overflow-y-auto min-h-0">
-            <ProposedUpdatesQueue updates={pendingUpdates} aiRuns={aiRuns} eventId={event.id} />
+            <ProposedUpdatesQueue
+              updates={pendingUpdates}
+              aiRuns={aiRuns}
+              eventId={event.id}
+              onClarify={handleClarifyReviewItem}
+            />
           </div>
         </div>
 

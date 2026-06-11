@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  ArrowRight,
   CheckCircle2,
   ChevronDown,
   Loader2,
@@ -38,6 +39,7 @@ interface ProposedUpdatesQueueProps {
   updates: ProposedUpdate[]
   aiRuns: AiRun[]
   eventId: string
+  onClarify?: (input: { update: ProposedUpdate; title: string; answer: string }) => Promise<{ createdCount: number }>
 }
 
 type ReviewAction = 'approve' | 'reject'
@@ -68,6 +70,8 @@ interface ReviewUpdateResponse {
   entity_type?: UpdateType
   entity_id?: string | null
 }
+
+type ClarifyingState = 'answering' | 'dismissing'
 
 const UPDATE_GROUPS: UpdateGroup[] = [
   { type: 'task', title: 'Tasks' },
@@ -216,6 +220,18 @@ function getUpdateDescription(update: ProposedUpdate, payload: UpdatePayload = u
   if (typeof p.mitigation === 'string' && p.mitigation) return p.mitigation
   if (update.update_type === 'open_question') return getUpdateName(update, payload)
   return null
+}
+
+function getReadableTitle(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string {
+  const name = getUpdateName(update, payload)
+  const detail = getUpdateDetail(update, payload)
+  return detail ? `${name} · ${detail}` : name
+}
+
+function getClarificationPrompt(update: ProposedUpdate): string {
+  const rationale = update.rationale?.trim()
+  if (!rationale) return 'Add what you know.'
+  return rationale
 }
 
 function getOutputReview(aiRun: AiRun | null): Pick<AiRunReviewOutput, 'understood_summary'> {
@@ -516,12 +532,14 @@ function EditFields({
   }
 }
 
-export function ProposedUpdatesQueue({ updates, aiRuns, eventId }: ProposedUpdatesQueueProps) {
+export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: ProposedUpdatesQueueProps) {
   const router = useRouter()
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set())
   const [draftPayloads, setDraftPayloads] = useState<Record<string, UpdatePayload>>({})
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({})
+  const [clarifyingIds, setClarifyingIds] = useState<Record<string, ClarifyingState>>({})
   const [isPendingBulk, startBulkTransition] = useTransition()
   const reviewGroups = buildReviewGroups(updates, aiRuns)
 
@@ -626,7 +644,190 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId }: ProposedUpdat
     })
   }
 
+  async function handleClarifySubmit(update: ProposedUpdate) {
+    const answer = answerDrafts[update.id]?.trim()
+    if (!answer || !onClarify || clarifyingIds[update.id]) return
+
+    const title = getReadableTitle(update)
+    setClarifyingIds((current) => ({ ...current, [update.id]: 'answering' }))
+
+    try {
+      const result = await onClarify({ update, title, answer })
+      if (result.createdCount > 0) {
+        setClarifyingIds((current) => ({ ...current, [update.id]: 'dismissing' }))
+        await reviewUpdate(update.id, 'reject')
+        setAnswerDrafts((current) => {
+          const next = { ...current }
+          delete next[update.id]
+          return next
+        })
+      } else {
+        toast.info('Glenn saved the answer, but this item still needs review.')
+      }
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send clarification.')
+    } finally {
+      setClarifyingIds((current) => {
+        const next = { ...current }
+        delete next[update.id]
+        return next
+      })
+    }
+  }
+
+  function renderNeedsCheckRow(update: ProposedUpdate) {
+    const isProcessing = processingIds.has(update.id)
+    const isExpanded = expandedIds.has(update.id)
+    const isEditing = editingIds.has(update.id)
+    const clarifyingState = clarifyingIds[update.id]
+    const draftPayload = draftPayloads[update.id]
+    const activePayload = draftPayload ?? update.payload_json
+    const title = getReadableTitle(update, activePayload)
+    const prompt = getClarificationPrompt(update)
+    const answer = answerDrafts[update.id] ?? ''
+    const isBusy = isProcessing || !!clarifyingState
+    const canClarify = !!onClarify && answer.trim().length > 0 && !isBusy
+
+    return (
+      <article
+        key={update.id}
+        className="rounded-lg border border-amber-200 bg-amber-50/30 shadow-sm transition-colors"
+      >
+        <div className="flex flex-col gap-2 p-2.5">
+          <div className="flex min-w-0 items-start gap-2">
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              onClick={() => toggleSetValue(setExpandedIds, update.id)}
+              className="mt-0.5 rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <ChevronDown
+                className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')}
+                aria-hidden="true"
+              />
+              <span className="sr-only">{isExpanded ? 'Collapse' : 'Expand'}</span>
+            </button>
+            <Badge
+              variant="outline"
+              className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
+            >
+              {TYPE_PILL_LABEL[update.update_type]}
+            </Badge>
+            <button
+              type="button"
+              onClick={() => toggleSetValue(setExpandedIds, update.id)}
+              className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <span className="line-clamp-2 text-sm font-medium leading-5 text-foreground">{title}</span>
+            </button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              className="shrink-0 text-muted-foreground"
+              aria-label="Dismiss"
+              disabled={isBusy}
+              onClick={() => handleSingle(update, 'reject')}
+            >
+              <XCircle />
+            </Button>
+          </div>
+
+          <p className="text-xs leading-relaxed text-amber-900">{prompt}</p>
+
+          <form
+            className="grid grid-cols-[1fr_auto] gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              handleClarifySubmit(update)
+            }}
+          >
+            <Input
+              value={answer}
+              onChange={(event) => setAnswerDrafts((current) => ({ ...current, [update.id]: event.target.value }))}
+              placeholder={update.rationale?.trim().endsWith('?') ? 'Answer in plain language...' : 'Add what you know...'}
+              disabled={isBusy || !onClarify}
+              className="h-8 bg-background text-sm"
+              aria-label={`Answer clarification for ${title}`}
+            />
+            <Button
+              type="submit"
+              size="icon-sm"
+              disabled={!canClarify}
+              aria-label="Send clarification"
+            >
+              {clarifyingState === 'answering' ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <ArrowRight />
+              )}
+            </Button>
+          </form>
+        </div>
+
+        {isExpanded ? (
+          <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
+            {isEditing ? (
+              <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+                <EditFields
+                  update={update}
+                  payload={activePayload}
+                  onChange={(payload) => setDraftPayloads((current) => ({ ...current, [update.id]: payload }))}
+                />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={isProcessing}
+                    onClick={() => handleSingle(update, 'approve', activePayload)}
+                  >
+                    {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                    Save & Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    disabled={isProcessing}
+                    onClick={() => cancelEdit(update.id)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBusy}
+                  onClick={() => startEdit(update)}
+                >
+                  <Pencil data-icon="inline-start" />
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBusy}
+                  onClick={() => handleSingle(update, 'approve')}
+                >
+                  {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                  Add anyway
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </article>
+    )
+  }
+
   function renderUpdateRow(update: ProposedUpdate) {
+    if (needsCheck(update)) {
+      return renderNeedsCheckRow(update)
+    }
+
     const isProcessing = processingIds.has(update.id)
     const isExpanded = expandedIds.has(update.id)
     const isEditing = editingIds.has(update.id)
@@ -635,16 +836,11 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId }: ProposedUpdat
     const name = getUpdateName(update, activePayload)
     const detail = getUpdateDetail(update, activePayload)
     const description = getUpdateDescription(update, activePayload)
-    const dest = TYPE_DESTINATION[update.update_type]
-    const checkNeeded = needsCheck(update)
 
     return (
       <article
         key={update.id}
-        className={cn(
-          'rounded-lg border bg-card shadow-sm transition-colors',
-          checkNeeded && 'border-amber-200 bg-amber-50/35'
-        )}
+        className="rounded-lg border bg-card shadow-sm transition-colors"
       >
         <div className="flex flex-col gap-2 p-2 sm:flex-row sm:items-start">
           <div
@@ -676,20 +872,9 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId }: ProposedUpdat
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 items-center gap-1.5">
                 <span className="block min-w-0 truncate text-sm font-medium leading-5">{name}</span>
-                {checkNeeded ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                    <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-                    Check
-                  </span>
-                ) : null}
               </span>
               {detail ? (
                 <span className="block text-[11px] leading-4 text-muted-foreground">{detail}</span>
-              ) : null}
-              {checkNeeded && update.rationale ? (
-                <span className="mt-1 block text-[11px] leading-relaxed text-amber-800 line-clamp-2">
-                  {update.rationale}
-                </span>
               ) : null}
             </span>
           </div>
@@ -726,18 +911,11 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId }: ProposedUpdat
           <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
             <div className="flex flex-col gap-2 text-xs">
               {description ? (
-                <div className="flex flex-col gap-1">
-                  <p className="font-medium text-foreground">Details</p>
-                  <p className="leading-relaxed text-muted-foreground">{description}</p>
-                </div>
+                <p className="leading-relaxed text-muted-foreground">{description}</p>
               ) : null}
               {update.rationale ? (
-                <div className="flex flex-col gap-1">
-                  <p className="font-medium text-foreground">Why this was suggested</p>
-                  <p className="leading-relaxed text-muted-foreground">{update.rationale}</p>
-                </div>
+                <p className="leading-relaxed text-muted-foreground/80">{update.rationale}</p>
               ) : null}
-              <p className="text-muted-foreground">This will go to {dest} when applied.</p>
             </div>
 
             {isEditing ? (
