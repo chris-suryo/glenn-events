@@ -13,6 +13,12 @@ const UPDATE_TYPES: UpdateType[] = [
   'open_question',
 ]
 
+interface ExpectedOperation {
+  update_type: UpdateType
+  operation: 'insert' | 'update' | 'archive'
+  target_id?: string
+}
+
 interface Scenario {
   name: string
   text: string
@@ -20,9 +26,36 @@ interface Scenario {
   requiredTypes: UpdateType[]
   maxCount?: number
   forbiddenTypes?: UpdateType[]
+  context?: EventStateContext
+  expectedOperations?: ExpectedOperation[]
 }
 
 type ScenarioStatus = 'PASS' | 'WARN' | 'FAIL'
+
+const HARBOR_DJ_ID = '11111111-0000-4000-8000-000000000001'
+const DJ_CITY_VENDOR_ID = '11111111-0000-4000-8000-000000000002'
+const DJ_CITY_BUDGET_ID = '22222222-0000-4000-8000-000000000001'
+
+function welcomePartyContext(overrides: Partial<EventStateContext> = {}): EventStateContext {
+  return {
+    event: {
+      name: 'Welcome Party',
+      event_type: 'party',
+      event_date: '2026-07-10',
+      location: 'Boston',
+      attendee_target: 60,
+      budget_target: 5000,
+    },
+    existing_tasks: [],
+    existing_vendors: [],
+    existing_budget_items: [],
+    existing_risks: [],
+    existing_open_questions: [],
+    pending_proposed_updates: [],
+    recent_ai_run_summaries: [],
+    ...overrides,
+  }
+}
 
 const SCENARIOS: Scenario[] = [
   {
@@ -80,6 +113,55 @@ const SCENARIOS: Scenario[] = [
     minCount: 1,
     requiredTypes: ['vendor'],
     maxCount: 3,
+  },
+  {
+    name: 'M11B budget price correction',
+    text: 'DJ City gave me a discount, price is now $300.',
+    minCount: 1,
+    requiredTypes: ['budget_item'],
+    maxCount: 4,
+    context: welcomePartyContext({
+      existing_vendors: [
+        { id: DJ_CITY_VENDOR_ID, name: 'DJ City', category: 'Music', status: 'contacted', estimated_cost: 700, contact_name: null, email: null, phone: null, notes: null },
+      ],
+      existing_budget_items: [
+        { id: DJ_CITY_BUDGET_ID, category: 'Music', description: 'DJ City music service', estimated_cost: 700, actual_cost: null, status: 'estimated', vendor_id: DJ_CITY_VENDOR_ID },
+      ],
+    }),
+    expectedOperations: [
+      { update_type: 'budget_item', operation: 'update', target_id: DJ_CITY_BUDGET_ID },
+    ],
+  },
+  {
+    name: 'M11B vendor cancellation',
+    text: 'Harbor Lights DJ canceled.',
+    minCount: 1,
+    requiredTypes: ['vendor'],
+    maxCount: 4,
+    context: welcomePartyContext({
+      existing_vendors: [
+        { id: HARBOR_DJ_ID, name: 'Harbor Lights DJ', category: 'Music', status: 'confirmed', estimated_cost: 700, contact_name: null, email: null, phone: null, notes: null },
+      ],
+    }),
+    expectedOperations: [
+      { update_type: 'vendor', operation: 'archive', target_id: HARBOR_DJ_ID },
+    ],
+  },
+  {
+    name: 'M11B vendor replacement',
+    text: "Harbor Lights DJ canceled, so we're using DJ City instead. DJ City is $700 and will play from 8 to 10pm.",
+    minCount: 2,
+    maxCount: 6,
+    requiredTypes: ['vendor'],
+    context: welcomePartyContext({
+      existing_vendors: [
+        { id: HARBOR_DJ_ID, name: 'Harbor Lights DJ', category: 'Music', status: 'confirmed', estimated_cost: 700, contact_name: null, email: null, phone: null, notes: null },
+      ],
+    }),
+    expectedOperations: [
+      { update_type: 'vendor', operation: 'archive', target_id: HARBOR_DJ_ID },
+      { update_type: 'vendor', operation: 'insert' },
+    ],
   },
 ]
 
@@ -195,6 +277,18 @@ function evaluateScenario(
     reasons.push(`missing_required_types=${missingTypes.join(',')}`)
   }
 
+  for (const expected of scenario.expectedOperations ?? []) {
+    const found = items.some((item) =>
+      item.update_type === expected.update_type &&
+      (item.operation ?? 'insert') === expected.operation &&
+      (expected.target_id === undefined || item.target_record_id === expected.target_id)
+    )
+    if (!found) {
+      const target = expected.target_id ? `→${expected.target_id.slice(-4)}` : ''
+      reasons.push(`missing_operation=${expected.update_type}:${expected.operation}${target}`)
+    }
+  }
+
   const belowMinimumBy = scenario.minCount - items.length
   if (belowMinimumBy > 0) {
     if (missingTypes.length === 0 && belowMinimumBy === 1 && items.length > 2) {
@@ -235,7 +329,7 @@ async function main() {
     console.log(`Test: ${scenario.name}`)
 
     try {
-      const result = await llmExtract(scenario.text, [], eventStateContext)
+      const result = await llmExtract(scenario.text, [], scenario.context ?? eventStateContext)
       const counts = countByType(result.items)
       const evaluation = evaluateScenario(scenario, result.items, counts)
 
@@ -250,7 +344,10 @@ async function main() {
         const confidence = typeof item.confidence === 'number'
           ? ` (${item.confidence.toFixed(2)})`
           : ''
-        console.log(`- ${item.update_type} - ${itemLabel(item)}${confidence}`)
+        const operation = item.operation && item.operation !== 'insert'
+          ? ` [${item.operation}${item.target_record_id ? `→…${item.target_record_id.slice(-4)}` : ''}]`
+          : ''
+        console.log(`- ${item.update_type}${operation} - ${itemLabel(item)}${confidence}`)
       }
     } catch (err) {
       console.log(`ERROR: ${err instanceof Error ? err.message : String(err)}`)

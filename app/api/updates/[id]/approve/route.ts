@@ -26,6 +26,7 @@ const VendorPayloadSchema = z.object({
   status: z.enum(['prospect', 'contacted', 'confirmed', 'declined']),
   estimated_cost: z.number().nonnegative().nullable(),
   notes: z.string().trim().nullable(),
+  archive_reason: z.string().trim().nullable().optional(),
 })
 
 const BudgetItemPayloadSchema = z.object({
@@ -35,6 +36,7 @@ const BudgetItemPayloadSchema = z.object({
   actual_cost: z.number().nonnegative().nullable(),
   status: z.enum(['estimated', 'committed', 'paid']),
   vendor_name: z.string().trim().nullable(),
+  archive_reason: z.string().trim().nullable().optional(),
 })
 
 const TimelineItemPayloadSchema = z.object({
@@ -74,10 +76,31 @@ function recordLabel(payload: UpdatePayload): string {
     : 'Untitled record'
 }
 
-function nonNullVendorUpdate(payload: UpdatePayload, trace: Record<string, unknown>): Record<string, unknown> {
+// Per-type config for applying corrections/archives to existing records.
+const CORRECTION_TARGETS: Partial<Record<UpdateType, {
+  table: string
+  patchFields: string[]
+  labelField: string
+  fallbackLabel: string
+}>> = {
+  vendor: {
+    table: 'vendors',
+    patchFields: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes'],
+    labelField: 'name',
+    fallbackLabel: 'Untitled vendor',
+  },
+  budget_item: {
+    table: 'budget_items',
+    patchFields: ['category', 'description', 'estimated_cost', 'actual_cost', 'status'],
+    labelField: 'description',
+    fallbackLabel: 'Untitled budget item',
+  },
+}
+
+function nonNullRecordUpdate(payload: UpdatePayload, trace: Record<string, unknown>, fields: string[]): Record<string, unknown> {
   const p = payload as unknown as Record<string, unknown>
   const updateData: Record<string, unknown> = { ...trace }
-  for (const key of ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes']) {
+  for (const key of fields) {
     if (p[key] !== null && p[key] !== undefined) {
       updateData[key] = p[key]
     }
@@ -179,46 +202,100 @@ export async function POST(
     ? { ...typedUpdate, payload_json: editedPayload }
     : typedUpdate
 
-  if (updateForApply.operation === 'update') {
-    if (updateForApply.update_type !== 'vendor' || updateForApply.target_record_type !== 'vendor' || !updateForApply.target_record_id) {
+  if (updateForApply.operation === 'update' || updateForApply.operation === 'archive') {
+    const correction = CORRECTION_TARGETS[updateForApply.update_type]
+    if (
+      !correction ||
+      updateForApply.target_record_type !== updateForApply.update_type ||
+      !updateForApply.target_record_id
+    ) {
       return NextResponse.json({ error: 'Unsupported correction proposal' }, { status: 400 })
     }
 
-    const { data: targetVendor, error: targetErr } = await supabase
-      .from('vendors')
+    const { data: targetRecord, error: targetErr } = await supabase
+      .from(correction.table)
       .select('*')
       .eq('id', updateForApply.target_record_id)
       .eq('event_id', updateForApply.event_id)
       .single()
 
-    if (targetErr || !targetVendor) {
-      if (targetErr) console.error('approve correction: target vendor fetch error:', targetErr)
-      return NextResponse.json({ error: 'Target vendor not found or access denied' }, { status: 404 })
+    if (targetErr || !targetRecord) {
+      if (targetErr) console.error('approve correction: target fetch error:', targetErr)
+      return NextResponse.json({ error: 'Target record not found or access denied' }, { status: 404 })
     }
 
-    const trace = {
-      proposed_update_id: updateForApply.id,
-      source_message_id:  updateForApply.source_message_id,
-      ai_run_id:          updateForApply.ai_run_id,
-      ai_generated:       true,
-    }
-    const updateData = nonNullVendorUpdate(updateForApply.payload_json, trace)
-    const beforeVendor = targetVendor as Record<string, unknown>
-    const fieldsChanged = changedFields(beforeVendor, updateData)
-    const beforeLabel = typeof beforeVendor.name === 'string' ? beforeVendor.name : 'Untitled vendor'
-    const afterLabel = typeof updateData.name === 'string' ? updateData.name : beforeLabel
+    const beforeRecord = targetRecord as Record<string, unknown>
+    const beforeLabel = typeof beforeRecord[correction.labelField] === 'string'
+      ? (beforeRecord[correction.labelField] as string)
+      : correction.fallbackLabel
 
-    const { data: updatedVendor, error: vendorUpdateErr } = await supabase
-      .from('vendors')
-      .update(updateData)
-      .eq('id', updateForApply.target_record_id)
-      .eq('event_id', updateForApply.event_id)
-      .select('id')
-      .single()
+    let activityAction: string
+    let activityMetadata: Record<string, unknown>
 
-    if (vendorUpdateErr || !updatedVendor) {
-      if (vendorUpdateErr) console.error('approve correction: vendor update error:', vendorUpdateErr)
-      return NextResponse.json({ error: 'Failed to update vendor' }, { status: 500 })
+    if (updateForApply.operation === 'archive') {
+      const p = updateForApply.payload_json as unknown as Record<string, unknown>
+      const reason = typeof p.archive_reason === 'string' && p.archive_reason.trim()
+        ? p.archive_reason.trim()
+        : null
+
+      // Provenance for archives lives in the activity entry + target_snapshot_json;
+      // the row itself only records when and why it was retired.
+      const { error: archiveErr } = await supabase
+        .from(correction.table)
+        .update({ archived_at: new Date().toISOString(), archived_reason: reason })
+        .eq('id', updateForApply.target_record_id)
+        .eq('event_id', updateForApply.event_id)
+        .select('id')
+        .single()
+
+      if (archiveErr) {
+        console.error('approve archive: record update error:', archiveErr)
+        return NextResponse.json({ error: 'Failed to archive record' }, { status: 500 })
+      }
+
+      activityAction = 'record_archived'
+      activityMetadata = {
+        proposed_update_id: id,
+        update_type:        updateForApply.update_type,
+        target_record_id:   updateForApply.target_record_id,
+        label:              beforeLabel,
+        reason,
+      }
+    } else {
+      const trace = {
+        proposed_update_id: updateForApply.id,
+        source_message_id:  updateForApply.source_message_id,
+        ai_run_id:          updateForApply.ai_run_id,
+        ai_generated:       true,
+      }
+      const updateData = nonNullRecordUpdate(updateForApply.payload_json, trace, correction.patchFields)
+      const fieldsChanged = changedFields(beforeRecord, updateData)
+      const afterLabel = typeof updateData[correction.labelField] === 'string'
+        ? (updateData[correction.labelField] as string)
+        : beforeLabel
+
+      const { error: recordUpdateErr } = await supabase
+        .from(correction.table)
+        .update(updateData)
+        .eq('id', updateForApply.target_record_id)
+        .eq('event_id', updateForApply.event_id)
+        .select('id')
+        .single()
+
+      if (recordUpdateErr) {
+        console.error('approve correction: record update error:', recordUpdateErr)
+        return NextResponse.json({ error: 'Failed to update record' }, { status: 500 })
+      }
+
+      activityAction = 'proposed_update_corrected'
+      activityMetadata = {
+        proposed_update_id: id,
+        update_type:        updateForApply.update_type,
+        target_record_id:   updateForApply.target_record_id,
+        before_label:       beforeLabel,
+        after_label:        afterLabel,
+        changed_fields:     fieldsChanged,
+      }
     }
 
     const proposalUpdate: Record<string, unknown> = {
@@ -243,17 +320,10 @@ export async function POST(
     await supabase.from('activity_log').insert({
       event_id:      typedUpdate.event_id,
       actor_user_id: user.id,
-      action:        'proposed_update_corrected',
-      entity_type:   'vendor',
+      action:        activityAction,
+      entity_type:   updateForApply.update_type,
       entity_id:     updateForApply.target_record_id,
-      metadata_json: {
-        proposed_update_id: id,
-        update_type:        updateForApply.update_type,
-        target_record_id:   updateForApply.target_record_id,
-        before_label:       beforeLabel,
-        after_label:        afterLabel,
-        changed_fields:     fieldsChanged,
-      },
+      metadata_json: activityMetadata,
     })
 
     const { count: pendingCount } = await supabase
@@ -272,7 +342,8 @@ export async function POST(
     return NextResponse.json({
       ok:          true,
       status:      'applied',
-      entity_type: 'vendor',
+      operation:   updateForApply.operation,
+      entity_type: updateForApply.update_type,
       entity_id:   updateForApply.target_record_id,
     })
   }

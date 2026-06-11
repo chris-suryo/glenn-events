@@ -28,8 +28,8 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
   ] = await Promise.all([
     supabase.from('events').select('*').eq('id', eventId).single(),
     supabase.from('tasks').select('*').eq('event_id', eventId).eq('status', 'todo').order('created_at'),
-    supabase.from('vendors').select('*').eq('event_id', eventId).order('created_at'),
-    supabase.from('budget_items').select('*').eq('event_id', eventId).order('created_at'),
+    supabase.from('vendors').select('*').eq('event_id', eventId).is('archived_at', null).order('created_at'),
+    supabase.from('budget_items').select('*').eq('event_id', eventId).is('archived_at', null).order('created_at'),
     supabase.from('risks').select('*').eq('event_id', eventId).eq('status', 'open').order('created_at'),
     supabase
       .from('proposed_updates')
@@ -60,7 +60,7 @@ export default async function EventCommandCenterPage({ params }: PageProps) {
       .from('activity_log')
       .select('*')
       .eq('event_id', eventId)
-      .in('action', ['proposed_updates_created', 'proposed_update_applied', 'proposed_update_corrected', 'proposed_update_rejected'])
+      .in('action', ['proposed_updates_created', 'proposed_update_applied', 'proposed_update_corrected', 'proposed_update_rejected', 'record_archived'])
       .order('created_at', { ascending: false })
       .limit(8),
   ])

@@ -98,6 +98,7 @@ export interface VendorPayload {
   status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
   estimated_cost: number | null
   notes: string | null
+  archive_reason?: string | null
 }
 
 export interface BudgetItemPayload {
@@ -107,6 +108,7 @@ export interface BudgetItemPayload {
   actual_cost: number | null
   status: 'estimated' | 'committed' | 'paid'
   vendor_name: string | null
+  archive_reason?: string | null
 }
 
 export interface TimelineItemPayload {
@@ -169,7 +171,7 @@ export interface ProposedUpdate {
   payload_json: UpdatePayload
   confidence: number | null
   status: 'pending' | 'approved' | 'rejected' | 'applied' | 'failed'
-  operation: 'insert' | 'update'
+  operation: 'insert' | 'update' | 'archive'
   target_record_type: UpdateType | null
   target_record_id: string | null
   target_snapshot_json: Json | null
@@ -210,6 +212,8 @@ export interface Vendor {
   status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
   estimated_cost: number | null
   notes: string | null
+  archived_at: string | null
+  archived_reason: string | null
   proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
@@ -227,6 +231,8 @@ export interface BudgetItem {
   actual_cost: number | null
   status: 'estimated' | 'committed' | 'paid'
   vendor_id: string | null
+  archived_at: string | null
+  archived_reason: string | null
   proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
@@ -244,6 +250,8 @@ export interface TimelineItem {
   ends_at: string | null
   owner_user_id: string | null
   type: 'milestone' | 'task' | 'deadline' | 'planning'
+  archived_at: string | null
+  archived_reason: string | null
   proposed_update_id: string | null
   source_message_id: string | null
   ai_run_id: string | null
@@ -352,10 +360,13 @@ export interface EventStateContext {
     notes: string | null
   }>
   existing_budget_items: Array<{
+    id: string
     category: string
     description: string
     estimated_cost: number | null
+    actual_cost: number | null
     status: 'estimated' | 'committed' | 'paid'
+    vendor_id: string | null
   }>
   existing_risks: Array<{
     title: string

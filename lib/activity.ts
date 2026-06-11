@@ -74,6 +74,14 @@ export function activityLabel(entry: ActivityLog): string {
     return entityLabel ? `Updated ${entityLabel}` : 'Updated plan record'
   }
 
+  if (entry.action === 'record_archived') {
+    const entityLabel = ENTITY_TYPE_LABELS[entry.entity_type] ?? 'record'
+    const reason = metadataString(entry, 'reason')
+    if (label && reason) return `Removed ${entityLabel}: ${label} — ${reason}`
+    if (label) return `Removed ${entityLabel}: ${label}`
+    return `Removed ${entityLabel}`
+  }
+
   return entry.action.replace(/_/g, ' ')
 }
 
@@ -82,6 +90,7 @@ export function activityDot(action: string): string {
   if (action === 'proposed_update_corrected') return 'bg-sky-500'
   if (action === 'proposed_update_rejected') return 'bg-rose-400'
   if (action === 'record_updated')           return 'bg-sky-400'
+  if (action === 'record_archived')          return 'bg-rose-500'
   return 'bg-indigo-400'
 }
 

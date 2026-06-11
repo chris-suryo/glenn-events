@@ -21,6 +21,9 @@ export interface ExtractedItem {
     | OpenQuestionPayload
   confidence: number
   rationale: string
+  operation?: 'insert' | 'update' | 'archive'
+  target_record_type?: UpdateType | null
+  target_record_id?: string | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

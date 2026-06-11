@@ -234,17 +234,57 @@ function getClarificationPrompt(update: ProposedUpdate): string {
   return rationale
 }
 
-function isVendorCorrection(update: ProposedUpdate): boolean {
-  return update.operation === 'update' && update.update_type === 'vendor'
+const CORRECTION_TYPES: UpdateType[] = ['vendor', 'budget_item']
+
+const CORRECTION_FIELD_LABELS: Partial<Record<UpdateType, Record<string, string>>> = {
+  vendor: {
+    name: 'Name',
+    contact_name: 'Contact',
+    email: 'Email',
+    phone: 'Phone',
+    status: 'Status',
+    estimated_cost: 'Cost',
+    notes: 'Notes',
+    category: 'Category',
+  },
+  budget_item: {
+    description: 'Description',
+    category: 'Category',
+    estimated_cost: 'Estimated',
+    actual_cost: 'Actual',
+    status: 'Status',
+  },
 }
 
-function getVendorSnapshot(update: ProposedUpdate): Record<string, unknown> | null {
+const MONEY_FIELDS = ['estimated_cost', 'actual_cost']
+
+function isCorrection(update: ProposedUpdate): boolean {
+  return update.operation === 'update' && CORRECTION_TYPES.includes(update.update_type)
+}
+
+function isArchive(update: ProposedUpdate): boolean {
+  return update.operation === 'archive'
+}
+
+function getTargetSnapshot(update: ProposedUpdate): Record<string, unknown> | null {
   return isRecord(update.target_snapshot_json) ? update.target_snapshot_json : null
 }
 
-function formatPreservedVendorFacts(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string | null {
-  if (!isVendorCorrection(update)) return null
-  const snapshot = getVendorSnapshot(update)
+function getTargetDisplayName(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string {
+  const snapshot = getTargetSnapshot(update)
+  const snapshotName = snapshot?.name ?? snapshot?.description
+  if (typeof snapshotName === 'string' && snapshotName.trim()) return snapshotName
+  return getUpdateName(update, payload)
+}
+
+function getArchiveReason(payload: UpdatePayload): string | null {
+  const p = payloadRecord(payload)
+  return typeof p.archive_reason === 'string' && p.archive_reason.trim() ? p.archive_reason.trim() : null
+}
+
+function formatPreservedFacts(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string | null {
+  if (!isCorrection(update) && !isArchive(update)) return null
+  const snapshot = getTargetSnapshot(update)
   const p = payloadRecord(payload)
   const category =
     (typeof snapshot?.category === 'string' && snapshot.category) ||
@@ -258,35 +298,36 @@ function formatPreservedVendorFacts(update: ProposedUpdate, payload: UpdatePaylo
 }
 
 function vendorCorrectionLabels(update: ProposedUpdate, payload: UpdatePayload = update.payload_json) {
-  const snapshot = getVendorSnapshot(update)
+  const snapshot = getTargetSnapshot(update)
   const p = payloadRecord(payload)
   const before = typeof snapshot?.name === 'string' && snapshot.name.trim() ? snapshot.name : 'Existing vendor'
   const after = typeof p.name === 'string' && p.name.trim() ? p.name : getUpdateName(update, payload)
   return { before, after }
 }
 
-function vendorCorrectionChangedFields(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string[] {
-  if (!isVendorCorrection(update)) return []
-  const snapshot = getVendorSnapshot(update)
+function budgetCostDiff(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string | null {
+  const snapshot = getTargetSnapshot(update)
   const p = payloadRecord(payload)
-  if (!snapshot) return []
-
-  const labels: Record<string, string> = {
-    name: 'Name',
-    contact_name: 'Contact',
-    email: 'Email',
-    phone: 'Phone',
-    status: 'Status',
-    estimated_cost: 'Cost',
-    notes: 'Notes',
-    category: 'Category',
+  const before = typeof snapshot?.estimated_cost === 'number' ? snapshot.estimated_cost : null
+  const after = typeof p.estimated_cost === 'number' ? p.estimated_cost : null
+  if (before !== null && after !== null && before !== after) {
+    return `${formatMoney(before)} → ${formatMoney(after)}`
   }
+  return null
+}
+
+function correctionChangedFields(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string[] {
+  if (!isCorrection(update)) return []
+  const snapshot = getTargetSnapshot(update)
+  const labels = CORRECTION_FIELD_LABELS[update.update_type]
+  const p = payloadRecord(payload)
+  if (!snapshot || !labels) return []
 
   return Object.entries(labels)
     .filter(([key]) => p[key] !== null && p[key] !== undefined && p[key] !== snapshot[key])
     .map(([key, label]) => {
-      const before = key === 'estimated_cost' ? formatMoney(snapshot[key]) : snapshot[key]
-      const after = key === 'estimated_cost' ? formatMoney(p[key]) : p[key]
+      const before = MONEY_FIELDS.includes(key) ? formatMoney(snapshot[key]) : snapshot[key]
+      const after = MONEY_FIELDS.includes(key) ? formatMoney(p[key]) : p[key]
       return before === null || before === undefined || before === ''
         ? `${label}: ${String(after)}`
         : `${label}: ${String(before)} → ${String(after)}`
@@ -294,15 +335,18 @@ function vendorCorrectionChangedFields(update: ProposedUpdate, payload: UpdatePa
 }
 
 function getActionLabel(update: ProposedUpdate): string {
-  if (isVendorCorrection(update)) return 'Update vendor'
+  if (isArchive(update)) return update.update_type === 'budget_item' ? 'Remove budget item' : 'Remove vendor'
+  if (isCorrection(update)) return update.update_type === 'budget_item' ? 'Update budget' : 'Update vendor'
   return TYPE_ACTION_LABEL[update.update_type]
 }
 
 function getReadyBulkLabel(updates: ProposedUpdate[], fallbackAction: 'Add' | 'Track'): string {
   if (updates.length === 0) return fallbackAction
-  const hasInsert = updates.some((update) => update.operation !== 'update')
+  const hasInsert = updates.some((update) => update.operation !== 'update' && update.operation !== 'archive')
   const hasUpdate = updates.some((update) => update.operation === 'update')
-  if (hasInsert && hasUpdate) return 'Apply'
+  const hasArchive = updates.some((update) => update.operation === 'archive')
+  if ([hasInsert, hasUpdate, hasArchive].filter(Boolean).length > 1) return 'Apply'
+  if (hasArchive) return 'Remove'
   if (hasUpdate) return 'Update'
   return getBulkActionVerb(updates)
 }
@@ -654,8 +698,15 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
     try {
       const result = await reviewUpdate(update.id, action, payload)
       if (action === 'approve') {
-        const planHref = getPlanHref(eventId, update.update_type, result.entity_id)
-        toast.success(isVendorCorrection(update) ? `Updated vendor: ${name}` : `Added to ${dest}: ${name}`, planHref ? {
+        // Archived records are hidden from the Plan, so a "View" link would dead-end.
+        const planHref = isArchive(update) ? null : getPlanHref(eventId, update.update_type, result.entity_id)
+        const singular = TYPE_COUNT_LABEL[update.update_type]
+        const message = isArchive(update)
+          ? `Removed ${singular}: ${getTargetDisplayName(update, payload ?? update.payload_json)}`
+          : isCorrection(update)
+            ? `Updated ${singular}: ${name}`
+            : `Added to ${dest}: ${name}`
+        toast.success(message, planHref ? {
           action: {
             label: 'View',
             onClick: () => router.push(planHref),
@@ -689,7 +740,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         ? scopedUpdates
             .map((update, index) => {
               const result = results[index]
-              return result.status === 'fulfilled'
+              return result.status === 'fulfilled' && !isArchive(update)
                 ? getPlanHref(eventId, update.update_type, result.value.entity_id)
                 : null
             })
@@ -886,7 +937,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                   onClick={() => handleSingle(update, 'approve')}
                 >
                   {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                  {isVendorCorrection(update) ? 'Update anyway' : 'Add anyway'}
+                  {isArchive(update) ? 'Remove anyway' : isCorrection(update) ? 'Update anyway' : 'Add anyway'}
                 </Button>
               </div>
             )}
@@ -906,23 +957,36 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
     const isEditing = editingIds.has(update.id)
     const draftPayload = draftPayloads[update.id]
     const activePayload = draftPayload ?? update.payload_json
-    const correctionLabels = isVendorCorrection(update)
-      ? vendorCorrectionLabels(update, activePayload)
-      : null
-    const name = correctionLabels
-      ? `${correctionLabels.before} → ${correctionLabels.after}`
-      : getUpdateName(update, activePayload)
-    const detail = correctionLabels
-      ? formatPreservedVendorFacts(update, activePayload)
-      : getUpdateDetail(update, activePayload)
+    const archive = isArchive(update)
+    const correction = isCorrection(update)
+
+    let name: string
+    let detail: string | null
+    if (archive) {
+      name = `Remove ${getTargetDisplayName(update, activePayload)}`
+      detail = getArchiveReason(activePayload) ?? formatPreservedFacts(update, activePayload)
+    } else if (correction && update.update_type === 'budget_item') {
+      name = getUpdateName(update, activePayload)
+      detail = budgetCostDiff(update, activePayload) ?? correctionChangedFields(update, activePayload)[0] ?? null
+    } else if (correction) {
+      const labels = vendorCorrectionLabels(update, activePayload)
+      name = labels.before === labels.after ? labels.after : `${labels.before} → ${labels.after}`
+      detail = formatPreservedFacts(update, activePayload)
+    } else {
+      name = getUpdateName(update, activePayload)
+      detail = getUpdateDetail(update, activePayload)
+    }
     const description = getUpdateDescription(update, activePayload)
-    const correctionChangedFields = vendorCorrectionChangedFields(update, activePayload)
-    const preservedFacts = formatPreservedVendorFacts(update, activePayload)
+    const changedFieldsList = correctionChangedFields(update, activePayload)
+    const preservedFacts = formatPreservedFacts(update, activePayload)
 
     return (
       <article
         key={update.id}
-        className="rounded-lg border bg-card shadow-sm transition-colors"
+        className={cn(
+          'rounded-lg border shadow-sm transition-colors',
+          archive ? 'border-rose-200 bg-rose-50/40' : 'bg-card'
+        )}
       >
         <div className="flex flex-col gap-2 p-2 xl:flex-row xl:items-start">
           <div
@@ -992,18 +1056,23 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         {isExpanded ? (
           <div className="flex flex-col gap-3 border-t px-2.5 pb-2.5 pt-3">
             <div className="flex flex-col gap-2 text-xs">
-              {correctionChangedFields.length > 0 ? (
+              {changedFieldsList.length > 0 ? (
                 <div className="rounded-lg border bg-muted/30 p-2.5">
                   <p className="font-medium text-foreground">Changed fields</p>
                   <div className="mt-1 space-y-0.5 text-muted-foreground">
-                    {correctionChangedFields.map((field) => (
+                    {changedFieldsList.map((field) => (
                       <p key={field}>{field}</p>
                     ))}
                   </div>
                 </div>
               ) : null}
+              {archive && getArchiveReason(activePayload) ? (
+                <p className="leading-relaxed text-rose-800">Reason: {getArchiveReason(activePayload)}</p>
+              ) : null}
               {preservedFacts ? (
-                <p className="leading-relaxed text-muted-foreground">Preserved: {preservedFacts}</p>
+                <p className="leading-relaxed text-muted-foreground">
+                  {archive ? `Removing: ${preservedFacts}` : `Preserved: ${preservedFacts}`}
+                </p>
               ) : null}
               {description ? (
                 <p className="leading-relaxed text-muted-foreground">{description}</p>
@@ -1047,7 +1116,7 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
                   </Button>
                 </div>
               </div>
-            ) : (
+            ) : archive ? null : (
               <Button
                 size="sm"
                 variant="outline"

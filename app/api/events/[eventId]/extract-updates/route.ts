@@ -24,7 +24,7 @@ interface ExtractionDiagnostics {
   inserted_count: number
 }
 
-type ProposedOperation = 'insert' | 'update'
+type ProposedOperation = 'insert' | 'update' | 'archive'
 
 interface VendorCorrectionTarget {
   id: string
@@ -36,6 +36,16 @@ interface VendorCorrectionTarget {
   email: string | null
   phone: string | null
   notes: string | null
+}
+
+interface BudgetCorrectionTarget {
+  id: string
+  category: string
+  description: string
+  estimated_cost: number | null
+  actual_cost: number | null
+  status: 'estimated' | 'committed' | 'paid'
+  vendor_id: string | null
 }
 
 type ExtractedItemWithOperation = ExtractedItem & {
@@ -158,6 +168,51 @@ function applyVendorCorrectionOperations(
   })
 }
 
+// Validates LLM-proposed correction/archive targets against real event rows.
+// The snapshot is always rebuilt from the DB row — never trusted from the model.
+// Updates with bad targets downgrade to inserts; archives with bad targets are
+// dropped, because inserting a record that represents a cancellation is worse.
+function resolveCorrectionTargets(
+  items: ExtractedItem[],
+  existingVendors: VendorCorrectionTarget[],
+  existingBudgetItems: BudgetCorrectionTarget[],
+): { kept: ExtractedItemWithOperation[]; droppedArchives: ExtractedItem[] } {
+  const kept: ExtractedItemWithOperation[] = []
+  const droppedArchives: ExtractedItem[] = []
+
+  for (const item of items) {
+    const targetId = item.target_record_id ?? null
+    const target =
+      item.update_type === 'vendor'
+        ? existingVendors.find((v) => v.id === targetId) ?? null
+        : item.update_type === 'budget_item'
+          ? existingBudgetItems.find((b) => b.id === targetId) ?? null
+          : null
+
+    if (target) {
+      kept.push({
+        ...item,
+        operation: item.operation as ProposedOperation,
+        target_record_type: item.update_type,
+        target_record_id: target.id,
+        target_snapshot_json: target as unknown as Json,
+      })
+    } else if (item.operation === 'archive') {
+      droppedArchives.push(item)
+    } else {
+      kept.push({
+        ...item,
+        operation: 'insert',
+        target_record_type: null,
+        target_record_id: null,
+        target_snapshot_json: null,
+      })
+    }
+  }
+
+  return { kept, droppedArchives }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ eventId: string }> }
@@ -231,12 +286,14 @@ export async function POST(
         .from('vendors')
         .select('id, name, category, status, estimated_cost, contact_name, email, phone, notes')
         .eq('event_id', eventId)
+        .is('archived_at', null)
         .order('created_at', { ascending: false })
         .limit(10),
       supabase
         .from('budget_items')
-        .select('category, description, estimated_cost, status')
+        .select('id, category, description, estimated_cost, actual_cost, status, vendor_id')
         .eq('event_id', eventId)
+        .is('archived_at', null)
         .order('created_at', { ascending: false })
         .limit(10),
       supabase
@@ -319,10 +376,13 @@ export async function POST(
         notes: (v.notes as string | null) ?? null,
       })),
       existing_budget_items: (existingBudgetRows ?? []).map((b) => ({
+        id: b.id as string,
         category: b.category as string,
         description: b.description as string,
         estimated_cost: (b.estimated_cost as number | null) ?? null,
+        actual_cost: (b.actual_cost as number | null) ?? null,
         status: b.status as 'estimated' | 'committed' | 'paid',
+        vendor_id: (b.vendor_id as string | null) ?? null,
       })),
       existing_risks: (existingRiskRows ?? []).map((r) => ({
         title: r.title as string,
@@ -409,12 +469,27 @@ export async function POST(
       recommendedSummary = summary.recommendedSummary
     }
 
-    // 3b. App-side dedupe — runs for both LLM and mock paths
-    const dedupeResult = dedupeExtractedItems(rawExtracted, eventStateContext)
-    const extracted = applyVendorCorrectionOperations(
-      dedupeResult.kept,
+    // 3b. App-side dedupe — inserts only. Corrections/archives intentionally
+    // resemble the existing rows they target, so dedupe would silently eat them.
+    const correctionCandidates = rawExtracted.filter((item) => (item.operation ?? 'insert') !== 'insert')
+    const insertCandidates = rawExtracted.filter((item) => (item.operation ?? 'insert') === 'insert')
+
+    const dedupeResult = dedupeExtractedItems(insertCandidates, eventStateContext)
+    const { kept: resolvedCorrections, droppedArchives } = resolveCorrectionTargets(
+      correctionCandidates,
       eventStateContext.existing_vendors,
+      eventStateContext.existing_budget_items,
     )
+    if (droppedArchives.length > 0) {
+      console.warn(
+        'extract: dropped archive proposals with unresolvable targets:',
+        droppedArchives.map((item) => itemLabel(item)),
+      )
+    }
+    const extracted = [
+      ...resolvedCorrections,
+      ...applyVendorCorrectionOperations(dedupeResult.kept, eventStateContext.existing_vendors),
+    ]
 
     if (extractionMode === 'mock') {
       // Fallback response for mock mode (uses deduped count)
@@ -440,11 +515,18 @@ export async function POST(
           kept_count: extracted.length,
           kept_count_by_type: countByType(extracted),
           deduped_count: dedupeResult.deduped_count,
-          dropped: dedupeResult.dropped.map((drop) => ({
-            update_type: drop.dropped_item.update_type,
-            label: itemLabel(drop.dropped_item),
-            reason: drop.reason,
-          })),
+          dropped: [
+            ...dedupeResult.dropped.map((drop) => ({
+              update_type: drop.dropped_item.update_type,
+              label: itemLabel(drop.dropped_item),
+              reason: drop.reason,
+            })),
+            ...droppedArchives.map((item) => ({
+              update_type: item.update_type,
+              label: itemLabel(item),
+              reason: 'archive target not found in event state',
+            })),
+          ],
           inserted_count: 0,
         }
       : null

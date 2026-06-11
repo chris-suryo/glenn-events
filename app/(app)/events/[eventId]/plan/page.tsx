@@ -89,10 +89,10 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
       }
     })
   } else if (tab === 'vendors') {
-    const { data: v } = await supabase.from('vendors').select('*').eq('event_id', eventId).order('created_at')
+    const { data: v } = await supabase.from('vendors').select('*').eq('event_id', eventId).is('archived_at', null).order('created_at')
     vendors = (v ?? []) as Vendor[]
   } else if (tab === 'budget') {
-    const { data: b } = await supabase.from('budget_items').select('*').eq('event_id', eventId).order('created_at')
+    const { data: b } = await supabase.from('budget_items').select('*').eq('event_id', eventId).is('archived_at', null).order('created_at')
     budgetItems = (b ?? []) as BudgetItem[]
   } else if (tab === 'timeline') {
     const { data: tl } = await supabase.from('timeline_items').select('*').eq('event_id', eventId).order('starts_at', { ascending: true })

@@ -37,7 +37,7 @@ Intake vs extraction — decide this BEFORE extracting:
 - If the message contains NO concrete facts — no vendor/person/place/item names, no dates or times, no costs or quantities, no decisions or confirmed details, and no stated operational unknowns — it is an intake request ("help me get organized"). Return EVERY item array empty and reply with the INTAKE REPLY format below.
 - One concrete fact is enough to extract. "All I know is Chilacates is doing the food" → one vendor item. "Dessert is still TBD" → a stated operational unknown → decision or open question per the usual rules.
 - A time-only schedule fact can become a timeline item. If the event date or message makes the date clear, set starts_at to an ISO datetime on that date and set ends_at when the note gives a range. Only use null for starts_at/ends_at when no date can be inferred. Preserve the exact time or time range in the title or description when no full date is available.
-- Correction notes should still create reviewable suggestions that capture corrected schedule, budget, and task facts. This app does not merge into existing plan rows yet, so phrase them as candidate updates or correction tasks rather than silently ignoring them.
+- Correction notes create reviewable suggestions that target the existing plan row (see CORRECTIONS, CANCELLATIONS, AND REPLACEMENTS below). Never silently ignore a corrected fact.
 
 How to write response_message — it is a short operational brief, never a paragraph wall:
 PART 1 — ONE short confirmation sentence covering what matters most. One sentence, not two or three.
@@ -80,7 +80,7 @@ Extraction rules:
 7. All status fields must exactly match the allowed enum values.
 8. CRITICAL — no placeholder values: if a vendor name is unknown but the item is otherwise concrete, use the best representable known fields, lower confidence, and make rationale the missing-fact question. Never put "<UNKNOWN>", "TBD", "Unknown", "N/A", or any placeholder in an extracted field. Unknown fields must be null or omitted.
 9. CRITICAL — use conversation history: if earlier messages show you asked a follow-up question and the user is now answering it, extract the complete combined information now. Connect the dots across turns and re-propose the complete item with known details merged.
-9a. If the user clarifies an incomplete placeholder vendor already in the plan (for example an unknown florist with known category/cost), create a complete vendor suggestion with the clarified name/contact and preserved known facts. The review system will treat it as an update, not a duplicate insert.
+9a. If the user clarifies an incomplete placeholder vendor already in the plan (for example an unknown florist with known category/cost), create a complete vendor suggestion with the clarified name/contact and preserved known facts, set operation to "update", and copy that vendor's id into target_id so it corrects the existing row instead of duplicating it.
 10. CRITICAL — do not create duplicate suggestions for the same real-world item in one message.
 11. Prefer one consolidated suggestion over multiple overlapping suggestions for the same real-world item. This does not mean collapsing unrelated vendor, task, timeline, budget, decision, risk, or open-question items into one suggestion.
 11a. Timeline duplicate guard: if one actor/event/time window is described more than once, create one clearer timeline item rather than near-duplicates. Example: "IBM volunteers arrive 5:00–5:15 PM" and "IBM volunteers arrive closer to 5:00 PM for setup" should become one volunteer-arrival timing unless they are truly separate events.
@@ -93,7 +93,13 @@ Extraction rules:
 18. Current message takes precedence over older context. Do not introduce unrelated prior vendors, costs, tasks, or risks unless the user's current message is clearly answering or clarifying that same item.
 19. If the current message corrects a previous value ("not $2,087", "the total is $1,006.87"), use the corrected value exactly and do not repeat the older value.
 20. If several schedule facts are stated in a correction, extract each distinct operational timing when useful, not just the changed one.
-21. understood_summary and recommended_summary must summarize this review only. Do not include unrelated open work from earlier messages just because it is still in the event history.`
+21. understood_summary and recommended_summary must summarize this review only. Do not include unrelated open work from earlier messages just because it is still in the event history.
+
+CORRECTIONS, CANCELLATIONS, AND REPLACEMENTS — vendors and budget items in the Current Event State include an id. Use it:
+22. If the note corrects a fact about an existing vendor or budget item (new price, corrected name, updated contact, changed status), create a same-type item with operation "update" and target_id copied EXACTLY from that record's id in the event state. Carry the corrected fields plus the unchanged required fields as they appear in the event state. Do not also propose an insert for the same real-world item.
+23. If the note says a vendor or service is canceled, dropped, no longer needed, or backed out, create a vendor item with operation "archive", target_id copied exactly, name matching the existing vendor, and a short archive_reason (e.g. "Canceled by vendor"). If that vendor has a matching budget item in the event state that is now obsolete, also propose a budget item with operation "archive" targeting it. A cancellation may ALSO warrant a risk or replacement task — those are separate insert items.
+24. If the note replaces one vendor with another ("X canceled, we're using Y instead"), propose BOTH: an archive item for X (rule 23) and a normal insert vendor item for Y, plus budget/timeline inserts for Y's cost and schedule as warranted.
+25. Never invent a target_id. Only copy ids that appear in the Current Event State. If nothing there matches, use operation "insert" with target_id null. Items already queued for review have no ids — never target those.`
 
 // ─── Tool schema ──────────────────────────────────────────────────────────────
 
@@ -148,10 +154,13 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             status:         { type: 'string', enum: ['prospect', 'contacted', 'confirmed', 'declined'] },
             estimated_cost: { type: ['number', 'null'] },
             notes:          { type: ['string', 'null'] },
+            operation:      { type: 'string', enum: ['insert', 'update', 'archive'], description: '"insert" for a new vendor. "update" to correct an existing vendor from the event state. "archive" when an existing vendor is canceled/dropped/no longer needed.' },
+            target_id:      { type: ['string', 'null'], description: 'REQUIRED for update/archive: the exact id of the existing vendor from the Current Event State. null for insert. Never invent ids.' },
+            archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the vendor is being removed, e.g. "Canceled by vendor". null otherwise.' },
             confidence:     { type: 'number', minimum: 0, maximum: 1 },
             rationale:      { type: 'string' },
           },
-          required: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes', 'confidence', 'rationale'],
+          required: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes', 'operation', 'target_id', 'archive_reason', 'confidence', 'rationale'],
         },
       },
       budget_items: {
@@ -166,10 +175,13 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             actual_cost:    { type: ['number', 'null'] },
             status:         { type: 'string', enum: ['estimated', 'committed', 'paid'] },
             vendor_name:    { type: ['string', 'null'] },
+            operation:      { type: 'string', enum: ['insert', 'update', 'archive'], description: '"insert" for a new cost. "update" to correct an existing budget item from the event state (e.g. a price change). "archive" when an existing budget item is obsolete because the service was canceled.' },
+            target_id:      { type: ['string', 'null'], description: 'REQUIRED for update/archive: the exact id of the existing budget item from the Current Event State. null for insert. Never invent ids.' },
+            archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the cost no longer applies. null otherwise.' },
             confidence:     { type: 'number', minimum: 0, maximum: 1 },
             rationale:      { type: 'string' },
           },
-          required: ['category', 'description', 'estimated_cost', 'actual_cost', 'status', 'vendor_name', 'confidence', 'rationale'],
+          required: ['category', 'description', 'estimated_cost', 'actual_cost', 'status', 'vendor_name', 'operation', 'target_id', 'archive_reason', 'confidence', 'rationale'],
         },
       },
       timeline_items: {
@@ -264,22 +276,22 @@ function buildEventStateSection(ctx: EventStateContext): string {
   }
 
   if (ctx.existing_vendors.length > 0) {
-    lines.push('', '### Existing vendors:')
+    lines.push('', '### Existing vendors (use id as target_id for corrections/cancellations):')
     for (const v of ctx.existing_vendors) {
       const cost = v.estimated_cost !== null ? ` ($${v.estimated_cost})` : ''
       const contact = v.contact_name ? `, contact: ${v.contact_name}` : ''
       const notes = v.notes ? ` — ${v.notes.slice(0, 60)}` : ''
       lines.push(
-        `- ${v.name} [${v.category ?? 'uncategorized'}, ${v.status}${cost}${contact}]${notes}`,
+        `- ${v.name} [${v.category ?? 'uncategorized'}, ${v.status}${cost}${contact}]${notes} (id: ${v.id})`,
       )
     }
   }
 
   if (ctx.existing_budget_items.length > 0) {
-    lines.push('', '### Existing budget items:')
+    lines.push('', '### Existing budget items (use id as target_id for corrections/cancellations):')
     for (const b of ctx.existing_budget_items) {
       const cost = b.estimated_cost !== null ? ` ($${b.estimated_cost})` : ''
-      lines.push(`- ${b.description} [${b.category}, ${b.status}${cost}]`)
+      lines.push(`- ${b.description} [${b.category}, ${b.status}${cost}] (id: ${b.id})`)
     }
   }
 
@@ -320,8 +332,9 @@ function buildEventStateSection(ctx: EventStateContext): string {
     '### Deduplication rules (apply before proposing anything):',
     'Compare the new message against the current event state above before creating suggestions.',
     'Do NOT propose items that already exist in the plan or are already queued for review above.',
-    'If the user provides new details for an existing complete item, mention it in your summary only.',
-    'If the user fills in a placeholder or incomplete vendor, create a complete vendor suggestion with the corrected details.',
+    'If the user CORRECTS or CANCELS an existing vendor or budget item, propose an update/archive item targeting its id (rules 22-25) — that is not a duplicate.',
+    'If the user merely restates an existing item with no change, mention it in your summary only.',
+    'If the user fills in a placeholder or incomplete vendor, create a complete vendor suggestion with operation "update" and that vendor\'s id as target_id.',
     'Only create a new proposed update if the schema can safely represent it without duplicating.',
     'Do NOT restate facts as tasks. Tasks must be real human actions someone needs to take.',
     'Vendors: one suggestion per real vendor. Budget: one per real cost, quote, receipt, or line.',
@@ -348,12 +361,17 @@ interface RawVendor {
   name: string; category: string | null; contact_name: string | null
   email: string | null; phone: string | null; status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
   estimated_cost: number | null; notes: string | null
+  operation?: 'insert' | 'update' | 'archive'; target_id?: string | null
+  archive_reason?: string | null
   confidence: number; rationale: string
 }
 interface RawBudgetItem {
   category: string; description: string; estimated_cost: number | null
   actual_cost: number | null; status: 'estimated' | 'committed' | 'paid'
-  vendor_name: string | null; confidence: number; rationale: string
+  vendor_name: string | null
+  operation?: 'insert' | 'update' | 'archive'; target_id?: string | null
+  archive_reason?: string | null
+  confidence: number; rationale: string
 }
 interface RawTimelineItem {
   title: string; description: string | null; starts_at: string | null
@@ -391,6 +409,18 @@ export interface LLMResult {
   responseMessage: string
   understoodSummary: string[]
   recommendedSummary: string[]
+}
+
+// An update without a target id can't merge anywhere — treat it as a plain insert.
+// An archive stays an archive even without a target: inserting a "canceled" record
+// would be worse, so the extract route drops archives whose target can't be resolved.
+function normalizeOperation(
+  operation: 'insert' | 'update' | 'archive' | undefined,
+  targetId: string | null | undefined,
+): 'insert' | 'update' | 'archive' {
+  if (operation === 'archive') return 'archive'
+  if (operation === 'update' && targetId) return 'update'
+  return 'insert'
 }
 
 function normalizeSummary(value: unknown): string[] {
@@ -453,20 +483,28 @@ export async function llmExtract(
   }
 
   for (const v of raw.vendors ?? []) {
+    const operation = normalizeOperation(v.operation, v.target_id)
     items.push({
       update_type: 'vendor',
-      payload: { name: v.name, category: v.category, contact_name: v.contact_name, email: v.email, phone: v.phone, status: v.status, estimated_cost: v.estimated_cost, notes: v.notes },
+      payload: { name: v.name, category: v.category, contact_name: v.contact_name, email: v.email, phone: v.phone, status: v.status, estimated_cost: v.estimated_cost, notes: v.notes, archive_reason: operation === 'archive' ? v.archive_reason ?? null : null },
       confidence: v.confidence,
       rationale: v.rationale,
+      operation,
+      target_record_type: operation === 'insert' ? null : 'vendor',
+      target_record_id: operation === 'insert' ? null : v.target_id ?? null,
     })
   }
 
   for (const b of raw.budget_items ?? []) {
+    const operation = normalizeOperation(b.operation, b.target_id)
     items.push({
       update_type: 'budget_item',
-      payload: { category: b.category, description: b.description, estimated_cost: b.estimated_cost, actual_cost: b.actual_cost, status: b.status, vendor_name: b.vendor_name },
+      payload: { category: b.category, description: b.description, estimated_cost: b.estimated_cost, actual_cost: b.actual_cost, status: b.status, vendor_name: b.vendor_name, archive_reason: operation === 'archive' ? b.archive_reason ?? null : null },
       confidence: b.confidence,
       rationale: b.rationale,
+      operation,
+      target_record_type: operation === 'insert' ? null : 'budget_item',
+      target_record_id: operation === 'insert' ? null : b.target_id ?? null,
     })
   }
 
