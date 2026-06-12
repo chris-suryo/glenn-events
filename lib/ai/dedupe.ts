@@ -82,6 +82,78 @@ function isSimilarEnough(
   return jaccardSimilarity(candidateTokens, existingTokens) > threshold
 }
 
+// ─── Pending-proposal supersession ───────────────────────────────────────────
+
+export interface PendingProposalLite {
+  id: string
+  update_type: UpdateType
+  payload_json: ExtractedItem['payload']
+  confidence: number | null
+}
+
+const NEEDS_CHECK_CONFIDENCE = 0.75
+const NEEDS_CHECK_PAYLOAD_THRESHOLD = 0.2
+const NEEDS_CHECK_MIN_OVERLAP = 2
+
+function payloadTokens(payload: ExtractedItem['payload']): Set<string> {
+  const text = Object.values(payload as unknown as Record<string, unknown>)
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+  return normalizeLabel(text)
+}
+
+function overlapCount(a: Set<string>, b: Set<string>): number {
+  let count = 0
+  for (const token of a) {
+    if (b.has(token)) count++
+  }
+  return count
+}
+
+/**
+ * Pending proposals that a newly extracted item supersedes. Same-type only,
+ * two tiers:
+ * - Needs-check pending rows (low/no confidence) match on whole-payload token
+ *   overlap at a loose threshold — a clarified item rarely shares the
+ *   placeholder's label, but does share its category/notes vocabulary.
+ * - Ready pending rows match on strict key-label similarity AND only when the
+ *   new item is at least as complete — never retire a richer suggestion in
+ *   favor of a poorer one. Ties go to keeping both.
+ */
+export function findSupersededPending(item: ExtractedItem, pending: PendingProposalLite[]): string[] {
+  const itemLabelTokens = normalizeLabel(String(getKeyLabel(item) ?? ''))
+  const itemPayloadTokens = payloadTokens(item.payload)
+  const itemFieldCount = countNonNullFields(item.payload)
+
+  return pending
+    .filter((p) => p.update_type === item.update_type)
+    .filter((p) => {
+      const needsCheck = p.confidence === null || p.confidence < NEEDS_CHECK_CONFIDENCE
+      if (needsCheck) {
+        // Loose tier, but require ≥2 shared real tokens so two unrelated
+        // suggestions don't match on a stray status word alone.
+        const pendingTokens = payloadTokens(p.payload_json)
+        return (
+          overlapCount(itemPayloadTokens, pendingTokens) >= NEEDS_CHECK_MIN_OVERLAP &&
+          jaccardSimilarity(itemPayloadTokens, pendingTokens) > NEEDS_CHECK_PAYLOAD_THRESHOLD
+        )
+      }
+      const pendingItem: ExtractedItem = {
+        update_type: p.update_type,
+        payload: p.payload_json,
+        confidence: p.confidence ?? 0,
+        rationale: '',
+      }
+      const pendingLabelTokens = normalizeLabel(String(getKeyLabel(pendingItem) ?? ''))
+      if (itemLabelTokens.size === 0 || pendingLabelTokens.size === 0) return false
+      return (
+        isSimilarEnough(itemLabelTokens, pendingLabelTokens, item.update_type) &&
+        countNonNullFields(p.payload_json) <= itemFieldCount
+      )
+    })
+    .map((p) => p.id)
+}
+
 /**
  * Removes duplicate ExtractedItems before they become proposed_updates rows.
  * Compares against existing plan rows, pending proposed_updates, and the

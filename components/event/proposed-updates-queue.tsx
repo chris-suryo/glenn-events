@@ -854,7 +854,9 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
       const result = await onClarify({ update, title, answer })
       if (result.createdCount > 0) {
         setClarifyingIds((current) => ({ ...current, [update.id]: 'dismissing' }))
-        await reviewUpdate(update.id, 'reject')
+        // Server-side supersession may have already retired this row — a 409
+        // here means the work is done, not that the dismissal failed.
+        await reviewUpdate(update.id, 'reject').catch(() => {})
         setAnswerDrafts((current) => {
           const next = { ...current }
           delete next[update.id]

@@ -61,6 +61,11 @@ export function activityLabel(entry: ActivityLog): string {
     return entityLabel ? `Updated ${entityLabel}` : 'Updated plan record'
   }
 
+  if (entry.action === 'proposed_update_superseded') {
+    if (label) return `Replaced by a newer suggestion: ${label}`
+    return 'Replaced by a newer suggestion'
+  }
+
   if (entry.action === 'proposed_update_rejected') {
     const updateType = metadataString(entry, 'update_type') ?? entry.entity_type
     const entityLabel = ENTITY_TYPE_LABELS[updateType]
@@ -157,6 +162,7 @@ export function activityDot(action: string): string {
   if (action === 'proposed_update_rejected') return 'bg-rose-400'
   if (action === 'record_updated')           return 'bg-sky-400'
   if (action === 'record_archived')          return 'bg-rose-500'
+  if (action === 'proposed_update_superseded') return 'bg-slate-400'
   return 'bg-indigo-400'
 }
 

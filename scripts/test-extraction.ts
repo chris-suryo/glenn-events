@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { findSupersededPending, type PendingProposalLite } from '@/lib/ai/dedupe'
 import type { ExtractedItem } from '@/lib/ai/mock-extract'
 import type { EventStateContext, UpdateType } from '@/lib/types'
 
@@ -311,7 +312,80 @@ function evaluateScenario(
   return { status: 'PASS', reasons, warnings, missingTypes }
 }
 
+// ─── Supersession unit checks (deterministic, no API calls) ─────────────────
+
+function runSupersessionChecks(): boolean {
+  const placeholderPhotographer: PendingProposalLite = {
+    id: 'pending-photographer',
+    update_type: 'vendor',
+    payload_json: { name: 'Photographer', category: 'Photography', contact_name: null, email: null, phone: null, status: 'prospect', estimated_cost: 850, notes: 'Coverage 7-9 PM, company unknown' },
+    confidence: 0.5,
+  }
+  const readyCakeTask: PendingProposalLite = {
+    id: 'pending-cake-task',
+    update_type: 'task',
+    payload_json: { title: 'Confirm cake delivery timing with venue', description: 'Coordinate with venue on cake arrival.', due_date: '2024-11-09', priority: 'high', status: 'todo', owner_name: null },
+    confidence: 0.9,
+  }
+  const pending = [placeholderPhotographer, readyCakeTask]
+
+  const clarifiedVendor: ExtractedItem = {
+    update_type: 'vendor',
+    payload: { name: 'Beacon Photo Co', category: 'Photography', contact_name: 'Maya', email: null, phone: null, status: 'contacted', estimated_cost: 850, notes: 'Photography coverage 7-9 PM' },
+    confidence: 0.95,
+    rationale: 'clarified vendor',
+  }
+  const unrelatedVendor: ExtractedItem = {
+    update_type: 'vendor',
+    payload: { name: 'Oak & Vine Catering', category: 'Catering', contact_name: null, email: null, phone: null, status: 'contacted', estimated_cost: 3800, notes: 'Dinner service' },
+    confidence: 0.95,
+    rationale: 'unrelated vendor',
+  }
+  const richerCakeTask: ExtractedItem = {
+    update_type: 'task',
+    payload: { title: 'Confirm cake delivery timing with venue', description: 'Cake arrives 8:30 PM via vendor; venue stores until 9:00 service.', due_date: '2024-11-09', priority: 'high', status: 'todo', owner_name: 'Maya' },
+    confidence: 0.95,
+    rationale: 'richer task',
+  }
+  const poorerCakeTask: ExtractedItem = {
+    update_type: 'task',
+    payload: { title: 'Confirm cake delivery timing with venue', description: null, due_date: null, priority: 'high', status: 'todo', owner_name: null },
+    confidence: 0.95,
+    rationale: 'poorer task',
+  }
+
+  const checks: Array<{ name: string; pass: boolean }> = [
+    {
+      name: 'clarified vendor supersedes needs-check placeholder',
+      pass: findSupersededPending(clarifiedVendor, pending).includes('pending-photographer'),
+    },
+    {
+      name: 'unrelated vendor does not supersede placeholder',
+      pass: !findSupersededPending(unrelatedVendor, pending).includes('pending-photographer'),
+    },
+    {
+      name: 'richer task supersedes ready pending task',
+      pass: findSupersededPending(richerCakeTask, pending).includes('pending-cake-task'),
+    },
+    {
+      name: 'poorer task does not supersede ready pending task',
+      pass: !findSupersededPending(poorerCakeTask, pending).includes('pending-cake-task'),
+    },
+  ]
+
+  console.log('\nSupersession unit checks:')
+  for (const check of checks) {
+    console.log(`- ${check.pass ? 'PASS' : 'FAIL'}: ${check.name}`)
+  }
+  return checks.every((check) => check.pass)
+}
+
 async function main() {
+  const supersessionOk = runSupersessionChecks()
+  if (!supersessionOk) {
+    process.exitCode = 1
+  }
+
   const loadedFromEnvLocal = loadAnthropicKeyFromEnvLocal()
   if (!process.env.ANTHROPIC_API_KEY) {
     console.log('ANTHROPIC_API_KEY is not set and was not found in .env.local.')
