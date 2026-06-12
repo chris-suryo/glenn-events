@@ -194,7 +194,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                             {task.priority}
                           </span>
                           {task.ai_generated && (
-                            <AiSourceBadge eventId={eventId} sourceMessageId={task.source_message_id} />
+                            <AiSourceBadge eventId={eventId} recordType="task" recordId={task.id} />
                           )}
                         </div>
                         {task.description && <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>}
@@ -257,7 +257,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                         )}
                         {vendor.notes && <p className="text-xs text-muted-foreground line-clamp-2">{vendor.notes}</p>}
                         {vendor.ai_generated && (
-                          <AiSourceBadge eventId={eventId} sourceMessageId={vendor.source_message_id} />
+                          <AiSourceBadge eventId={eventId} recordType="vendor" recordId={vendor.id} />
                         )}
                       </CardContent>
                     </Card>
@@ -317,7 +317,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                               <p className="font-medium tracking-tight">{item.description.replace(/\s*\(Vendor reference:[^)]+\)/, '')}</p>
                               {item.ai_generated && (
                                 <div className="mt-0.5">
-                                  <AiSourceBadge eventId={eventId} sourceMessageId={item.source_message_id} />
+                                  <AiSourceBadge eventId={eventId} recordType="budget_item" recordId={item.id} />
                                 </div>
                               )}
                             </td>
@@ -390,7 +390,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                           </div>
                           {item.ai_generated && (
                             <div className="mt-1.5">
-                              <AiSourceBadge eventId={eventId} sourceMessageId={item.source_message_id} />
+                              <AiSourceBadge eventId={eventId} recordType="timeline_item" recordId={item.id} />
                             </div>
                           )}
                         </div>
@@ -441,7 +441,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                       )}
                       <div className="flex items-center gap-2 flex-wrap">
                         {dec.ai_generated && (
-                          <AiSourceBadge eventId={eventId} sourceMessageId={dec.source_message_id} />
+                          <AiSourceBadge eventId={eventId} recordType="decision" recordId={dec.id} />
                         )}
                         {dec.status === 'pending' && (
                           <DecisionResolveButton decisionId={dec.id} eventId={eventId} />
@@ -500,7 +500,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                       )}
                       {risk.ai_generated && (
                         <div className="pl-6">
-                          <AiSourceBadge eventId={eventId} sourceMessageId={risk.source_message_id} />
+                          <AiSourceBadge eventId={eventId} recordType="risk" recordId={risk.id} />
                         </div>
                       )}
                     </div>
@@ -536,7 +536,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                         <p className="text-sm flex-1 tracking-tight">{question.question}</p>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {question.ai_generated && (
-                            <AiSourceBadge eventId={eventId} sourceMessageId={question.source_message_id} />
+                            <AiSourceBadge eventId={eventId} recordType="open_question" recordId={question.id} />
                           )}
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize
                             ${question.status === 'open' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>

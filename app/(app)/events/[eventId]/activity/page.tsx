@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import Link from 'next/link'
 import type { ActivityLog } from '@/lib/types'
-import { activityDot, activityLabel, timeAgo } from '@/lib/activity'
+import { activityDot, activityLabel, activityPlanHref, timeAgo } from '@/lib/activity'
 import { Activity } from 'lucide-react'
 
 interface PageProps {
@@ -47,20 +48,29 @@ export default async function ActivityPage({ params }: PageProps) {
             <div className="relative space-y-0">
               {/* Vertical line */}
               <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
-              {log.map((entry) => (
-                <div key={entry.id} className="relative flex items-start gap-3 pb-4 pl-6">
-                  {/* Colored dot */}
-                  <span className={`absolute left-0 mt-1.5 h-3.5 w-3.5 rounded-full border-2 border-background shrink-0 ${activityDot(entry.action)}`} />
-                  <div className="flex-1 min-w-0 pt-0.5">
-                    <p className="text-sm leading-snug">
-                      {activityLabel(entry)}
-                    </p>
+              {log.map((entry) => {
+                const href = activityPlanHref(entry, eventId)
+                return (
+                  <div key={entry.id} className="relative flex items-start gap-3 pb-4 pl-6">
+                    {/* Colored dot */}
+                    <span className={`absolute left-0 mt-1.5 h-3.5 w-3.5 rounded-full border-2 border-background shrink-0 ${activityDot(entry.action)}`} />
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      {href ? (
+                        <Link href={href} className="text-sm leading-snug hover:text-primary hover:underline underline-offset-2 transition-colors">
+                          {activityLabel(entry)}
+                        </Link>
+                      ) : (
+                        <p className="text-sm leading-snug">
+                          {activityLabel(entry)}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0 pt-0.5">
+                      {timeAgo(entry.created_at)}
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0 pt-0.5">
-                    {timeAgo(entry.created_at)}
-                  </span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

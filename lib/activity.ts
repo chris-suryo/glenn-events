@@ -85,6 +85,32 @@ export function activityLabel(entry: ActivityLog): string {
   return entry.action.replace(/_/g, ' ')
 }
 
+const PLAN_TAB_BY_TYPE: Record<string, string> = {
+  task:          'tasks',
+  vendor:        'vendors',
+  budget_item:   'budget',
+  timeline_item: 'timeline',
+  decision:      'decisions',
+  risk:          'risks',
+  open_question: 'questions',
+}
+
+const PLAN_RECORD_ACTIONS = new Set([
+  'proposed_update_applied',
+  'proposed_update_corrected',
+  'record_updated',
+  'record_archived',
+])
+
+// For archived records the highlight finds nothing (they're hidden from Plan);
+// the tab still opens, which is the honest answer — the record is gone.
+export function activityPlanHref(entry: ActivityLog, eventId: string): string | null {
+  if (!PLAN_RECORD_ACTIONS.has(entry.action) || !entry.entity_id) return null
+  const tab = PLAN_TAB_BY_TYPE[entry.entity_type]
+  if (!tab) return null
+  return `/events/${eventId}/plan?tab=${tab}&highlight=${entry.entity_id}`
+}
+
 export function activityDot(action: string): string {
   if (action === 'proposed_update_applied')  return 'bg-emerald-500'
   if (action === 'proposed_update_corrected') return 'bg-sky-500'
