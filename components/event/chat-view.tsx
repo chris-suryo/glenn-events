@@ -6,7 +6,7 @@ import type { AiRun, Event, Message, ProposedUpdate } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { ProposedUpdatesQueue } from './proposed-updates-queue'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle2, Sparkles } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 
 interface ExtractUpdatesResponse {
   assistant_message?: string
@@ -257,6 +257,11 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
 
   const hasContent = messages.length > 0 || !!optimisticMsg || isThinking || !!streamingText
 
+  const welcomeDate = event.event_date
+    ? new Date(`${event.event_date.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+    : null
+  const welcomeGreeting = `We're planning ${event.name}${welcomeDate ? ` on ${welcomeDate}` : ''}${event.location ? ` at ${event.location}` : ''}. I'll help keep the plan organized.`
+
   const completedSourceMsgIds = new Set(
     aiRuns
       .filter(r => r.status === 'completed' && r.source_message_id)
@@ -277,23 +282,26 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
           <div ref={threadScrollRef} className="flex-1 overflow-y-auto overscroll-contain min-h-0">
             <div className="flex flex-col min-h-full px-6 py-4">
 
-              {/* Spacer + empty state */}
-              <div className="flex-1 flex flex-col items-center justify-center py-6">
-                {!hasContent && (
-                  <div className="flex flex-col items-center gap-3 text-center max-w-xs">
-                    <Sparkles className="h-8 w-8 text-primary/30" />
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">Tell Glenn what changed</p>
-                      <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                        Paste notes, emails, or updates — Glenn proposes structured plan changes for you to review before anything is saved.
-                      </p>
-                    </div>
-                    <p className="text-xs text-muted-foreground/60 italic">
-                      e.g. &ldquo;Venue confirmed for Sep 27, deposit $4,500 due Jun 1. AV still unconfirmed.&rdquo;
-                    </p>
+              {/* Spacer — anchors content to the bottom like a chat thread */}
+              <div className="flex-1" />
+
+              {/* First-open welcome — presentational only; no messages row is created */}
+              {!hasContent && (
+                <div className="flex flex-col gap-1 items-start pb-2">
+                  <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-4 py-3 bg-muted text-foreground text-sm leading-relaxed space-y-2">
+                    <p suppressHydrationWarning>{welcomeGreeting}</p>
+                    <p>Send me whatever you know, in any order:</p>
+                    <ol className="list-decimal space-y-0.5 pl-4">
+                      <li>Vendors &amp; food — who&rsquo;s providing what, and when do they arrive?</li>
+                      <li>Costs — quotes, deposits, or a budget cap to track</li>
+                      <li>Schedule — timing, arrivals, and deadlines</li>
+                      <li>Still open — anything undecided or unknown</li>
+                    </ol>
+                    <p>Messy notes are fine — I&rsquo;ll turn the details into plan updates you can review before anything changes.</p>
                   </div>
-                )}
-              </div>
+                  <span className="text-xs text-muted-foreground px-1">Glenn</span>
+                </div>
+              )}
 
               {/* Messages */}
               {hasContent && (

@@ -256,7 +256,7 @@ export async function POST(
   // Event access — RLS-safe: only returns row if user is event member
   const { data: event } = await supabase
     .from('events')
-    .select('id, name, event_type, event_date, location, attendee_target, budget_target')
+    .select('id, name, event_type, event_date, location, description, attendee_target, budget_target')
     .eq('id', eventId)
     .single()
 
@@ -355,6 +355,7 @@ export async function POST(
         event_type: (event.event_type as string | null) ?? null,
         event_date: (event.event_date as string | null) ?? null,
         location: (event.location as string | null) ?? null,
+        description: (event.description as string | null) ?? null,
         attendee_target: (event.attendee_target as number | null) ?? null,
         budget_target: (event.budget_target as number | null) ?? null,
       },

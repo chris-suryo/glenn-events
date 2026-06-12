@@ -339,6 +339,7 @@ export interface EventStateContext {
     event_type: string | null
     event_date: string | null
     location: string | null
+    description: string | null
     attendee_target: number | null
     budget_target: number | null
   }
