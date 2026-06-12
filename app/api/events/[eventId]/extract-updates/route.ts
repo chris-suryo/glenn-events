@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { mockExtract, groupExtracted, summarizeExtracted, type ExtractedItem } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
-import { dedupeExtractedItems } from '@/lib/ai/dedupe'
+import { dedupeExtractedItems, findSupersededPending, type PendingProposalLite } from '@/lib/ai/dedupe'
 import type {
   BudgetItemPayload,
   EventStateContext,
@@ -738,7 +738,20 @@ export async function POST(
     const extractionMode: ExtractionMode = process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'mock'
 
     if (extractionMode === 'anthropic') {
-      const result = await llmExtract(input_text, conversationHistory, eventStateContext)
+      // LLM failures (API errors, malformed responses) get their own catch:
+      // they're transient and retryable, unlike everything after this point.
+      let result: Awaited<ReturnType<typeof llmExtract>>
+      try {
+        result = await llmExtract(input_text, conversationHistory, eventStateContext)
+      } catch (err) {
+        console.error('extract: llm failure:', err instanceof Error ? err.message : String(err), err)
+        // Remove the just-saved user message so a retry doesn't duplicate it
+        await supabase.from('messages').delete().eq('id', message.id)
+        return NextResponse.json(
+          { error: 'Glenn had trouble reading that note. Nothing was changed — try sending it again.' },
+          { status: 502 }
+        )
+      }
       rawExtracted = result.items
       assistantContent = result.responseMessage
       const fallbackSummary = summarizeExtracted(input_text, rawExtracted)
@@ -862,10 +875,63 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to create AI run' }, { status: 500 })
     }
 
+    // 4b. Supersession — retire stale pending proposals that this batch
+    // replaces (e.g. a clarified vendor supersedes its placeholder row).
+    // Pending rows only; applied records are never touched.
+    const supersededByIndex = new Map<number, string>()
+    if (extracted.length > 0) {
+      const { data: pendingFullRows } = await supabase
+        .from('proposed_updates')
+        .select('id, update_type, payload_json, confidence')
+        .eq('event_id', eventId)
+        .eq('status', 'pending')
+
+      const pendingPool = (pendingFullRows ?? []) as PendingProposalLite[]
+      const claimed = new Set<string>()
+      const supersededLabels = new Map<string, string>()
+
+      extracted.forEach((item, index) => {
+        const matches = findSupersededPending(item, pendingPool).filter((pid) => !claimed.has(pid))
+        if (matches.length === 0) return
+        supersededByIndex.set(index, matches[0])
+        for (const pid of matches) {
+          claimed.add(pid)
+          const pendingRow = pendingPool.find((p) => p.id === pid)
+          supersededLabels.set(pid, pendingRow ? pendingLabel(pendingRow.update_type, pendingRow.payload_json) : 'Untitled suggestion')
+        }
+      })
+
+      if (claimed.size > 0) {
+        const { error: supersedeErr } = await supabase
+          .from('proposed_updates')
+          .update({ status: 'rejected', reviewed_at: new Date().toISOString() })
+          .in('id', Array.from(claimed))
+          .eq('status', 'pending')
+
+        if (supersedeErr) {
+          console.error('extract: supersession update error:', supersedeErr)
+        } else {
+          await supabase.from('activity_log').insert(
+            Array.from(claimed).map((pid) => ({
+              event_id: eventId,
+              actor_user_id: user.id,
+              action: 'proposed_update_superseded',
+              entity_type: 'proposed_update',
+              entity_id: pid,
+              metadata_json: {
+                superseded_by_ai_run_id: aiRun.id,
+                label: supersededLabels.get(pid) ?? 'Untitled suggestion',
+              },
+            }))
+          )
+        }
+      }
+    }
+
     // 5. Insert proposed_updates
     let insertedCount = 0
     if (extracted.length > 0) {
-      const rows = extracted.map((item) => ({
+      const rows = extracted.map((item, index) => ({
         event_id: eventId,
         ai_run_id: aiRun.id,
         source_message_id: message.id,
@@ -876,6 +942,7 @@ export async function POST(
         target_record_type: item.target_record_type ?? null,
         target_record_id: item.target_record_id ?? null,
         target_snapshot_json: item.target_snapshot_json ?? null,
+        supersedes_proposed_update_id: supersededByIndex.get(index) ?? null,
         status: 'pending',
         rationale: item.rationale,
       }))
@@ -944,7 +1011,7 @@ export async function POST(
       },
     })
   } catch (err) {
-    console.error('Extract unexpected error:', err)
+    console.error('extract: unexpected error:', err instanceof Error ? `${err.message}\n${err.stack}` : String(err))
     return NextResponse.json({ error: 'Unexpected error during extraction' }, { status: 500 })
   }
 }

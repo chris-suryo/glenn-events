@@ -511,7 +511,13 @@ export async function llmExtract(
     }
   }
 
-  const raw = toolBlock.input as LLMOutput
+  // Defensive: a truncated/malformed tool call must degrade, not throw —
+  // the route turns throws into a user-facing extraction error.
+  const raw = (
+    typeof toolBlock.input === 'object' && toolBlock.input !== null && !Array.isArray(toolBlock.input)
+      ? toolBlock.input
+      : {}
+  ) as LLMOutput
   const items: ExtractedItem[] = []
 
   for (const t of raw.tasks ?? []) {
