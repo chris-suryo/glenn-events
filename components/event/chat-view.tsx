@@ -132,6 +132,13 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
   // Optimistic user message — shown immediately on submit, cleared when DB refreshes
   const [optimisticMsg, setOptimisticMsg] = useState<string | null>(null)
 
+  // Generation counter for the streaming animation. Bumping it cancels any
+  // in-flight tick chain — without this, a router.refresh() that lands the
+  // persisted assistant message mid-animation leaves the setTimeout loop
+  // re-populating streamingText after the clear effect zeroed it, rendering
+  // the same reply twice (persisted bubble + streaming overlay).
+  const streamRunRef = useRef(0)
+
   // Scroll to bottom whenever new content arrives — skipped on first render
   // when a source-highlight link owns the initial scroll position
   useEffect(() => {
@@ -142,9 +149,11 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
     scrollThreadToBottom()
   }, [messages.length, optimisticMsg, scrollThreadToBottom])
 
-  // Clear streaming overlay + optimistic message when DB messages land
+  // Clear streaming overlay + optimistic message when DB messages land —
+  // and cancel any in-flight streaming animation so it can't re-populate.
   useEffect(() => {
     if (messages.length > prevMessageCountRef.current) {
+      streamRunRef.current++
       setStreamingText('')
       setIsStreaming(false)
       setOptimisticMsg(null)
@@ -192,13 +201,17 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
     setIsThinking(false)
     setIsStreaming(true)
     setStreamingText('')
-    router.refresh()
 
+    // Refresh deliberately waits until the animation finishes — refreshing
+    // mid-stream lands the persisted reply alongside the overlay (duplicate
+    // bubbles). The runId guard makes the loop cancellable either way.
+    const runId = ++streamRunRef.current
     const words = text.split(' ')
     const delay = words.length > 80 ? 18 : STREAM_WORD_DELAY_MS
     let i = 0
 
     const tick = () => {
+      if (streamRunRef.current !== runId) return
       i++
       setStreamingText(words.slice(0, i).join(' '))
       if (i < words.length) {
