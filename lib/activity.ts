@@ -85,6 +85,46 @@ export function activityLabel(entry: ActivityLog): string {
   return entry.action.replace(/_/g, ' ')
 }
 
+const CHANGED_FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  category: 'Category',
+  contact_name: 'Contact',
+  email: 'Email',
+  phone: 'Phone',
+  status: 'Status',
+  estimated_cost: 'Cost',
+  actual_cost: 'Actual cost',
+  notes: 'Notes',
+  description: 'Description',
+  title: 'Title',
+}
+
+function metadataStringArray(entry: ActivityLog, key: string): string[] {
+  if (!isRecord(entry.metadata_json)) return []
+  const value = entry.metadata_json[key]
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
+const GLENN_PROPOSAL_NOTE = 'Reviewed & approved Glenn suggestion'
+
+// Secondary credibility line under an activity entry — what changed and how
+// the change was authorized. Built entirely from already-logged metadata.
+export function activityDetail(entry: ActivityLog): string | null {
+  if (entry.action === 'proposed_update_corrected') {
+    const fields = metadataStringArray(entry, 'changed_fields')
+      .map((field) => CHANGED_FIELD_LABELS[field] ?? field.replace(/_/g, ' '))
+    const changed = fields.length > 0 ? `Changed: ${fields.join(', ')}` : null
+    return [changed, GLENN_PROPOSAL_NOTE].filter(Boolean).join(' · ')
+  }
+  if (entry.action === 'proposed_update_applied') return GLENN_PROPOSAL_NOTE
+  if (entry.action === 'record_archived') {
+    return metadataString(entry, 'proposed_update_id') ? GLENN_PROPOSAL_NOTE : null
+  }
+  if (entry.action === 'record_updated') return 'Manual edit'
+  return null
+}
+
 const PLAN_TAB_BY_TYPE: Record<string, string> = {
   task:          'tasks',
   vendor:        'vendors',

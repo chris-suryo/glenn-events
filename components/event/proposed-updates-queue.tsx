@@ -354,6 +354,8 @@ function cleanBatchTitleText(value: string | null | undefined): string | null {
     .replace(/^re:\s*/i, '')
     .replace(/^glenn (found|understood|heard|noticed)\s+/i, '')
     .replace(/^this note (has|was|is)\s+/i, '')
+    .replace(/^you (shared|said|added|mentioned|told (me|glenn))[:,]?\s*/i, '')
+    .replace(/^the user (shared|said|added|mentioned)[:,]?\s*/i, '')
     .trim()
 
   if (!withoutMarkdown || /^plan changes touching/i.test(withoutMarkdown)) return null
@@ -368,7 +370,11 @@ function cleanBatchTitleText(value: string | null | undefined): string | null {
   if (/\b(?:for|at|to|from|with|and|or|the|a|an)$/i.test(firstPhrase)) return null
 
   const words = firstPhrase.split(/\s+/)
-  const title = words.length > 5 ? words.slice(0, 5).join(' ') : firstPhrase
+  let title = words.length > 5 ? words.slice(0, 5).join(' ') : firstPhrase
+  // A truncated title ending in a possessive dangles ("…planning Ava's") — drop it
+  if (words.length > 5 && /\S['’]s$/i.test(title)) {
+    title = title.replace(/\s+\S+['’]s$/i, '').trim() || title
+  }
   return /\b(?:for|at|to|from|with|and|or|the|a|an)$/i.test(title) ? null : title
 }
 

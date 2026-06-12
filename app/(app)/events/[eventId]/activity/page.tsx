@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import type { ActivityLog } from '@/lib/types'
-import { activityDot, activityLabel, activityPlanHref, timeAgo } from '@/lib/activity'
+import { activityDetail, activityDot, activityLabel, activityPlanHref, timeAgo } from '@/lib/activity'
 import { Activity } from 'lucide-react'
 
 interface PageProps {
@@ -50,6 +50,7 @@ export default async function ActivityPage({ params }: PageProps) {
               <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
               {log.map((entry) => {
                 const href = activityPlanHref(entry, eventId)
+                const detail = activityDetail(entry)
                 return (
                   <div key={entry.id} className="relative flex items-start gap-3 pb-4 pl-6">
                     {/* Colored dot */}
@@ -64,6 +65,9 @@ export default async function ActivityPage({ params }: PageProps) {
                           {activityLabel(entry)}
                         </p>
                       )}
+                      {detail ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
+                      ) : null}
                     </div>
                     <span className="text-xs text-muted-foreground shrink-0 pt-0.5">
                       {timeAgo(entry.created_at)}
