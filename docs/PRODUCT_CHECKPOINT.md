@@ -63,11 +63,9 @@ visuals; Command Center density; mobile throughout.
 **Partial:** timeline conflict detection (LLM flags conflicts as proposals/
 risks; no dedicated UX); replacement linkage (supersedes field unused; the
 ai_run is the thread); multi-user (schema/RLS exist; no invite UI; profiles
-RLS is self-only so teammates' names don't resolve); entity consolidation
-across clarification batches (QA: photographer details fragmented across
-batches — supersession fix in m16); cancellation cascade (QA: archiving
-Bloom & Co left its delivery timeline item and coordination task active —
-timeline half fixed in m15, task half later).
+RLS is self-only so teammates' names don't resolve); replacement-flow
+linkage (vendor↔budget link is text-only until vendor_id population in m17;
+archive-old + insert-new share only the ai_run thread).
 
 **Missing, important:** timeline corrections ("lunch moved to 12:45" still
 duplicates — the one hole in the loop); fresh seed/demo data; push/deploy
@@ -82,6 +80,10 @@ undo/version history; Plan tab consolidation; notifications; integrations.
   cancellation cleaning up related timeline/task items (m15/later).
 - Glenn replies are sanitized to prose-only as of m14 (the model occasionally
   leaked raw JSON into chat before that).
+- Extraction failures now distinguish LLM errors (retryable "Glenn had
+  trouble reading that note" — the saved message is cleaned up so retry
+  doesn't duplicate) from unexpected errors; causes are logged server-side
+  with an `extract:` prefix.
 - Demo on desktop; mobile is usable, unpolished.
 - Single-user demo only (no invite flow yet).
 - Migration 008 must be applied to the demo database.
@@ -98,28 +100,32 @@ undo/version history; Plan tab consolidation; notifications; integrations.
    event description into extraction context, Activity credibility lines
    (changed fields + reviewed-vs-manual attribution), never-invent-times
    prompt rule, batch title polish, demo script rewrite.
-2. **m15-plan-consistency-timeline** — timeline corrections
-   (existing_timeline_items with ids into context; operation/target_id on the
-   timeline tool schema; timeline_item in approve route CORRECTION_TARGETS —
-   archive columns exist since 008; time-diff review rows; harness scenarios)
-   PLUS the vendor-cancellation cascade for timeline items ("when archiving a
-   vendor, also propose archiving its related timeline items"). Task cascade
-   deferred.
-3. **m16-consolidation-supersession** — new batches supersede stale pending
-   items (the photographer fragmentation): match new extractions against
-   pending proposals via the existing similarity helper, auto-reject the
-   superseded row, link via supersedes_proposed_update_id. No schema change.
-4. **m17-deployment-setup** — Netlify + hosted Supabase, all migrations,
+2. **m15-entity-consistency-cancellations** (DONE) — timeline corrections and
+   archive support, task status updates, vendor-cancellation cleanup
+   proposals for related budget/timeline/task records (conservative text
+   matching), stronger highlight.
+3. **m16-stability-and-review-lifecycle** (DONE on this branch) — fixed the
+   duplicate-reply streaming race (cancellable animation, refresh deferred to
+   post-stream), extraction error observability (LLM failures return a
+   distinct retryable message and clean up the saved user message; causes are
+   logged server-side), and pending-proposal supersession: new batches retire
+   stale pending rows via supersedes_proposed_update_id, with
+   "Replaced by a newer suggestion" activity entries. Stale needs-answer rows
+   and batch accumulation resolve through this.
+4. **m17-entity-consistency-2** — vendor_id population at approve time
+   (budget items get a real FK link to their vendor), replacement-flow
+   coordination (archive-old + insert-new clusters share linkage),
+   task-level cascade follow-ups.
+5. **m18-deployment-setup** — Netlify + hosted Supabase, all migrations,
    Sentry verified, demo arc smoke-tested on the deployed URL.
-5. **m18-team-invite** — invite flow for event_members + RLS migration
+6. **m19-team-invite** — invite flow for event_members + RLS migration
    widening profiles SELECT to event-mates (fixes approver/assignee names).
-6. **m19-voice-notes** — first capture channel: browser record/transcribe →
+7. **m20-voice-notes** — first capture channel: browser record/transcribe →
    same extract-updates pipeline; add messages.channel.
 
 Later: guided create-event intake (lighter than the current form; check the
-unmerged fable-production-mvp-run experiment for salvage), task-level
-corrections/cascade, Command Center and Plan-tab simplification (reactive
-backlog — only with pilot evidence).
+unmerged fable-production-mvp-run experiment for salvage), Command Center and
+Plan-tab simplification (reactive backlog — only with pilot evidence).
 
 ## Screen Responsibilities
 
