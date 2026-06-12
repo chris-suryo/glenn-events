@@ -50,6 +50,7 @@ function welcomePartyContext(overrides: Partial<EventStateContext> = {}): EventS
     existing_tasks: [],
     existing_vendors: [],
     existing_budget_items: [],
+    existing_timeline_items: [],
     existing_risks: [],
     existing_open_questions: [],
     pending_proposed_updates: [],
@@ -138,7 +139,7 @@ const SCENARIOS: Scenario[] = [
     text: 'Harbor Lights DJ canceled.',
     minCount: 1,
     requiredTypes: ['vendor'],
-    maxCount: 4,
+    maxCount: 6,
     context: welcomePartyContext({
       existing_vendors: [
         { id: HARBOR_DJ_ID, name: 'Harbor Lights DJ', category: 'Music', status: 'confirmed', estimated_cost: 700, contact_name: null, email: null, phone: null, notes: null },
@@ -179,6 +180,7 @@ const eventStateContext: EventStateContext = {
   existing_tasks: [],
   existing_vendors: [],
   existing_budget_items: [],
+  existing_timeline_items: [],
   existing_risks: [],
   existing_open_questions: [],
   pending_proposed_updates: [],

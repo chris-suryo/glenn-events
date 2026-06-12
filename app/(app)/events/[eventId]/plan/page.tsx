@@ -51,8 +51,10 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
   const normalizedTab = rawTab === 'questions' ? 'open-questions' : rawTab
   const tab = TABS.some((t) => t.key === normalizedTab) ? normalizedTab! : 'tasks'
 
-  const highlightRing = (id: string) =>
-    highlight === id ? 'ring-2 ring-primary/50' : ''
+  const highlightClasses = (id: string) =>
+    highlight === id
+      ? 'scroll-mt-24 ring-4 ring-primary/70 bg-amber-50 shadow-[0_0_0_6px_rgba(245,158,11,0.20),0_10px_24px_rgba(15,23,42,0.10)]'
+      : ''
 
   const supabase = await createClient()
   const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single()
@@ -95,7 +97,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
     const { data: b } = await supabase.from('budget_items').select('*').eq('event_id', eventId).is('archived_at', null).order('created_at')
     budgetItems = (b ?? []) as BudgetItem[]
   } else if (tab === 'timeline') {
-    const { data: tl } = await supabase.from('timeline_items').select('*').eq('event_id', eventId).order('starts_at', { ascending: true })
+    const { data: tl } = await supabase.from('timeline_items').select('*').eq('event_id', eventId).is('archived_at', null).order('starts_at', { ascending: true })
     timelineItems = (tl ?? []) as TimelineItem[]
   } else if (tab === 'decisions') {
     const { data: d } = await supabase.from('decisions').select('*').eq('event_id', eventId).order('created_at')
@@ -180,7 +182,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
               ) : (
                 <div className="space-y-1.5">
                   {tasks.map((task) => (
-                    <div key={task.id} id={`record-${task.id}`} className={`flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightRing(task.id)}`}>
+                    <div key={task.id} id={`record-${task.id}`} className={`flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightClasses(task.id)}`}>
                       <TaskRowActions taskId={task.id} eventId={eventId} currentStatus={task.status} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -235,7 +237,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {vendors.map((vendor) => (
-                    <Card key={vendor.id} id={`record-${vendor.id}`} className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${highlightRing(vendor.id)}`}>
+                    <Card key={vendor.id} id={`record-${vendor.id}`} className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${highlightClasses(vendor.id)}`}>
                       <CardContent className="p-4 space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <div>
@@ -312,7 +314,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                       </thead>
                       <tbody>
                         {budgetItems.map((item) => (
-                          <tr key={item.id} id={`record-${item.id}`} className={`border-b last:border-0 hover:bg-muted/20 transition-colors ${highlight === item.id ? 'bg-primary/[0.06]' : ''}`}>
+                          <tr key={item.id} id={`record-${item.id}`} className={`border-b last:border-0 hover:bg-muted/20 transition-colors ${highlightClasses(item.id)}`}>
                             <td className="px-4 py-3">
                               <p className="font-medium tracking-tight">{item.description.replace(/\s*\(Vendor reference:[^)]+\)/, '')}</p>
                               {item.ai_generated && (
@@ -364,7 +366,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                     return (
                       <div key={item.id} id={`record-${item.id}`} className="relative">
                         <div className="absolute -left-4 mt-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
-                        <div className={`rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightRing(item.id)}`}>
+                        <div className={`rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightClasses(item.id)}`}>
                           <div className="flex items-start gap-2">
                             <div className="flex-1">
                               <p className="text-sm font-medium tracking-tight">{item.title}</p>
@@ -417,7 +419,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
               ) : (
                 <div className="space-y-1.5">
                   {decisions.map((dec) => (
-                    <div key={dec.id} id={`record-${dec.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightRing(dec.id)}`}>
+                    <div key={dec.id} id={`record-${dec.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightClasses(dec.id)}`}>
                       <div className="flex items-start gap-2">
                         <p className="text-sm font-medium flex-1 tracking-tight">{dec.title}</p>
                         <div className="flex items-center gap-1 shrink-0">
@@ -469,7 +471,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                 <div className="space-y-1.5">
                   {risks.map((risk) => (
                     <div key={risk.id} id={`record-${risk.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)]
-                      ${risk.severity === 'high' && risk.status === 'open' ? 'border-l-[3px] border-l-rose-400' : ''} ${highlightRing(risk.id)}`}>
+                      ${risk.severity === 'high' && risk.status === 'open' ? 'border-l-[3px] border-l-rose-400' : ''} ${highlightClasses(risk.id)}`}>
                       <div className="flex items-start gap-2">
                         <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${risk.severity === 'high' ? 'text-rose-500' : 'text-muted-foreground/50'}`} />
                         <p className="text-sm font-medium flex-1 tracking-tight">{risk.title}</p>
@@ -529,7 +531,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                       key={question.id}
                       id={`record-${question.id}`}
                       className={`rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] space-y-2
-                        ${question.status === 'answered' ? 'opacity-60' : ''} ${highlightRing(question.id)}`}
+                        ${question.status === 'answered' ? 'opacity-60' : ''} ${highlightClasses(question.id)}`}
                     >
                       <div className="flex items-start gap-2">
                         <HelpCircle className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground/50" />

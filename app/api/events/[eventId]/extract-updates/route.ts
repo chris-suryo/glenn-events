@@ -4,7 +4,15 @@ import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { mockExtract, groupExtracted, summarizeExtracted, type ExtractedItem } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
 import { dedupeExtractedItems } from '@/lib/ai/dedupe'
-import type { EventStateContext, UpdateType, VendorPayload, Json } from '@/lib/types'
+import type {
+  BudgetItemPayload,
+  EventStateContext,
+  Json,
+  TaskPayload,
+  TimelineItemPayload,
+  UpdateType,
+  VendorPayload,
+} from '@/lib/types'
 
 type CountByType = Record<UpdateType, number>
 type ExtractionMode = 'anthropic' | 'mock'
@@ -38,6 +46,15 @@ interface VendorCorrectionTarget {
   notes: string | null
 }
 
+interface TaskCorrectionTarget {
+  id: string
+  title: string
+  status: 'todo' | 'in_progress'
+  priority: 'low' | 'medium' | 'high'
+  description: string | null
+  due_date: string | null
+}
+
 interface BudgetCorrectionTarget {
   id: string
   category: string
@@ -46,6 +63,15 @@ interface BudgetCorrectionTarget {
   actual_cost: number | null
   status: 'estimated' | 'committed' | 'paid'
   vendor_id: string | null
+}
+
+interface TimelineCorrectionTarget {
+  id: string
+  title: string
+  description: string | null
+  starts_at: string | null
+  ends_at: string | null
+  type: 'milestone' | 'task' | 'deadline' | 'planning'
 }
 
 type ExtractedItemWithOperation = ExtractedItem & {
@@ -104,6 +130,43 @@ function isPlaceholderVendorName(name: string | null | undefined): boolean {
 function hasRealVendorName(name: string | null | undefined): boolean {
   const normalized = normalizeText(name)
   return normalized.length > 1 && !isPlaceholderVendorName(name)
+}
+
+function includesNormalized(haystack: string | null | undefined, needle: string | null | undefined): boolean {
+  const normalizedHaystack = normalizeText(haystack)
+  const normalizedNeedle = normalizeText(needle)
+  return normalizedNeedle.length > 1 && normalizedHaystack.includes(normalizedNeedle)
+}
+
+function serviceWords(value: string | null | undefined): Set<string> {
+  const normalized = normalizeText(value)
+  const groups: Array<[string, string[]]> = [
+    ['floral', ['floral', 'florist', 'flower', 'flowers', 'blooms', 'petal', 'stem', 'candles', 'decor']],
+    ['photo', ['photo', 'photography', 'photographer']],
+    ['venue', ['venue', 'room', 'restaurant', 'space']],
+    ['catering', ['catering', 'caterer', 'food', 'beverage', 'dinner', 'appetizer']],
+    ['audio', ['audio', 'speaker', 'microphone', 'av', 'sound']],
+    ['music', ['music', 'dj', 'band']],
+  ]
+  const found = new Set<string>()
+  for (const [key, terms] of groups) {
+    if (terms.some((term) => normalized.includes(term))) found.add(key)
+  }
+  return found
+}
+
+function hasServiceOverlap(vendor: VendorCorrectionTarget, text: string): boolean {
+  const vendorWords = serviceWords([vendor.name, vendor.category, vendor.notes].filter(Boolean).join(' '))
+  const recordWords = serviceWords(text)
+  if (vendorWords.size === 0 || recordWords.size === 0) return false
+  for (const word of vendorWords) {
+    if (recordWords.has(word)) return true
+  }
+  return false
+}
+
+function relatedByVendorNameAndService(vendor: VendorCorrectionTarget, text: string): boolean {
+  return includesNormalized(text, vendor.name) && hasServiceOverlap(vendor, text)
 }
 
 function sharedVendorServiceEvidence(candidate: VendorPayload, target: VendorCorrectionTarget): boolean {
@@ -168,26 +231,230 @@ function applyVendorCorrectionOperations(
   })
 }
 
+function sameTargetExists(
+  items: ExtractedItemWithOperation[],
+  updateType: UpdateType,
+  targetId: string,
+): boolean {
+  return items.some((item) =>
+    item.update_type === updateType &&
+    item.target_record_id === targetId &&
+    (item.operation === 'archive' || item.operation === 'update')
+  )
+}
+
+function vendorArchiveTargets(items: ExtractedItemWithOperation[]): VendorCorrectionTarget[] {
+  const targets: VendorCorrectionTarget[] = []
+  for (const item of items) {
+    if (item.update_type !== 'vendor' || item.operation !== 'archive') continue
+    const snapshot = item.target_snapshot_json
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) continue
+    const value = snapshot as unknown as Partial<VendorCorrectionTarget>
+    if (typeof value.id === 'string' && typeof value.name === 'string') {
+      targets.push(value as VendorCorrectionTarget)
+    }
+  }
+  return targets
+}
+
+function buildRelatedCleanupProposals(
+  vendorArchives: VendorCorrectionTarget[],
+  existingBudgetItems: BudgetCorrectionTarget[],
+  existingTimelineItems: TimelineCorrectionTarget[],
+  existingTasks: TaskCorrectionTarget[],
+  alreadyKept: ExtractedItemWithOperation[],
+): ExtractedItemWithOperation[] {
+  const cleanup: ExtractedItemWithOperation[] = []
+
+  for (const vendor of vendorArchives) {
+    const vendorName = vendor.name
+    const reason = `No longer needed because ${vendorName} canceled.`
+
+    for (const budget of existingBudgetItems) {
+      if (sameTargetExists([...alreadyKept, ...cleanup], 'budget_item', budget.id)) continue
+      const budgetText = [budget.description, budget.category].filter(Boolean).join(' ')
+      const isRelated =
+        budget.vendor_id === vendor.id ||
+        relatedByVendorNameAndService(vendor, budgetText)
+      if (!isRelated) continue
+
+      const payload: BudgetItemPayload = {
+        category: budget.category,
+        description: budget.description,
+        estimated_cost: budget.estimated_cost,
+        actual_cost: budget.actual_cost,
+        status: budget.status,
+        vendor_name: vendorName,
+        archive_reason: reason,
+      }
+      cleanup.push({
+        update_type: 'budget_item',
+        payload,
+        confidence: 0.95,
+        rationale: `Related budget item references ${vendorName} and should be removed deliberately.`,
+        operation: 'archive',
+        target_record_type: 'budget_item',
+        target_record_id: budget.id,
+        target_snapshot_json: budget as unknown as Json,
+      })
+    }
+
+    for (const timeline of existingTimelineItems) {
+      if (sameTargetExists([...alreadyKept, ...cleanup], 'timeline_item', timeline.id)) continue
+      const timelineText = [timeline.title, timeline.description].filter(Boolean).join(' ')
+      if (!relatedByVendorNameAndService(vendor, timelineText)) continue
+
+      const payload: TimelineItemPayload = {
+        title: timeline.title,
+        description: timeline.description,
+        starts_at: timeline.starts_at,
+        ends_at: timeline.ends_at,
+        type: timeline.type,
+        archive_reason: reason,
+      }
+      cleanup.push({
+        update_type: 'timeline_item',
+        payload,
+        confidence: 0.95,
+        rationale: `Related timeline item references ${vendorName} and should be removed deliberately.`,
+        operation: 'archive',
+        target_record_type: 'timeline_item',
+        target_record_id: timeline.id,
+        target_snapshot_json: timeline as unknown as Json,
+      })
+    }
+
+    for (const task of existingTasks) {
+      if (sameTargetExists([...alreadyKept, ...cleanup], 'task', task.id)) continue
+      const taskText = [task.title, task.description].filter(Boolean).join(' ')
+      if (!relatedByVendorNameAndService(vendor, taskText)) continue
+
+      const existingDescription = task.description?.trim()
+      const description = existingDescription
+        ? `${existingDescription}\n\n${reason}`
+        : reason
+      const payload: TaskPayload = {
+        title: task.title,
+        description,
+        due_date: task.due_date,
+        priority: task.priority,
+        status: 'done',
+        owner_name: null,
+        archive_reason: reason,
+      }
+      cleanup.push({
+        update_type: 'task',
+        payload,
+        confidence: 0.95,
+        rationale: reason,
+        operation: 'update',
+        target_record_type: 'task',
+        target_record_id: task.id,
+        target_snapshot_json: task as unknown as Json,
+      })
+    }
+  }
+
+  return cleanup
+}
+
+function payloadArchiveLabel(item: ExtractedItem): string {
+  const payload = item.payload as unknown as Record<string, unknown>
+  const raw = payload.name ?? payload.description ?? payload.title ?? ''
+  return typeof raw === 'string' ? raw : ''
+}
+
+function isCancellationTaskCleanup(item: ExtractedItem): boolean {
+  if (item.update_type !== 'task' || item.operation !== 'update') return false
+  const payload = item.payload as unknown as Record<string, unknown>
+  const status = typeof payload.status === 'string' ? payload.status : ''
+  const description = typeof payload.description === 'string' ? payload.description.toLowerCase() : ''
+  return status === 'done' && (
+    description.includes('no longer needed because') ||
+    description.includes('canceled') ||
+    description.includes('cancelled')
+  )
+}
+
+function findArchiveTargetByLabel(
+  item: ExtractedItem,
+  existingTasks: TaskCorrectionTarget[],
+  existingVendors: VendorCorrectionTarget[],
+  existingBudgetItems: BudgetCorrectionTarget[],
+  existingTimelineItems: TimelineCorrectionTarget[],
+): TaskCorrectionTarget | VendorCorrectionTarget | BudgetCorrectionTarget | TimelineCorrectionTarget | null {
+  if (item.operation !== 'archive') return null
+  const label = payloadArchiveLabel(item)
+  if (!label.trim()) return null
+  const normalizedLabel = normalizeText(label)
+
+  if (item.update_type === 'vendor') {
+    return existingVendors.find((vendor) => normalizeText(vendor.name) === normalizedLabel) ?? null
+  }
+
+  if (item.update_type === 'budget_item') {
+    return existingBudgetItems.find((budget) => {
+      const normalizedDescription = normalizeText(budget.description)
+      return normalizedDescription === normalizedLabel ||
+        normalizedDescription.includes(normalizedLabel) ||
+        normalizedLabel.includes(normalizedDescription)
+    }) ?? null
+  }
+
+  if (item.update_type === 'timeline_item') {
+    return existingTimelineItems.find((timeline) => {
+      const normalizedTitle = normalizeText(timeline.title)
+      return normalizedTitle === normalizedLabel ||
+        normalizedTitle.includes(normalizedLabel) ||
+        normalizedLabel.includes(normalizedTitle)
+    }) ?? null
+  }
+
+  if (item.update_type === 'task') {
+    return existingTasks.find((task) => normalizeText(task.title) === normalizedLabel) ?? null
+  }
+
+  return null
+}
+
 // Validates LLM-proposed correction/archive targets against real event rows.
 // The snapshot is always rebuilt from the DB row — never trusted from the model.
 // Updates with bad targets downgrade to inserts; archives with bad targets are
 // dropped, because inserting a record that represents a cancellation is worse.
 function resolveCorrectionTargets(
   items: ExtractedItem[],
+  existingTasks: TaskCorrectionTarget[],
   existingVendors: VendorCorrectionTarget[],
   existingBudgetItems: BudgetCorrectionTarget[],
-): { kept: ExtractedItemWithOperation[]; droppedArchives: ExtractedItem[] } {
+  existingTimelineItems: TimelineCorrectionTarget[],
+): { kept: ExtractedItemWithOperation[]; droppedCorrections: ExtractedItem[] } {
   const kept: ExtractedItemWithOperation[] = []
-  const droppedArchives: ExtractedItem[] = []
+  const droppedCorrections: ExtractedItem[] = []
 
   for (const item of items) {
+    if (item.update_type === 'task' && item.operation === 'archive') {
+      droppedCorrections.push(item)
+      continue
+    }
+
     const targetId = item.target_record_id ?? null
-    const target =
-      item.update_type === 'vendor'
+    const targetById =
+      item.update_type === 'task'
+        ? existingTasks.find((t) => t.id === targetId) ?? null
+        : item.update_type === 'vendor'
         ? existingVendors.find((v) => v.id === targetId) ?? null
         : item.update_type === 'budget_item'
           ? existingBudgetItems.find((b) => b.id === targetId) ?? null
+          : item.update_type === 'timeline_item'
+            ? existingTimelineItems.find((t) => t.id === targetId) ?? null
           : null
+    const target = targetById ?? findArchiveTargetByLabel(
+      item,
+      existingTasks,
+      existingVendors,
+      existingBudgetItems,
+      existingTimelineItems,
+    )
 
     if (target) {
       kept.push({
@@ -197,8 +464,8 @@ function resolveCorrectionTargets(
         target_record_id: target.id,
         target_snapshot_json: target as unknown as Json,
       })
-    } else if (item.operation === 'archive') {
-      droppedArchives.push(item)
+    } else if (item.operation === 'archive' || isCancellationTaskCleanup(item)) {
+      droppedCorrections.push(item)
     } else {
       kept.push({
         ...item,
@@ -210,7 +477,7 @@ function resolveCorrectionTargets(
     }
   }
 
-  return { kept, droppedArchives }
+  return { kept, droppedCorrections }
 }
 
 export async function POST(
@@ -270,6 +537,7 @@ export async function POST(
       { data: existingTaskRows },
       { data: existingVendorRows },
       { data: existingBudgetRows },
+      { data: existingTimelineRows },
       { data: existingRiskRows },
       { data: existingQuestionRows },
       { data: pendingUpdateRows },
@@ -277,7 +545,7 @@ export async function POST(
     ] = await Promise.all([
       supabase
         .from('tasks')
-        .select('title, status, priority, description')
+        .select('id, title, status, priority, description, due_date')
         .eq('event_id', eventId)
         .in('status', ['todo', 'in_progress'])
         .order('created_at', { ascending: false })
@@ -296,6 +564,13 @@ export async function POST(
         .is('archived_at', null)
         .order('created_at', { ascending: false })
         .limit(10),
+      supabase
+        .from('timeline_items')
+        .select('id, title, description, starts_at, ends_at, type')
+        .eq('event_id', eventId)
+        .is('archived_at', null)
+        .order('starts_at', { ascending: false })
+        .limit(20),
       supabase
         .from('risks')
         .select('title, severity, description, mitigation')
@@ -360,10 +635,12 @@ export async function POST(
         budget_target: (event.budget_target as number | null) ?? null,
       },
       existing_tasks: (existingTaskRows ?? []).map((t) => ({
+        id: t.id as string,
         title: t.title as string,
         status: t.status as 'todo' | 'in_progress',
         priority: t.priority as 'low' | 'medium' | 'high',
         description: (t.description as string | null) ?? null,
+        due_date: (t.due_date as string | null) ?? null,
       })),
       existing_vendors: (existingVendorRows ?? []).map((v) => ({
         id: v.id as string,
@@ -384,6 +661,14 @@ export async function POST(
         actual_cost: (b.actual_cost as number | null) ?? null,
         status: b.status as 'estimated' | 'committed' | 'paid',
         vendor_id: (b.vendor_id as string | null) ?? null,
+      })),
+      existing_timeline_items: (existingTimelineRows ?? []).map((t) => ({
+        id: t.id as string,
+        title: t.title as string,
+        description: (t.description as string | null) ?? null,
+        starts_at: (t.starts_at as string | null) ?? null,
+        ends_at: (t.ends_at as string | null) ?? null,
+        type: t.type as 'milestone' | 'task' | 'deadline' | 'planning',
       })),
       existing_risks: (existingRiskRows ?? []).map((r) => ({
         title: r.title as string,
@@ -476,20 +761,32 @@ export async function POST(
     const insertCandidates = rawExtracted.filter((item) => (item.operation ?? 'insert') === 'insert')
 
     const dedupeResult = dedupeExtractedItems(insertCandidates, eventStateContext)
-    const { kept: resolvedCorrections, droppedArchives } = resolveCorrectionTargets(
+    const { kept: resolvedCorrections, droppedCorrections } = resolveCorrectionTargets(
       correctionCandidates,
+      eventStateContext.existing_tasks,
       eventStateContext.existing_vendors,
       eventStateContext.existing_budget_items,
+      eventStateContext.existing_timeline_items,
     )
-    if (droppedArchives.length > 0) {
+    if (droppedCorrections.length > 0) {
       console.warn(
-        'extract: dropped archive proposals with unresolvable targets:',
-        droppedArchives.map((item) => itemLabel(item)),
+        'extract: dropped correction proposals with unresolvable targets:',
+        droppedCorrections.map((item) => itemLabel(item)),
       )
     }
-    const extracted = [
+    const resolvedWithAppCorrections = [
       ...resolvedCorrections,
       ...applyVendorCorrectionOperations(dedupeResult.kept, eventStateContext.existing_vendors),
+    ]
+    const extracted = [
+      ...resolvedWithAppCorrections,
+      ...buildRelatedCleanupProposals(
+        vendorArchiveTargets(resolvedWithAppCorrections),
+        eventStateContext.existing_budget_items,
+        eventStateContext.existing_timeline_items,
+        eventStateContext.existing_tasks,
+        resolvedWithAppCorrections,
+      ),
     ]
 
     if (extractionMode === 'mock') {
@@ -522,10 +819,10 @@ export async function POST(
               label: itemLabel(drop.dropped_item),
               reason: drop.reason,
             })),
-            ...droppedArchives.map((item) => ({
+            ...droppedCorrections.map((item) => ({
               update_type: item.update_type,
               label: itemLabel(item),
-              reason: 'archive target not found in event state',
+              reason: 'correction target not found in event state',
             })),
           ],
           inserted_count: 0,

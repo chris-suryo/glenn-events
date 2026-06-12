@@ -46,6 +46,12 @@ function extractCost(text: string): number | null {
   return null
 }
 
+function formatCost(cost: unknown): string | null {
+  return typeof cost === 'number' && Number.isFinite(cost)
+    ? `$${cost.toLocaleString()}`
+    : null
+}
+
 function extractPersonName(sentence: string): string | null {
   const match = sentence.match(/\b([A-Z][a-z]{1,14})\s+(?:is|will|should|can|needs? to|to)\b/)
   return match?.[1] ?? null
@@ -476,9 +482,10 @@ function itemRecommendation(item: ExtractedItem): string {
     case 'budget_item': {
       const payload = item.payload as BudgetItemPayload
       const cost = payload.estimated_cost ?? payload.actual_cost
-      return cost === null
+      const formatted = formatCost(cost)
+      return formatted === null
         ? `Add budget item: ${payload.description}`
-        : `Add ${payload.description} to budget at $${cost.toLocaleString()}`
+        : `Add ${payload.description} to budget at ${formatted}`
     }
     case 'timeline_item': {
       const payload = item.payload as TimelineItemPayload

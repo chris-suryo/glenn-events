@@ -99,7 +99,8 @@ Extraction rules:
 
 CORRECTIONS, CANCELLATIONS, AND REPLACEMENTS — vendors and budget items in the Current Event State include an id. Use it:
 22. If the note corrects a fact about an existing vendor or budget item (new price, corrected name, updated contact, changed status), create a same-type item with operation "update" and target_id copied EXACTLY from that record's id in the event state. Carry the corrected fields plus the unchanged required fields as they appear in the event state. Do not also propose an insert for the same real-world item.
-23. If the note says a vendor or service is canceled, dropped, no longer needed, or backed out, create a vendor item with operation "archive", target_id copied exactly, name matching the existing vendor, and a short archive_reason (e.g. "Canceled by vendor"). If that vendor has a matching budget item in the event state that is now obsolete, also propose a budget item with operation "archive" targeting it. A cancellation may ALSO warrant a risk or replacement task — those are separate insert items.
+22a. If a cancellation makes an existing open task obsolete, create a task item with operation "update", target_id copied exactly, status "done", and description ending with "No longer needed because [vendor/service] canceled." Do not delete tasks.
+23. If the note says a vendor or service is canceled, dropped, no longer needed, or backed out, create a vendor item with operation "archive", target_id copied exactly, name matching the existing vendor, and a short archive_reason (e.g. "Canceled by vendor"). If that vendor has matching budget or timeline items in the event state that are now obsolete, also propose same-type items with operation "archive" targeting them. A cancellation may ALSO warrant a risk or replacement task — those are separate insert items.
 24. If the note replaces one vendor with another ("X canceled, we're using Y instead"), propose BOTH: an archive item for X (rule 23) and a normal insert vendor item for Y, plus budget/timeline inserts for Y's cost and schedule as warranted.
 25. Never invent a target_id. Only copy ids that appear in the Current Event State. If nothing there matches, use operation "insert" with target_id null. Items already queued for review have no ids — never target those.`
 
@@ -135,11 +136,14 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             description: { type: ['string', 'null'], description: 'Additional context' },
             due_date:    { type: ['string', 'null'], description: 'ISO 8601 date (YYYY-MM-DD) or null' },
             priority:    { type: 'string', enum: ['low', 'medium', 'high'] },
+            status:      { type: 'string', enum: ['todo', 'in_progress', 'done', 'blocked'], description: 'Use "todo" for new tasks. Use "done" only for operation="update" when a cancellation makes an existing task no longer needed.' },
             owner_name:  { type: ['string', 'null'], description: 'Name of the person responsible, if mentioned' },
+            operation:   { type: 'string', enum: ['insert', 'update'], description: '"insert" for new tasks. "update" only to mark an existing task done/blocked after a cancellation.' },
+            target_id:   { type: ['string', 'null'], description: 'REQUIRED for update: exact id of the existing task from Current Event State. null for insert. Never invent ids.' },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
           },
-          required: ['title', 'description', 'due_date', 'priority', 'owner_name', 'confidence', 'rationale'],
+          required: ['title', 'description', 'due_date', 'priority', 'status', 'owner_name', 'operation', 'target_id', 'confidence', 'rationale'],
         },
       },
       vendors: {
@@ -197,10 +201,13 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             starts_at:   { type: ['string', 'null'], description: 'ISO 8601 date or datetime. For time ranges on a known event date, use the start time, e.g. 2026-06-10T17:00:00. Use null only when no date can be inferred.' },
             ends_at:     { type: ['string', 'null'], description: 'ISO 8601 date or datetime. For time ranges on a known event date, use the end time, e.g. 2026-06-10T17:15:00. Use null for single-time facts or when no date can be inferred.' },
             type:        { type: 'string', enum: ['milestone', 'task', 'deadline', 'planning'] },
+            operation:   { type: 'string', enum: ['insert', 'archive'], description: '"insert" for new timing. "archive" when an existing timing is obsolete because a vendor/service was canceled.' },
+            target_id:   { type: ['string', 'null'], description: 'REQUIRED for archive: exact id of the existing timeline item from Current Event State. null for insert. Never invent ids.' },
+            archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the timing no longer applies. null otherwise.' },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
           },
-          required: ['title', 'description', 'starts_at', 'ends_at', 'type', 'confidence', 'rationale'],
+          required: ['title', 'description', 'starts_at', 'ends_at', 'type', 'operation', 'target_id', 'archive_reason', 'confidence', 'rationale'],
         },
       },
       decisions: {
@@ -271,10 +278,11 @@ function buildEventStateSection(ctx: EventStateContext): string {
     lines.push(`Budget target: $${ctx.event.budget_target}`)
 
   if (ctx.existing_tasks.length > 0) {
-    lines.push('', '### Existing tasks (open/in-progress):')
+    lines.push('', '### Existing tasks (open/in-progress; use id as target_id when a cancellation makes one obsolete):')
     for (const t of ctx.existing_tasks) {
       const snippet = t.description ? ` — ${t.description.slice(0, 60)}` : ''
-      lines.push(`- [${t.status}, ${t.priority}] ${t.title}${snippet}`)
+      const due = t.due_date ? `, due: ${t.due_date}` : ''
+      lines.push(`- [${t.status}, ${t.priority}${due}] ${t.title}${snippet} (id: ${t.id})`)
     }
   }
 
@@ -295,6 +303,15 @@ function buildEventStateSection(ctx: EventStateContext): string {
     for (const b of ctx.existing_budget_items) {
       const cost = b.estimated_cost !== null ? ` ($${b.estimated_cost})` : ''
       lines.push(`- ${b.description} [${b.category}, ${b.status}${cost}] (id: ${b.id})`)
+    }
+  }
+
+  if (ctx.existing_timeline_items.length > 0) {
+    lines.push('', '### Existing timeline items (use id as target_id for cancellation cleanup):')
+    for (const t of ctx.existing_timeline_items) {
+      const when = t.starts_at ? `, starts: ${t.starts_at}` : ''
+      const detail = t.description ? ` — ${t.description.slice(0, 60)}` : ''
+      lines.push(`- ${t.title} [${t.type}${when}]${detail} (id: ${t.id})`)
     }
   }
 
@@ -357,7 +374,8 @@ function buildEventStateSection(ctx: EventStateContext): string {
 
 interface RawTask {
   title: string; description: string | null; due_date: string | null
-  priority: 'low' | 'medium' | 'high'; owner_name: string | null
+  priority: 'low' | 'medium' | 'high'; status?: 'todo' | 'in_progress' | 'done' | 'blocked'; owner_name: string | null
+  operation?: 'insert' | 'update'; target_id?: string | null
   confidence: number; rationale: string
 }
 interface RawVendor {
@@ -379,6 +397,8 @@ interface RawBudgetItem {
 interface RawTimelineItem {
   title: string; description: string | null; starts_at: string | null
   ends_at: string | null; type: 'milestone' | 'task' | 'deadline' | 'planning'
+  operation?: 'insert' | 'archive'; target_id?: string | null
+  archive_reason?: string | null
   confidence: number; rationale: string
 }
 interface RawDecision {
@@ -495,11 +515,15 @@ export async function llmExtract(
   const items: ExtractedItem[] = []
 
   for (const t of raw.tasks ?? []) {
+    const operation = t.operation === 'update' && t.target_id ? 'update' : 'insert'
     items.push({
       update_type: 'task',
-      payload: { title: t.title, description: t.description, due_date: t.due_date, priority: t.priority, status: 'todo', owner_name: t.owner_name },
+      payload: { title: t.title, description: t.description, due_date: t.due_date, priority: t.priority, status: operation === 'update' ? t.status ?? 'done' : 'todo', owner_name: t.owner_name },
       confidence: t.confidence,
       rationale: t.rationale,
+      operation,
+      target_record_type: operation === 'insert' ? null : 'task',
+      target_record_id: operation === 'insert' ? null : t.target_id ?? null,
     })
   }
 
@@ -530,11 +554,15 @@ export async function llmExtract(
   }
 
   for (const tl of raw.timeline_items ?? []) {
+    const operation = tl.operation === 'archive' ? 'archive' : 'insert'
     items.push({
       update_type: 'timeline_item',
-      payload: { title: tl.title, description: tl.description, starts_at: tl.starts_at, ends_at: tl.ends_at, type: tl.type },
+      payload: { title: tl.title, description: tl.description, starts_at: tl.starts_at, ends_at: tl.ends_at, type: tl.type, archive_reason: operation === 'archive' ? tl.archive_reason ?? null : null },
       confidence: tl.confidence,
       rationale: tl.rationale,
+      operation,
+      target_record_type: operation === 'insert' ? null : 'timeline_item',
+      target_record_id: operation === 'insert' ? null : tl.target_id ?? null,
     })
   }
 

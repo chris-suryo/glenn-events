@@ -219,9 +219,16 @@ function getClarificationPrompt(update: ProposedUpdate): string {
   return rationale
 }
 
-const CORRECTION_TYPES: UpdateType[] = ['vendor', 'budget_item']
+const CORRECTION_TYPES: UpdateType[] = ['task', 'vendor', 'budget_item', 'timeline_item']
 
 const CORRECTION_FIELD_LABELS: Partial<Record<UpdateType, Record<string, string>>> = {
+  task: {
+    title: 'Title',
+    description: 'Description',
+    due_date: 'Due date',
+    priority: 'Priority',
+    status: 'Status',
+  },
   vendor: {
     name: 'Name',
     contact_name: 'Contact',
@@ -238,6 +245,13 @@ const CORRECTION_FIELD_LABELS: Partial<Record<UpdateType, Record<string, string>
     estimated_cost: 'Estimated',
     actual_cost: 'Actual',
     status: 'Status',
+  },
+  timeline_item: {
+    title: 'Title',
+    description: 'Description',
+    starts_at: 'Starts',
+    ends_at: 'Ends',
+    type: 'Type',
   },
 }
 
@@ -301,6 +315,16 @@ function budgetCostDiff(update: ProposedUpdate, payload: UpdatePayload = update.
   return null
 }
 
+function genericCorrectionLabels(update: ProposedUpdate, payload: UpdatePayload = update.payload_json) {
+  const snapshot = getTargetSnapshot(update)
+  const beforeRaw = snapshot?.title ?? snapshot?.name ?? snapshot?.description
+  const before = typeof beforeRaw === 'string' && beforeRaw.trim()
+    ? beforeRaw
+    : `Existing ${TYPE_COUNT_LABEL[update.update_type]}`
+  const after = getUpdateName(update, payload)
+  return { before, after }
+}
+
 function correctionChangedFields(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string[] {
   if (!isCorrection(update)) return []
   const snapshot = getTargetSnapshot(update)
@@ -320,8 +344,17 @@ function correctionChangedFields(update: ProposedUpdate, payload: UpdatePayload 
 }
 
 function getActionLabel(update: ProposedUpdate): string {
-  if (isArchive(update)) return update.update_type === 'budget_item' ? 'Remove budget item' : 'Remove vendor'
-  if (isCorrection(update)) return update.update_type === 'budget_item' ? 'Update budget' : 'Update vendor'
+  if (isArchive(update)) {
+    if (update.update_type === 'budget_item') return 'Remove budget item'
+    if (update.update_type === 'timeline_item') return 'Remove timing'
+    return 'Remove vendor'
+  }
+  if (isCorrection(update)) {
+    if (update.update_type === 'budget_item') return 'Update budget'
+    if (update.update_type === 'timeline_item') return 'Update timing'
+    if (update.update_type === 'task') return 'Update task'
+    return 'Update vendor'
+  }
   return TYPE_ACTION_LABEL[update.update_type]
 }
 
@@ -603,6 +636,7 @@ function EditFields({
             <TextField id={`${update.id}-due`} label="Due date" type="date" value={textValue(p.due_date)} onChange={(due_date) => onChange({ ...p, due_date: nullableText(due_date) })} />
             <SelectField id={`${update.id}-priority`} label="Priority" value={p.priority} options={['low', 'medium', 'high']} onChange={(priority) => onChange({ ...p, priority })} />
           </div>
+          <SelectField id={`${update.id}-status`} label="Status" value={p.status} options={['todo', 'in_progress', 'done', 'blocked']} onChange={(status) => onChange({ ...p, status })} />
         </div>
       )
     }
@@ -1004,10 +1038,14 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
     } else if (correction && update.update_type === 'budget_item') {
       name = getUpdateName(update, activePayload)
       detail = budgetCostDiff(update, activePayload) ?? correctionChangedFields(update, activePayload)[0] ?? null
-    } else if (correction) {
+    } else if (correction && update.update_type === 'vendor') {
       const labels = vendorCorrectionLabels(update, activePayload)
       name = labels.before === labels.after ? labels.after : `${labels.before} → ${labels.after}`
       detail = formatPreservedFacts(update, activePayload)
+    } else if (correction) {
+      const labels = genericCorrectionLabels(update, activePayload)
+      name = labels.before === labels.after ? labels.after : `${labels.before} → ${labels.after}`
+      detail = correctionChangedFields(update, activePayload)[0] ?? null
     } else {
       name = getUpdateName(update, activePayload)
       detail = getUpdateDetail(update, activePayload)

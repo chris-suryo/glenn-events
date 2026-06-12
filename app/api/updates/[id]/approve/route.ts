@@ -13,8 +13,9 @@ const TaskPayloadSchema = z.object({
   description: z.string().trim().nullable(),
   due_date: z.string().trim().nullable(),
   priority: z.enum(['low', 'medium', 'high']),
-  status: z.literal('todo'),
+  status: z.enum(['todo', 'in_progress', 'done', 'blocked']),
   owner_name: z.string().trim().nullable(),
+  archive_reason: z.string().trim().nullable().optional(),
 })
 
 const VendorPayloadSchema = z.object({
@@ -45,6 +46,7 @@ const TimelineItemPayloadSchema = z.object({
   starts_at: z.string().trim().nullable(),
   ends_at: z.string().trim().nullable(),
   type: z.enum(['milestone', 'task', 'deadline', 'planning']),
+  archive_reason: z.string().trim().nullable().optional(),
 })
 
 const DecisionPayloadSchema = z.object({
@@ -83,6 +85,12 @@ const CORRECTION_TARGETS: Partial<Record<UpdateType, {
   labelField: string
   fallbackLabel: string
 }>> = {
+  task: {
+    table: 'tasks',
+    patchFields: ['title', 'description', 'due_date', 'priority', 'status'],
+    labelField: 'title',
+    fallbackLabel: 'Untitled task',
+  },
   vendor: {
     table: 'vendors',
     patchFields: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes'],
@@ -94,6 +102,12 @@ const CORRECTION_TARGETS: Partial<Record<UpdateType, {
     patchFields: ['category', 'description', 'estimated_cost', 'actual_cost', 'status'],
     labelField: 'description',
     fallbackLabel: 'Untitled budget item',
+  },
+  timeline_item: {
+    table: 'timeline_items',
+    patchFields: ['title', 'description', 'starts_at', 'ends_at', 'type'],
+    labelField: 'title',
+    fallbackLabel: 'Untitled timeline item',
   },
 }
 
@@ -201,6 +215,10 @@ export async function POST(
   const updateForApply: ProposedUpdate = editedPayload
     ? { ...typedUpdate, payload_json: editedPayload }
     : typedUpdate
+
+  if (updateForApply.update_type === 'task' && updateForApply.operation === 'archive') {
+    return NextResponse.json({ error: 'Task cleanup must be applied as a status update' }, { status: 400 })
+  }
 
   if (updateForApply.operation === 'update' || updateForApply.operation === 'archive') {
     const correction = CORRECTION_TARGETS[updateForApply.update_type]

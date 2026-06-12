@@ -192,6 +192,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
     setIsThinking(false)
     setIsStreaming(true)
     setStreamingText('')
+    router.refresh()
 
     const words = text.split(' ')
     const delay = words.length > 80 ? 18 : STREAM_WORD_DELAY_MS

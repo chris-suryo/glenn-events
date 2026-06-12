@@ -85,8 +85,9 @@ export interface TaskPayload {
   description: string | null
   due_date: string | null
   priority: 'low' | 'medium' | 'high'
-  status: 'todo'
+  status: 'todo' | 'in_progress' | 'done' | 'blocked'
   owner_name: string | null
+  archive_reason?: string | null
 }
 
 export interface VendorPayload {
@@ -117,6 +118,7 @@ export interface TimelineItemPayload {
   starts_at: string | null
   ends_at: string | null
   type: 'milestone' | 'task' | 'deadline' | 'planning'
+  archive_reason?: string | null
 }
 
 export interface DecisionPayload {
@@ -344,10 +346,12 @@ export interface EventStateContext {
     budget_target: number | null
   }
   existing_tasks: Array<{
+    id: string
     title: string
     status: 'todo' | 'in_progress'
     priority: 'low' | 'medium' | 'high'
     description: string | null
+    due_date: string | null
   }>
   existing_vendors: Array<{
     id: string
@@ -368,6 +372,14 @@ export interface EventStateContext {
     actual_cost: number | null
     status: 'estimated' | 'committed' | 'paid'
     vendor_id: string | null
+  }>
+  existing_timeline_items: Array<{
+    id: string
+    title: string
+    description: string | null
+    starts_at: string | null
+    ends_at: string | null
+    type: 'milestone' | 'task' | 'deadline' | 'planning'
   }>
   existing_risks: Array<{
     title: string
