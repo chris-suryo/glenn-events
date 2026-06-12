@@ -62,6 +62,7 @@ INTAKE REPLY — use this format INSTEAD of the brief above when you extracted n
 - Skip the heads-up line and skip the review reminder; there is nothing to review yet.
 
 Tone rules for response_message:
+- response_message is plain prose only. NEVER include JSON, braces, brackets, quoted field names, or machine formatting in it — all structured data belongs exclusively in the item arrays.
 - Never say "budget_item", "timeline_item", "open_question" or other raw database nouns.
 - Never use user-facing arrow labels like "Dessert → decision" or "Serving utensils → question"; use "Decision:" and "Question:" labels instead.
 - Never say "I extracted N items" or "I found N updates." That's database talk.
@@ -75,6 +76,7 @@ Extraction rules:
 2. If one missing fact blocks an otherwise concrete item, still propose the item with the known fields, lower confidence, and a rationale written as one direct question. Do not create a separate confirm-task for the same gap.
 3. One message can produce several items, but only when they are distinct real-world plan changes.
 4. Dates and times: use ISO 8601 format. Use YYYY-MM-DD for date-only facts and YYYY-MM-DDTHH:mm:ss for time-specific facts when the date is known. Return null only if no date can be inferred.
+4a. NEVER invent a time of day. If the note gives only one clock time ("flowers must be delivered before 6:30 PM"), use that time as starts_at, leave ends_at null, and express the before/by semantics in the title or description. Never default a missing start time to midnight or 12:00 AM.
 5. confidence: 0.0–1.0 representing how certain you are about this extraction.
 6. rationale: one short phrase explaining why you extracted this item. For lower-confidence clarification items, write one direct question the user can answer.
 7. All status fields must exactly match the allowed enum values.
@@ -262,6 +264,7 @@ function buildEventStateSection(ctx: EventStateContext): string {
   if (ctx.event.event_type) lines.push(`Type: ${ctx.event.event_type}`)
   if (ctx.event.event_date) lines.push(`Date: ${ctx.event.event_date}`)
   if (ctx.event.location) lines.push(`Location: ${ctx.event.location}`)
+  if (ctx.event.description) lines.push(`Notes: ${ctx.event.description.slice(0, 300)}`)
   if (ctx.event.attendee_target !== null)
     lines.push(`Attendee target: ${ctx.event.attendee_target}`)
   if (ctx.event.budget_target !== null)
@@ -423,6 +426,24 @@ function normalizeOperation(
   return 'insert'
 }
 
+// The model occasionally leaks tool-call JSON into response_message. Chat
+// renders that string verbatim, so strip from the first JSON-shaped line and
+// fall back to a templated brief when nothing usable survives.
+function looksLikeJsonLeak(line: string): boolean {
+  return /"[a-z_]+"\s*:/.test(line) || /^\s*[{}\[\]],?\s*$/.test(line)
+}
+
+export function sanitizeResponseMessage(text: string, understoodSummary: string[]): string {
+  const lines = text.split('\n')
+  const leakIndex = lines.findIndex(looksLikeJsonLeak)
+  const clean = (leakIndex === -1 ? text : lines.slice(0, leakIndex).join('\n')).trim()
+  if (clean.length >= 40) return clean
+  if (understoodSummary.length > 0) {
+    return `Here's what I took from that:\n${understoodSummary.map((line) => `• ${line}`).join('\n')}`
+  }
+  return clean || 'Got it — I saved your note. Review the suggestions before they change the plan.'
+}
+
 function normalizeSummary(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value
@@ -544,10 +565,12 @@ export async function llmExtract(
     })
   }
 
+  const understoodSummary = normalizeSummary(raw.understood_summary)
+
   return {
     items,
-    responseMessage: raw.response_message ?? "Got it — I saved your note.",
-    understoodSummary: normalizeSummary(raw.understood_summary),
+    responseMessage: sanitizeResponseMessage(raw.response_message ?? '', understoodSummary),
+    understoodSummary,
     recommendedSummary: normalizeSummary(raw.recommended_summary),
   }
 }

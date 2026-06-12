@@ -43,6 +43,7 @@ function welcomePartyContext(overrides: Partial<EventStateContext> = {}): EventS
       event_type: 'party',
       event_date: '2026-07-10',
       location: 'Boston',
+      description: null,
       attendee_target: 60,
       budget_target: 5000,
     },
@@ -171,6 +172,7 @@ const eventStateContext: EventStateContext = {
     event_type: 'event',
     event_date: null,
     location: null,
+    description: null,
     attendee_target: null,
     budget_target: null,
   },
@@ -332,6 +334,13 @@ async function main() {
       const result = await llmExtract(scenario.text, [], scenario.context ?? eventStateContext)
       const counts = countByType(result.items)
       const evaluation = evaluateScenario(scenario, result.items, counts)
+
+      // The sanitizer must keep chat replies prose-only — a JSON-shaped reply
+      // rendered verbatim in chat is a demo-breaking trust failure.
+      if (/"[a-z_]+"\s*:/.test(result.responseMessage)) {
+        evaluation.reasons.push('response_message_contains_json')
+        evaluation.status = 'FAIL'
+      }
 
       console.log(`Assistant: ${summarizeResponse(result.responseMessage)}`)
       console.log(`Total: ${result.items.length}`)
