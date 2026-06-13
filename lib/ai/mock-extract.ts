@@ -24,6 +24,7 @@ export interface ExtractedItem {
   operation?: 'insert' | 'update' | 'archive'
   target_record_type?: UpdateType | null
   target_record_id?: string | null
+  replaces_queued_id?: string | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

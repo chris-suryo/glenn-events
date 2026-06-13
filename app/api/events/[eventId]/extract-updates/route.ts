@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { mockExtract, groupExtracted, summarizeExtracted, type ExtractedItem } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
-import { dedupeExtractedItems, findSupersededPending, type PendingProposalLite } from '@/lib/ai/dedupe'
+import { dedupeExtractedItems, reconcileAgainstPending, type PendingProposalLite } from '@/lib/ai/dedupe'
 import type {
   BudgetItemPayload,
   EventStateContext,
@@ -587,11 +587,11 @@ export async function POST(
         .limit(8),
       supabase
         .from('proposed_updates')
-        .select('update_type, payload_json')
+        .select('id, update_type, payload_json, confidence, rationale, operation')
         .eq('event_id', eventId)
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
-        .limit(15),
+        .limit(50),
       supabase
         .from('ai_runs')
         .select('output_json')
@@ -617,6 +617,44 @@ export async function POST(
       }
       return typeof field === 'string' && field.trim().length > 0 ? field : '(unknown)'
     }
+
+    // Compact key facts so the LLM can recognize a queued suggestion as the
+    // thing a new note is talking about (cost, status, timing).
+    function pendingDetail(updateType: string, payloadJson: unknown): string | null {
+      if (typeof payloadJson !== 'object' || payloadJson === null) return null
+      const p = payloadJson as Record<string, unknown>
+      const money = (v: unknown) => (typeof v === 'number' ? `$${v.toLocaleString()}` : null)
+      const text = (v: unknown) => (typeof v === 'string' && v.trim().length > 0 ? v : null)
+      switch (updateType) {
+        case 'vendor':
+          return [text(p['category']), text(p['status']), money(p['estimated_cost'])].filter(Boolean).join(', ') || null
+        case 'budget_item':
+          return [text(p['category']), money(p['estimated_cost'])].filter(Boolean).join(', ') || null
+        case 'timeline_item': {
+          const starts = text(p['starts_at'])
+          const ends = text(p['ends_at'])
+          return starts ? (ends ? `${starts} to ${ends}` : starts) : null
+        }
+        case 'task':
+          return text(p['due_date']) ? `due ${p['due_date']}` : null
+        default:
+          return null
+      }
+    }
+
+    // Mirrors the Review panel's needs-answer rule (confidence < 0.75).
+    const NEEDS_ANSWER_CONFIDENCE = 0.75
+
+    const pendingPool: PendingProposalLite[] = (pendingUpdateRows ?? []).map((u) => ({
+      id: u.id as string,
+      update_type: u.update_type as UpdateType,
+      payload_json: u.payload_json as PendingProposalLite['payload_json'],
+      confidence: (u.confidence as number | null) ?? null,
+      operation: (u.operation as 'insert' | 'update' | 'archive' | null) ?? 'insert',
+    }))
+    const pendingRationales = new Map<string, string | null>(
+      (pendingUpdateRows ?? []).map((u) => [u.id as string, (u.rationale as string | null) ?? null]),
+    )
 
     // Parse ai_run output_json for summary bullets (same pattern as page.tsx)
     function stringArray(val: unknown): string[] {
@@ -679,10 +717,18 @@ export async function POST(
       existing_open_questions: (existingQuestionRows ?? []).map((q) => ({
         question: q.question as string,
       })),
-      pending_proposed_updates: (pendingUpdateRows ?? []).map((u) => ({
-        update_type: u.update_type as UpdateType,
-        label: pendingLabel(u.update_type as string, u.payload_json),
-      })),
+      pending_proposed_updates: pendingPool.slice(0, 15).map((u) => {
+        const needsAnswer = u.confidence === null || u.confidence < NEEDS_ANSWER_CONFIDENCE
+        return {
+          id: u.id,
+          update_type: u.update_type,
+          label: pendingLabel(u.update_type, u.payload_json),
+          detail: pendingDetail(u.update_type, u.payload_json),
+          needs_answer: needsAnswer,
+          question: needsAnswer ? pendingRationales.get(u.id) ?? null : null,
+          operation: u.operation ?? 'insert',
+        }
+      }),
       recent_ai_run_summaries: (recentAiRunRows ?? [])
         .map((run) => {
           const o =
@@ -791,7 +837,7 @@ export async function POST(
       ...resolvedCorrections,
       ...applyVendorCorrectionOperations(dedupeResult.kept, eventStateContext.existing_vendors),
     ]
-    const extracted = [
+    const composed = [
       ...resolvedWithAppCorrections,
       ...buildRelatedCleanupProposals(
         vendorArchiveTargets(resolvedWithAppCorrections),
@@ -802,6 +848,19 @@ export async function POST(
       ),
     ]
 
+    // 3c. Reconcile the batch against pending proposals — one pass, one
+    // precedence: a validated replaces_queued_id wins, fuzzy same-type
+    // matching claims the rest, and only poorer restatements are dropped.
+    const reconcileResult = reconcileAgainstPending(composed, pendingPool)
+    if (reconcileResult.invalid_replace_ids.length > 0) {
+      console.warn(
+        'extract: stripped invalid replaces_queued_id links:',
+        reconcileResult.invalid_replace_ids,
+      )
+    }
+    const extracted = reconcileResult.kept.map((entry) => entry.item)
+    const totalDroppedCount = dedupeResult.deduped_count + reconcileResult.dropped.length
+
     if (extractionMode === 'mock') {
       // Fallback response for mock mode (uses deduped count)
       assistantContent = extracted.length === 0
@@ -811,7 +870,7 @@ export async function POST(
 
     // When all extracted items were deduped, override the assistant message for both paths.
     // The LLM's responseMessage references proposals that no longer exist in the queue.
-    if (extracted.length === 0 && dedupeResult.deduped_count > 0) {
+    if (extracted.length === 0 && totalDroppedCount > 0) {
       assistantContent =
         "I reviewed this and didn't add new suggestions — these items already appear to be tracked in the plan or queued for review."
     }
@@ -825,9 +884,14 @@ export async function POST(
           raw_count_by_type: countByType(rawExtracted),
           kept_count: extracted.length,
           kept_count_by_type: countByType(extracted),
-          deduped_count: dedupeResult.deduped_count,
+          deduped_count: totalDroppedCount,
           dropped: [
             ...dedupeResult.dropped.map((drop) => ({
+              update_type: drop.dropped_item.update_type,
+              label: itemLabel(drop.dropped_item),
+              reason: drop.reason,
+            })),
+            ...reconcileResult.dropped.map((drop) => ({
               update_type: drop.dropped_item.update_type,
               label: itemLabel(drop.dropped_item),
               reason: drop.reason,
@@ -845,7 +909,7 @@ export async function POST(
     const outputJson = {
       understood_summary: understoodSummary,
       recommended_summary: recommendedSummary,
-      deduped_count: dedupeResult.deduped_count,
+      deduped_count: totalDroppedCount,
       ...(diagnostics ? { diagnostics } : {}),
       tasks: grouped.tasks.map((i) => i.payload),
       vendors: grouped.vendors.map((i) => i.payload),
@@ -875,26 +939,18 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to create AI run' }, { status: 500 })
     }
 
-    // 4b. Supersession — retire stale pending proposals that this batch
-    // replaces (e.g. a clarified vendor supersedes its placeholder row).
+    // 4b. Supersession — retire stale pending proposals claimed during
+    // reconciliation (explicit replaces_queued_id links + fuzzy matches).
     // Pending rows only; applied records are never touched.
     const supersededByIndex = new Map<number, string>()
     if (extracted.length > 0) {
-      const { data: pendingFullRows } = await supabase
-        .from('proposed_updates')
-        .select('id, update_type, payload_json, confidence')
-        .eq('event_id', eventId)
-        .eq('status', 'pending')
-
-      const pendingPool = (pendingFullRows ?? []) as PendingProposalLite[]
       const claimed = new Set<string>()
       const supersededLabels = new Map<string, string>()
 
-      extracted.forEach((item, index) => {
-        const matches = findSupersededPending(item, pendingPool).filter((pid) => !claimed.has(pid))
-        if (matches.length === 0) return
-        supersededByIndex.set(index, matches[0])
-        for (const pid of matches) {
+      reconcileResult.kept.forEach((entry, index) => {
+        if (entry.claimed_pending_ids.length === 0) return
+        supersededByIndex.set(index, entry.claimed_pending_ids[0])
+        for (const pid of entry.claimed_pending_ids) {
           claimed.add(pid)
           const pendingRow = pendingPool.find((p) => p.id === pid)
           supersededLabels.set(pid, pendingRow ? pendingLabel(pendingRow.update_type, pendingRow.payload_json) : 'Untitled suggestion')
@@ -989,7 +1045,7 @@ export async function POST(
         entity_id: aiRun.id,
         metadata_json: {
           total: extracted.length,
-          deduped_count: dedupeResult.deduped_count,
+          deduped_count: totalDroppedCount,
         },
       })
     }

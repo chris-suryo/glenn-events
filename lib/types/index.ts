@@ -391,8 +391,13 @@ export interface EventStateContext {
     question: string
   }>
   pending_proposed_updates: Array<{
+    id: string
     update_type: UpdateType
     label: string
+    detail: string | null
+    needs_answer: boolean
+    question: string | null
+    operation: 'insert' | 'update' | 'archive'
   }>
   recent_ai_run_summaries: Array<{
     understood_summary: string[]

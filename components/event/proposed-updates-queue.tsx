@@ -490,6 +490,18 @@ function nullableNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+class ReviewRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+  }
+}
+
+// 409 means the row left 'pending' on the server (applied elsewhere or
+// superseded by a newer suggestion) while the panel still showed it.
+function isStaleReviewError(err: unknown): boolean {
+  return err instanceof ReviewRequestError && err.status === 409
+}
+
 async function reviewUpdate(updateId: string, action: ReviewAction, payload?: UpdatePayload): Promise<ReviewUpdateResponse> {
   const init: RequestInit = { method: 'POST' }
   if (action === 'approve' && payload) {
@@ -500,7 +512,7 @@ async function reviewUpdate(updateId: string, action: ReviewAction, payload?: Up
   const res = await fetch(`/api/updates/${updateId}/${action}`, init)
   const data = await res.json().catch(() => ({})) as ReviewUpdateResponse & { error?: string }
   if (!res.ok) {
-    throw new Error(data.error ?? 'Failed to update')
+    throw new ReviewRequestError(data.error ?? 'Failed to update', res.status)
   }
   return data
 }
@@ -793,7 +805,13 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
       cancelEdit(update.id)
       router.refresh()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Something went wrong.')
+      if (isStaleReviewError(err)) {
+        toast.info('This suggestion was replaced by a newer one — refreshing the list.')
+        cancelEdit(update.id)
+        router.refresh()
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Something went wrong.')
+      }
     } finally {
       setProcessingIds((current) => {
         const next = new Set(current)
@@ -809,6 +827,11 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
         scopedUpdates.map((update) => reviewUpdate(update.id, action))
       )
       const failed = scopedUpdates.filter((_, index) => results[index].status === 'rejected')
+      const stale = scopedUpdates.filter((_, index) => {
+        const result = results[index]
+        return result.status === 'rejected' && isStaleReviewError(result.reason)
+      })
+      const hardFailed = failed.filter((update) => !stale.includes(update))
       const appliedCount = scopedUpdates.length - failed.length
       const verb = action === 'approve' ? 'Applied' : 'Dismissed'
       const firstAppliedHref = action === 'approve'
@@ -834,10 +857,15 @@ export function ProposedUpdatesQueue({ updates, aiRuns, eventId, onClarify }: Pr
             },
           } : undefined
         )
+      } else if (hardFailed.length === 0) {
+        const summary = appliedCount > 0
+          ? `${verb} ${appliedCount} update${appliedCount !== 1 ? 's' : ''}. `
+          : ''
+        toast.info(`${summary}${stale.length} suggestion${stale.length !== 1 ? 's were' : ' was'} already replaced by newer ones — refreshing the list.`)
       } else {
-        const names = failed.slice(0, 2).map((update) => getUpdateName(update)).join(', ')
-        const overflow = failed.length > 2 ? ` and ${failed.length - 2} more` : ''
-        toast.error(`${verb} ${appliedCount} of ${scopedUpdates.length} · failed: ${names}${overflow}. The failed items are still pending.`)
+        const names = hardFailed.slice(0, 2).map((update) => getUpdateName(update)).join(', ')
+        const overflow = hardFailed.length > 2 ? ` and ${hardFailed.length - 2} more` : ''
+        toast.error(`${verb} ${appliedCount} of ${scopedUpdates.length} · failed: ${names}${overflow}. Refresh and try again.`)
       }
       router.refresh()
     })

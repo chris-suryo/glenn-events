@@ -102,7 +102,17 @@ CORRECTIONS, CANCELLATIONS, AND REPLACEMENTS — vendors and budget items in the
 22a. If a cancellation makes an existing open task obsolete, create a task item with operation "update", target_id copied exactly, status "done", and description ending with "No longer needed because [vendor/service] canceled." Do not delete tasks.
 23. If the note says a vendor or service is canceled, dropped, no longer needed, or backed out, create a vendor item with operation "archive", target_id copied exactly, name matching the existing vendor, and a short archive_reason (e.g. "Canceled by vendor"). If that vendor has matching budget or timeline items in the event state that are now obsolete, also propose same-type items with operation "archive" targeting them. A cancellation may ALSO warrant a risk or replacement task — those are separate insert items.
 24. If the note replaces one vendor with another ("X canceled, we're using Y instead"), propose BOTH: an archive item for X (rule 23) and a normal insert vendor item for Y, plus budget/timeline inserts for Y's cost and schedule as warranted.
-25. Never invent a target_id. Only copy ids that appear in the Current Event State. If nothing there matches, use operation "insert" with target_id null. Items already queued for review have no ids — never target those.`
+25. Never invent a target_id. Only copy ids that appear in the Current Event State. If nothing there matches, use operation "insert" with target_id null. When no queued suggestions are listed, always set replaces_queued_id to null.`
+
+// Appended to the event-state section only when queued pending suggestions
+// exist — referencing "Queued for review" without the section confuses the
+// model on the much more common no-pending path.
+const QUEUED_SUGGESTION_RULES = `
+### Queued suggestion rules (apply rules 26-28 to the "Queued for review" list above):
+Queue ids are NOT record ids — never copy a queue_id into target_id and never use operation "update" or "archive" against a queued suggestion. Queued suggestions are NOT in the plan yet; they cannot be corrected or archived, only REPLACED:
+26. If the note adds or changes information about a queued suggestion (answers the question in its "needs" note, changes its price, names its unknown vendor, restates it more completely), re-propose ONE complete merged item with operation "insert" and set replaces_queued_id to that suggestion's queue_id. Carry forward every still-true fact from the queued suggestion (costs, times, contacts, category) merged with the new information.
+27. Set replaces_queued_id ONLY when the note clearly refers to the same real-world item as the queued suggestion. If unsure, leave replaces_queued_id null and keep both. Never re-propose a queued suggestion the note says nothing about.
+28. When one note clarifies a service that has several queued suggestions (for example naming a previously unknown photographer that has a queued vendor, cost, schedule, and follow-up task), re-propose EACH related queued suggestion merged with the new fact, each with its own replaces_queued_id, so the review queue converges to one current set instead of accumulating fragments. This applies even when a related queued suggestion's own facts are unchanged — carrying it forward with replaces_queued_id is replacement, not duplication. If the note answers exactly what a queued follow-up task was chasing, re-propose that task with replaces_queued_id and status "done" so the answered task converges too.`
 
 // ─── Tool schema ──────────────────────────────────────────────────────────────
 
@@ -139,11 +149,12 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             status:      { type: 'string', enum: ['todo', 'in_progress', 'done', 'blocked'], description: 'Use "todo" for new tasks. Use "done" only for operation="update" when a cancellation makes an existing task no longer needed.' },
             owner_name:  { type: ['string', 'null'], description: 'Name of the person responsible, if mentioned' },
             operation:   { type: 'string', enum: ['insert', 'update'], description: '"insert" for new tasks. "update" only to mark an existing task done/blocked after a cancellation.' },
-            target_id:   { type: ['string', 'null'], description: 'REQUIRED for update: exact id of the existing task from Current Event State. null for insert. Never invent ids.' },
+            target_id:   { type: ['string', 'null'], description: 'REQUIRED for update: exact id of the existing task from Current Event State. null for insert. Never invent ids. Never use a queue_id here.' },
+            replaces_queued_id: { type: ['string', 'null'], description: 'queue_id of the queued pending suggestion this item replaces with a merged restatement (rules 26-28). null when not replacing a queued suggestion. Only copy queue_ids listed under "Queued for review".' },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
           },
-          required: ['title', 'description', 'due_date', 'priority', 'status', 'owner_name', 'operation', 'target_id', 'confidence', 'rationale'],
+          required: ['title', 'description', 'due_date', 'priority', 'status', 'owner_name', 'operation', 'target_id', 'replaces_queued_id', 'confidence', 'rationale'],
         },
       },
       vendors: {
@@ -161,12 +172,13 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             estimated_cost: { type: ['number', 'null'] },
             notes:          { type: ['string', 'null'] },
             operation:      { type: 'string', enum: ['insert', 'update', 'archive'], description: '"insert" for a new vendor. "update" to correct an existing vendor from the event state. "archive" when an existing vendor is canceled/dropped/no longer needed.' },
-            target_id:      { type: ['string', 'null'], description: 'REQUIRED for update/archive: the exact id of the existing vendor from the Current Event State. null for insert. Never invent ids.' },
+            target_id:      { type: ['string', 'null'], description: 'REQUIRED for update/archive: the exact id of the existing vendor from the Current Event State. null for insert. Never invent ids. Never use a queue_id here.' },
+            replaces_queued_id: { type: ['string', 'null'], description: 'queue_id of the queued pending vendor suggestion this item replaces with a merged restatement (rules 26-28). null when not replacing a queued suggestion. Only copy queue_ids listed under "Queued for review".' },
             archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the vendor is being removed, e.g. "Canceled by vendor". null otherwise.' },
             confidence:     { type: 'number', minimum: 0, maximum: 1 },
             rationale:      { type: 'string' },
           },
-          required: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes', 'operation', 'target_id', 'archive_reason', 'confidence', 'rationale'],
+          required: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale'],
         },
       },
       budget_items: {
@@ -182,12 +194,13 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             status:         { type: 'string', enum: ['estimated', 'committed', 'paid'] },
             vendor_name:    { type: ['string', 'null'] },
             operation:      { type: 'string', enum: ['insert', 'update', 'archive'], description: '"insert" for a new cost. "update" to correct an existing budget item from the event state (e.g. a price change). "archive" when an existing budget item is obsolete because the service was canceled.' },
-            target_id:      { type: ['string', 'null'], description: 'REQUIRED for update/archive: the exact id of the existing budget item from the Current Event State. null for insert. Never invent ids.' },
+            target_id:      { type: ['string', 'null'], description: 'REQUIRED for update/archive: the exact id of the existing budget item from the Current Event State. null for insert. Never invent ids. Never use a queue_id here.' },
+            replaces_queued_id: { type: ['string', 'null'], description: 'queue_id of the queued pending budget suggestion this item replaces with a merged restatement, e.g. a price change to a cost still under review (rules 26-28). null when not replacing a queued suggestion. Only copy queue_ids listed under "Queued for review".' },
             archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the cost no longer applies. null otherwise.' },
             confidence:     { type: 'number', minimum: 0, maximum: 1 },
             rationale:      { type: 'string' },
           },
-          required: ['category', 'description', 'estimated_cost', 'actual_cost', 'status', 'vendor_name', 'operation', 'target_id', 'archive_reason', 'confidence', 'rationale'],
+          required: ['category', 'description', 'estimated_cost', 'actual_cost', 'status', 'vendor_name', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale'],
         },
       },
       timeline_items: {
@@ -202,12 +215,13 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             ends_at:     { type: ['string', 'null'], description: 'ISO 8601 date or datetime. For time ranges on a known event date, use the end time, e.g. 2026-06-10T17:15:00. Use null for single-time facts or when no date can be inferred.' },
             type:        { type: 'string', enum: ['milestone', 'task', 'deadline', 'planning'] },
             operation:   { type: 'string', enum: ['insert', 'archive'], description: '"insert" for new timing. "archive" when an existing timing is obsolete because a vendor/service was canceled.' },
-            target_id:   { type: ['string', 'null'], description: 'REQUIRED for archive: exact id of the existing timeline item from Current Event State. null for insert. Never invent ids.' },
+            target_id:   { type: ['string', 'null'], description: 'REQUIRED for archive: exact id of the existing timeline item from Current Event State. null for insert. Never invent ids. Never use a queue_id here.' },
+            replaces_queued_id: { type: ['string', 'null'], description: 'queue_id of the queued pending timeline suggestion this item replaces with a merged restatement (rules 26-28). null when not replacing a queued suggestion. Only copy queue_ids listed under "Queued for review".' },
             archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the timing no longer applies. null otherwise.' },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
           },
-          required: ['title', 'description', 'starts_at', 'ends_at', 'type', 'operation', 'target_id', 'archive_reason', 'confidence', 'rationale'],
+          required: ['title', 'description', 'starts_at', 'ends_at', 'type', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale'],
         },
       },
       decisions: {
@@ -331,10 +345,21 @@ function buildEventStateSection(ctx: EventStateContext): string {
   }
 
   if (ctx.pending_proposed_updates.length > 0) {
-    lines.push('', '### Already queued for review (not yet approved):')
+    lines.push('', '### Queued for review (pending suggestions — NOT in the plan yet; replace via replaces_queued_id, rules 26-28):')
     for (const u of ctx.pending_proposed_updates) {
-      lines.push(`- [${u.update_type}] ${u.label}`)
+      if (u.operation !== 'insert') {
+        lines.push(`- [${u.update_type}] ${u.label} (queued ${u.operation === 'archive' ? 'removal' : 'correction'} — leave it alone)`)
+        continue
+      }
+      const detail = u.detail ? ` — ${u.detail}` : ''
+      const needs = u.needs_answer
+        ? u.question
+          ? ` [needs: ${u.question.slice(0, 100)}]`
+          : ' [needs your answer]'
+        : ''
+      lines.push(`- [${u.update_type}] ${u.label}${detail}${needs} (queue_id: ${u.id})`)
     }
+    lines.push(QUEUED_SUGGESTION_RULES)
   }
 
   if (ctx.recent_ai_run_summaries.length > 0) {
@@ -351,7 +376,10 @@ function buildEventStateSection(ctx: EventStateContext): string {
     '',
     '### Deduplication rules (apply before proposing anything):',
     'Compare the new message against the current event state above before creating suggestions.',
-    'Do NOT propose items that already exist in the plan or are already queued for review above.',
+    'Do NOT propose items that already exist in the plan.',
+    ...(ctx.pending_proposed_updates.length > 0
+      ? ['Do NOT duplicate queued suggestions: when the note informs one, replace it per rules 26-28 (one merged item with replaces_queued_id); when the note says nothing about it, leave it alone.']
+      : []),
     'If the user CORRECTS or CANCELS an existing vendor or budget item, propose an update/archive item targeting its id (rules 22-25) — that is not a duplicate.',
     'If the user merely restates an existing item with no change, mention it in your summary only.',
     'If the user fills in a placeholder or incomplete vendor, create a complete vendor suggestion with operation "update" and that vendor\'s id as target_id.',
@@ -376,6 +404,7 @@ interface RawTask {
   title: string; description: string | null; due_date: string | null
   priority: 'low' | 'medium' | 'high'; status?: 'todo' | 'in_progress' | 'done' | 'blocked'; owner_name: string | null
   operation?: 'insert' | 'update'; target_id?: string | null
+  replaces_queued_id?: string | null
   confidence: number; rationale: string
 }
 interface RawVendor {
@@ -383,6 +412,7 @@ interface RawVendor {
   email: string | null; phone: string | null; status: 'prospect' | 'contacted' | 'confirmed' | 'declined'
   estimated_cost: number | null; notes: string | null
   operation?: 'insert' | 'update' | 'archive'; target_id?: string | null
+  replaces_queued_id?: string | null
   archive_reason?: string | null
   confidence: number; rationale: string
 }
@@ -391,6 +421,7 @@ interface RawBudgetItem {
   actual_cost: number | null; status: 'estimated' | 'committed' | 'paid'
   vendor_name: string | null
   operation?: 'insert' | 'update' | 'archive'; target_id?: string | null
+  replaces_queued_id?: string | null
   archive_reason?: string | null
   confidence: number; rationale: string
 }
@@ -398,6 +429,7 @@ interface RawTimelineItem {
   title: string; description: string | null; starts_at: string | null
   ends_at: string | null; type: 'milestone' | 'task' | 'deadline' | 'planning'
   operation?: 'insert' | 'archive'; target_id?: string | null
+  replaces_queued_id?: string | null
   archive_reason?: string | null
   confidence: number; rationale: string
 }
@@ -491,7 +523,11 @@ export async function llmExtract(
 
   const response = await anthropic.messages.create({
     model: process.env.ANTHROPIC_EXTRACT_MODEL ?? DEFAULT_EXTRACT_MODEL,
-    max_tokens: 4096,
+    // Item schemas are verbose (operation/target/replaces fields on every
+    // item) — long notes hit 4096 and truncate the tool call, which degrades
+    // to a near-empty batch. Haiku supports far larger outputs; 8192 gives
+    // 12-item batches comfortable headroom.
+    max_tokens: 8192,
     tools: [EXTRACTION_TOOL],
     tool_choice: { type: 'tool', name: 'extract_event_updates' },
     system: systemPrompt,
@@ -500,6 +536,10 @@ export async function llmExtract(
       { role: 'user', content: inputText },
     ],
   })
+
+  if (response.stop_reason === 'max_tokens') {
+    console.warn('extract: llm response truncated at max_tokens — batch may be incomplete')
+  }
 
   const toolBlock = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
   if (!toolBlock) {
@@ -530,6 +570,7 @@ export async function llmExtract(
       operation,
       target_record_type: operation === 'insert' ? null : 'task',
       target_record_id: operation === 'insert' ? null : t.target_id ?? null,
+      replaces_queued_id: t.replaces_queued_id ?? null,
     })
   }
 
@@ -543,6 +584,7 @@ export async function llmExtract(
       operation,
       target_record_type: operation === 'insert' ? null : 'vendor',
       target_record_id: operation === 'insert' ? null : v.target_id ?? null,
+      replaces_queued_id: v.replaces_queued_id ?? null,
     })
   }
 
@@ -556,6 +598,7 @@ export async function llmExtract(
       operation,
       target_record_type: operation === 'insert' ? null : 'budget_item',
       target_record_id: operation === 'insert' ? null : b.target_id ?? null,
+      replaces_queued_id: b.replaces_queued_id ?? null,
     })
   }
 
@@ -569,6 +612,7 @@ export async function llmExtract(
       operation,
       target_record_type: operation === 'insert' ? null : 'timeline_item',
       target_record_id: operation === 'insert' ? null : tl.target_id ?? null,
+      replaces_queued_id: tl.replaces_queued_id ?? null,
     })
   }
 
