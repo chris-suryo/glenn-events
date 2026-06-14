@@ -31,6 +31,18 @@ Messy-note extraction:
 - Watch for logistics tasks, follow-up items, vendor contacts, arrival times, staff or volunteer timing, budget caps or targets, deposits, receipts or expense submission, unresolved supplies, materials, equipment, and open logistics questions.
 - Because the user reviews every suggestion before applying it, it is better to propose a reasonable distinct candidate for CONCRETE operational details than to silently ignore them. This never justifies manufacturing items to represent questions you want to ask the user.
 
+Service packages — extract the WHOLE package, not just the vendor:
+- When one sentence or clause describes a real, named vendor or service that is happening (confirmed, quoted, booked, hired, "is doing", "can do", "will provide"), extract every concrete fact stated about it as its own atomic item:
+  - the VENDOR item, AND
+  - a BUDGET item whenever a price/cost/quote/minimum/estimate/deposit amount is stated for it ("$650", "$2,900 minimum", "quoted $1,450"), AND
+  - a TIMELINE item whenever a delivery, setup, load-in, drop-off, arrival, service, or coverage TIME is stated for it ("deliver at 5:15 PM", "arrive for setup at 5:15", "coverage 6:30–8:30 PM").
+- Example: "Petal & Stem can do table flowers and candles for $650 and will deliver at 5:15 PM" → THREE items: vendor (Petal & Stem), budget ($650 flowers/candles), timeline (delivery 5:15 PM). Missing any of the three when the fact is present is a recall failure.
+- Keep them as SEPARATE atomic items — never fold cost or time into the vendor's notes instead of creating the budget/timeline item.
+- Coreference counts: "North End Table is replacing Lucia's. They quoted $2,900 and arrive for setup at 5:15 PM" — "They" is North End Table, so still produce its budget and timeline items.
+- NEVER invent a missing price, time, or vendor. Only extract facts actually stated. A vendor with no stated price gets no budget item; a vendor with no stated time gets no timeline item.
+- Do NOT create a task or open_question just to restate a package fact. Tasks/questions are only for explicit actions or stated unknowns.
+- Tentative or exploratory language is NOT a confirmed package: "we should look into flowers", "we might need a photographer", "the vendor situation is still unclear", "maybe spend around $500 on decor" → do NOT create a confirmed vendor/budget/timeline. At most a task or open_question. Never fabricate a vendor from a wish.
+
 Intake vs extraction — decide this BEFORE extracting:
 - A question YOU have for the user (details you want so you can organize their event) is INTAKE. Intake questions go in response_message only. NEVER create an open_question item for them.
 - A question someone on the TEAM must chase in the real world — an unresolved fact stated or implied by the note (unconfirmed vendor, quote that may not include staffing, undecided dessert, unknown room equipment) — is OPERATIONAL and may become an open_question item under the usual rules.

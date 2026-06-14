@@ -4,6 +4,7 @@ import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { mockExtract, groupExtracted, summarizeExtracted, type ExtractedItem } from '@/lib/ai/mock-extract'
 import { llmExtract } from '@/lib/ai/llm-extract'
 import { dedupeExtractedItems, reconcileAgainstPending, type PendingProposalLite } from '@/lib/ai/dedupe'
+import { completePackages } from '@/lib/ai/complete-packages'
 import type {
   BudgetItemPayload,
   EventStateContext,
@@ -24,6 +25,7 @@ interface ExtractionDiagnostics {
   kept_count: number
   kept_count_by_type: CountByType
   deduped_count: number
+  package_completed: number
   dropped: Array<{
     update_type: UpdateType
     label: string
@@ -837,8 +839,19 @@ export async function POST(
       ...resolvedCorrections,
       ...applyVendorCorrectionOperations(dedupeResult.kept, eventStateContext.existing_vendors),
     ]
-    const composed = [
+
+    // 3b-ii. Package completion — deterministic floor for single-sentence
+    // service packages the LLM extracted only partially (vendor without its
+    // stated cost/time). Synthesizes only from facts in the vendor's own source
+    // sentence; everything still flows through reconcile + Review.
+    const packageCompletion = completePackages(resolvedWithAppCorrections, input_text, eventStateContext)
+    if (packageCompletion.notes.length > 0) {
+      console.info('extract: package completion:', packageCompletion.notes)
+    }
+
+    const composed: ExtractedItemWithOperation[] = [
       ...resolvedWithAppCorrections,
+      ...packageCompletion.added,
       ...buildRelatedCleanupProposals(
         vendorArchiveTargets(resolvedWithAppCorrections),
         eventStateContext.existing_budget_items,
@@ -885,6 +898,7 @@ export async function POST(
           kept_count: extracted.length,
           kept_count_by_type: countByType(extracted),
           deduped_count: totalDroppedCount,
+          package_completed: packageCompletion.added.length,
           dropped: [
             ...dedupeResult.dropped.map((drop) => ({
               update_type: drop.dropped_item.update_type,

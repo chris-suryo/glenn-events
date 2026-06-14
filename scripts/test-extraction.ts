@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { findSupersededPending, reconcileAgainstPending, type PendingProposalLite } from '@/lib/ai/dedupe'
+import { completePackages } from '@/lib/ai/complete-packages'
 import type { ExtractedItem } from '@/lib/ai/mock-extract'
 import type { EventStateContext, UpdateType } from '@/lib/types'
 
@@ -638,10 +639,185 @@ function runReconcileChecks(): boolean {
   return checks.every((check) => check.pass)
 }
 
+// ─── Package completion unit checks (deterministic, no API calls) ─────────────
+
+function runPackageCompletionChecks(): boolean {
+  const ctx = welcomePartyContext() // event_date 2026-07-10
+  const vendor = (name: string): ExtractedItem => ({
+    update_type: 'vendor',
+    payload: { name, category: null, contact_name: null, email: null, phone: null, status: 'confirmed', estimated_cost: null, notes: null },
+    confidence: 0.9,
+    rationale: 'vendor',
+    operation: 'insert',
+  })
+  const budget = (cost: number, desc: string, vendorName: string | null = null): ExtractedItem => ({
+    update_type: 'budget_item',
+    payload: { category: 'Florals', description: desc, estimated_cost: cost, actual_cost: null, status: 'estimated', vendor_name: vendorName },
+    confidence: 0.9,
+    rationale: 'budget',
+    operation: 'insert',
+  })
+  const timeline = (iso: string): ExtractedItem => ({
+    update_type: 'timeline_item',
+    payload: { title: 'delivery', description: null, starts_at: iso, ends_at: null, type: 'milestone' },
+    confidence: 0.9,
+    rationale: 'timeline',
+    operation: 'insert',
+  })
+  const has = (items: ExtractedItem[], type: string) => items.some((i) => i.update_type === type)
+  const vendorName = (items: ExtractedItem[]) => (items.find((i) => i.update_type === 'vendor')?.payload as { name?: string } | undefined)?.name
+  const budgetCost = (items: ExtractedItem[]) => items.find((i) => i.update_type === 'budget_item')?.payload as { estimated_cost?: number } | undefined
+  const tlStart = (items: ExtractedItem[]) => (items.find((i) => i.update_type === 'timeline_item')?.payload as { starts_at?: string } | undefined)?.starts_at
+
+  const FLORAL = 'Petal & Stem can do table flowers and candles for $650 and will deliver at 5:15 PM.'
+
+  const full = completePackages([vendor('Petal & Stem')], FLORAL, ctx).added
+  const budgetPresent = completePackages([vendor('Petal & Stem'), budget(650, 'Petal & Stem flowers')], FLORAL, ctx).added
+  const bothPresent = completePackages([vendor('Petal & Stem'), budget(650, 'Petal & Stem flowers'), timeline('2026-07-10T17:15:00')], FLORAL, ctx).added
+  const costOnly = completePackages([vendor('Modern Pastry')], 'Modern Pastry is doing the cake for $120.', ctx).added
+  const timeOnly = completePackages([vendor('Petal & Stem')], 'Petal & Stem will deliver the flowers at 5:15 PM.', ctx).added
+  const noFacts = completePackages([vendor('Petal & Stem')], 'Petal & Stem is our florist.', ctx).added
+  const coref = completePackages([vendor('North End Table')], "North End Table is replacing Lucia's for dinner service. They quoted $2,900 and will arrive for setup at 5:15 PM.", ctx).added
+  const ambiguous = completePackages([vendor('Petal & Stem')], 'Petal & Stem quoted $650 but the deposit is $200.', ctx).added
+  const bareTime = completePackages([vendor('Petal & Stem')], 'Petal & Stem will meet us at 5:15 PM.', ctx).added
+  const planHasBudget = completePackages(
+    [vendor('Petal & Stem')],
+    'Petal & Stem can do flowers for $650.',
+    welcomePartyContext({ existing_budget_items: [{ id: 'b1', category: 'Florals', description: 'Petal & Stem flowers', estimated_cost: 650, actual_cost: null, status: 'estimated', vendor_id: null }] }),
+  ).added
+  // Inverse miss: LLM emitted budget + timeline but dropped the vendor →
+  // recover the vendor from the budget's vendor_name.
+  const vendorMissing = completePackages(
+    [budget(650, 'Table flowers and candles', 'Petal & Stem'), timeline('2026-07-10T17:15:00')],
+    FLORAL,
+    ctx,
+  ).added
+  // A budget with no vendor_name is not a package → never fabricate a vendor.
+  const noVendorName = completePackages(
+    [budget(500, 'Decor budget', null)],
+    'Maybe we can spend around $500 on decor.',
+    ctx,
+  ).added
+  // Vendor already in the plan → do not re-create it.
+  const vendorInPlan = completePackages(
+    [budget(650, 'Flowers', 'Petal & Stem')],
+    'Petal & Stem flowers for $650.',
+    welcomePartyContext({ existing_vendors: [{ id: 'v1', name: 'Petal & Stem', category: 'Florals', status: 'confirmed', estimated_cost: null, contact_name: null, email: null, phone: null, notes: null }] }),
+  ).added
+
+  const checks: Array<{ name: string; pass: boolean }> = [
+    { name: 'floral one-sentence package completes budget + timeline', pass: has(full, 'budget_item') && has(full, 'timeline_item') && budgetCost(full)?.estimated_cost === 650 && tlStart(full) === '2026-07-10T17:15:00' },
+    { name: 'existing batch budget is not duplicated (timeline only)', pass: !has(budgetPresent, 'budget_item') && has(budgetPresent, 'timeline_item') },
+    { name: 'fully-covered package adds nothing', pass: bothPresent.length === 0 },
+    { name: 'cost-only note completes budget, not timeline', pass: has(costOnly, 'budget_item') && !has(costOnly, 'timeline_item') && budgetCost(costOnly)?.estimated_cost === 120 },
+    { name: 'time-only note completes timeline, not budget', pass: has(timeOnly, 'timeline_item') && !has(timeOnly, 'budget_item') },
+    { name: 'vendor with no stated cost/time completes nothing', pass: noFacts.length === 0 },
+    { name: 'coreference across next sentence (They quoted...) completes both', pass: has(coref, 'budget_item') && has(coref, 'timeline_item') && budgetCost(coref)?.estimated_cost === 2900 },
+    { name: 'ambiguous two amounts in scope completes no budget', pass: !has(ambiguous, 'budget_item') },
+    { name: 'bare single time with no action word completes no timeline', pass: !has(bareTime, 'timeline_item') },
+    { name: 'budget already in the plan is not re-added', pass: !has(planHasBudget, 'budget_item') },
+    { name: 'dropped vendor is recovered from budget vendor_name', pass: has(vendorMissing, 'vendor') && vendorName(vendorMissing) === 'Petal & Stem' && !has(vendorMissing, 'budget_item') && !has(vendorMissing, 'timeline_item') },
+    { name: 'budget with no vendor_name never fabricates a vendor', pass: noVendorName.length === 0 },
+    { name: 'vendor already in the plan is not re-created', pass: !has(vendorInPlan, 'vendor') },
+  ]
+
+  console.log('\nPackage completion unit checks:')
+  for (const check of checks) {
+    console.log(`- ${check.pass ? 'PASS' : 'FAIL'}: ${check.name}`)
+  }
+  return checks.every((check) => check.pass)
+}
+
+// ─── Package recall (live LLM + app-side completion, repeat-run) ──────────────
+
+interface RecallScenario {
+  name: string
+  text: string
+  context?: EventStateContext
+  expect: UpdateType[]
+  runs: number
+}
+
+const RECALL_SCENARIOS: RecallScenario[] = [
+  {
+    name: 'Floral package (Petal & Stem $650 + 5:15 PM)',
+    text: 'Petal & Stem can do table flowers and candles for $650 and will deliver at 5:15 PM.',
+    expect: ['vendor', 'budget_item', 'timeline_item'],
+    runs: 10,
+  },
+  {
+    name: 'Photographer package (Beacon $450 + 6:30-8:30)',
+    text: 'Beacon Photo Co is confirmed for photography from 6:30 PM to 8:30 PM for $450. Contact is Maya at maya@beaconphoto.co.',
+    expect: ['vendor', 'budget_item', 'timeline_item'],
+    runs: 5,
+  },
+  {
+    name: 'Catering replacement (North End Table $2,900 + 5:15 setup)',
+    text: "North End Table is replacing Lucia's for dinner service. They quoted $2,900 and will arrive for setup at 5:15 PM.",
+    context: welcomePartyContext({
+      existing_vendors: [{ id: 'lucias-1', name: "Lucia's", category: 'Venue', status: 'confirmed', estimated_cost: null, contact_name: null, email: null, phone: null, notes: null }],
+    }),
+    expect: ['vendor', 'budget_item', 'timeline_item'],
+    runs: 5,
+  },
+]
+
+const RECALL_NEGATIVE: Array<{ name: string; text: string; forbid: UpdateType[] }> = [
+  { name: '"look into flowers" → no vendor/budget/timeline', text: 'We should look into flowers.', forbid: ['vendor', 'budget_item', 'timeline_item'] },
+  { name: '"vendor situation unclear" → no fabricated records', text: 'The vendor situation is still unclear.', forbid: ['vendor', 'budget_item', 'timeline_item'] },
+  { name: '"maybe ~$500 on decor" → no fabricated vendor', text: 'Maybe we can spend around $500 on decor.', forbid: ['vendor'] },
+]
+
+async function runPackageRecall(
+  llmExtract: (text: string, history: never[], ctx: EventStateContext) => Promise<{ items: ExtractedItem[] }>,
+): Promise<boolean> {
+  console.log('\n=== Package recall (LLM + app-side completion) ===')
+  let allOk = true
+
+  for (const scenario of RECALL_SCENARIOS) {
+    const ctx = scenario.context ?? eventStateContext
+    let hits = 0
+    const breakdown: string[] = []
+    for (let i = 0; i < scenario.runs; i++) {
+      try {
+        const { items } = await llmExtract(scenario.text, [], ctx)
+        const completed = completePackages(items, scenario.text, ctx).added
+        const all = [...items, ...completed]
+        const present = scenario.expect.every((t) => all.some((it) => it.update_type === t))
+        if (present) hits++
+        breakdown.push(present ? '✓' : `✗(${scenario.expect.filter((t) => !all.some((it) => it.update_type === t)).join('/')})`)
+      } catch {
+        breakdown.push('ERR')
+      }
+    }
+    const rate = `${hits}/${scenario.runs}`
+    const ok = hits >= Math.ceil(scenario.runs * 0.9)
+    if (!ok) allOk = false
+    console.log(`- ${ok ? 'PASS' : 'WARN'} ${rate} ${scenario.name}  [${breakdown.join(' ')}]`)
+  }
+
+  for (const neg of RECALL_NEGATIVE) {
+    try {
+      const { items } = await llmExtract(neg.text, [], eventStateContext)
+      const completed = completePackages(items, neg.text, eventStateContext).added
+      const all = [...items, ...completed]
+      const violations = neg.forbid.filter((t) => all.some((it) => it.update_type === t))
+      const ok = violations.length === 0
+      if (!ok) allOk = false
+      console.log(`- ${ok ? 'PASS' : 'FAIL'} ${neg.name}${ok ? '' : ` (found: ${violations.join(', ')})`}`)
+    } catch {
+      console.log(`- ERR ${neg.name}`)
+    }
+  }
+
+  return allOk
+}
+
 async function main() {
   const supersessionOk = runSupersessionChecks()
   const reconcileOk = runReconcileChecks()
-  if (!supersessionOk || !reconcileOk) {
+  const packageOk = runPackageCompletionChecks()
+  if (!supersessionOk || !reconcileOk || !packageOk) {
     process.exitCode = 1
   }
 
@@ -697,6 +873,11 @@ async function main() {
     } catch (err) {
       console.log(`ERROR: ${err instanceof Error ? err.message : String(err)}`)
     }
+  }
+
+  const recallOk = await runPackageRecall(llmExtract)
+  if (!recallOk) {
+    console.log('\nNote: package recall below target on one or more scenarios (LLM variance + app-side floor).')
   }
 }
 
