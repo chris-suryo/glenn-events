@@ -98,6 +98,15 @@ export interface AiRun {
   output_json: Json | null
   created_by: string
   created_at: string
+  // M22 telemetry (migration 011) — null on mock-mode runs.
+  model: string | null
+  provider: string | null
+  source_type: 'text' | 'pdf' | 'image' | null
+  input_tokens: number | null
+  output_tokens: number | null
+  total_tokens: number | null
+  estimated_cost_usd: number | null
+  duration_ms: number | null
 }
 
 // ─── Proposed Update payload shapes ──────────────────────────────────────────

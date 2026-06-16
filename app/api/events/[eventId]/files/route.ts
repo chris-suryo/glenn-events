@@ -94,8 +94,9 @@ export async function POST(
   const isPdf = mime_type === 'application/pdf'
   const isImage = mime_type === 'image/png' || mime_type === 'image/jpeg'
 
-  // Insert the managed library item. Images are source-only in this branch.
-  const initialStatus: FileStatus = isImage ? 'source_only' : 'extracting'
+  // Insert the managed library item. Images (PNG/JPG screenshots) extract
+  // through the same pipeline as PDFs via Claude vision (M22).
+  const initialStatus: FileStatus = 'extracting'
   const { data: fileRow, error: insertErr } = await supabase
     .from('files')
     .insert({
@@ -115,19 +116,6 @@ export async function POST(
   if (insertErr || !fileRow) {
     console.error('files insert error:', insertErr)
     return NextResponse.json({ error: 'Failed to register file' }, { status: 500 })
-  }
-
-  // Images: store as source only (no extraction in this branch).
-  if (isImage) {
-    await logFileUploaded(supabase, eventId, user.id, {
-      fileId: file_id,
-      filename,
-      displayName,
-      aiRunId: null,
-      proposedCount: 0,
-      outcome: 'source_only',
-    })
-    return NextResponse.json({ file_id, status: 'source_only' satisfies FileStatus })
   }
 
   // Pull the bytes/text back from Storage for extraction.
@@ -170,6 +158,18 @@ export async function POST(
         userId: user.id,
         inputText: '',
         attachment: { kind: 'pdf', mediaType: 'application/pdf', base64 },
+        channel: 'file',
+        fileDisplayName: displayName,
+        fileName: filename,
+      })
+    } else if (isImage) {
+      const base64 = Buffer.from(await blob.arrayBuffer()).toString('base64')
+      result = await runExtraction({
+        supabase,
+        eventId,
+        userId: user.id,
+        inputText: '',
+        attachment: { kind: 'image', mediaType: mime_type, base64 },
         channel: 'file',
         fileDisplayName: displayName,
         fileName: filename,

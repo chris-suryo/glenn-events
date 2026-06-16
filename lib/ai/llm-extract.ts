@@ -501,12 +501,21 @@ export interface FileExtractionMeta {
   labels: string[] | null
 }
 
+export interface LLMUsage {
+  input_tokens: number
+  output_tokens: number
+  cache_read_input_tokens?: number | null
+  cache_creation_input_tokens?: number | null
+}
+
 export interface LLMResult {
   items: ExtractedItem[]
   responseMessage: string
   understoodSummary: string[]
   recommendedSummary: string[]
   fileMeta?: FileExtractionMeta
+  model?: string
+  usage?: LLMUsage | null
 }
 
 // A document/image attached to an extraction request. Sent to Claude as a
@@ -632,6 +641,13 @@ export async function llmExtract(
     console.warn('extract: llm response truncated at max_tokens — batch may be incomplete')
   }
 
+  const usage: LLMUsage = {
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
+  }
+
   const toolBlock = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
   if (!toolBlock) {
     return {
@@ -639,6 +655,8 @@ export async function llmExtract(
       responseMessage: "Got it — I saved your note. I didn't find anything to update in the plan yet.",
       understoodSummary: [],
       recommendedSummary: [],
+      model,
+      usage,
     }
   }
 
@@ -757,5 +775,7 @@ export async function llmExtract(
     understoodSummary,
     recommendedSummary: normalizeSummary(raw.recommended_summary),
     ...(fileMeta ? { fileMeta } : {}),
+    model,
+    usage,
   }
 }

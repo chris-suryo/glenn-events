@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import type { Event, EventFile } from '@/lib/types'
+import type { AiRun, Event, EventFile } from '@/lib/types'
 import { FileLibrary, type FileCardData } from '@/components/event/file-library'
+import { formatAiRunDebug, showAiDebug } from '@/lib/ai/debug-format'
 
 interface PageProps {
   params: Promise<{ eventId: string }>
@@ -39,9 +40,28 @@ export default async function EventLibraryPage({ params }: PageProps) {
     }
   }
 
+  // Dev-only: pull per-run cost telemetry so the card can show a debug line.
+  const debugByRun = new Map<string, string>()
+  if (showAiDebug() && aiRunIds.length > 0) {
+    const { data: runs } = await supabase
+      .from('ai_runs')
+      .select('id, model, total_tokens, estimated_cost_usd')
+      .in('id', aiRunIds)
+    for (const r of (runs ?? []) as Pick<AiRun, 'id' | 'model' | 'total_tokens' | 'estimated_cost_usd'>[]) {
+      const line = formatAiRunDebug(r)
+      if (line) debugByRun.set(r.id, line)
+    }
+  }
+
   const cards: FileCardData[] = fileRows.map((file) => {
     const t = file.ai_run_id ? tallies.get(file.ai_run_id) : undefined
-    return { file, pending: t?.pending ?? 0, applied: t?.applied ?? 0, total: t?.total ?? 0 }
+    return {
+      file,
+      pending: t?.pending ?? 0,
+      applied: t?.applied ?? 0,
+      total: t?.total ?? 0,
+      debug: file.ai_run_id ? debugByRun.get(file.ai_run_id) ?? null : null,
+    }
   })
 
   return <FileLibrary event={event as Event} eventId={eventId} files={cards} />

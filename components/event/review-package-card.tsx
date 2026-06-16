@@ -44,6 +44,7 @@ import {
   type ReviewPackage,
 } from '@/lib/review'
 import { cn, formatDistanceToNow } from '@/lib/utils'
+import { formatAiRunDebug, showAiDebug } from '@/lib/ai/debug-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -928,6 +929,11 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
               <span className="text-[11px] text-muted-foreground" suppressHydrationWarning>{formatDistanceToNow(pkg.createdAt)}</span>
             ) : null}
           </span>
+          {showAiDebug() && formatAiRunDebug(pkg.aiRun) ? (
+            <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
+              AI run · {formatAiRunDebug(pkg.aiRun)} · {counts.total} proposal{counts.total === 1 ? '' : 's'}
+            </span>
+          ) : null}
         </span>
       </button>
 

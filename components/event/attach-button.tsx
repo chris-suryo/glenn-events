@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { Paperclip, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -18,20 +18,21 @@ interface AttachButtonProps {
   onUploadError: () => void
 }
 
-export function AttachButton({
-  eventId,
-  disabled,
-  onUploadStart,
-  onUploadReply,
-  onUploadError,
-}: AttachButtonProps) {
+/** Imperative handle so the composer can route a pasted screenshot through the
+ *  same upload → extraction path as the paperclip. */
+export interface AttachButtonHandle {
+  uploadFile: (file: File) => void
+}
+
+export const AttachButton = forwardRef<AttachButtonHandle, AttachButtonProps>(function AttachButton(
+  { eventId, disabled, onUploadStart, onUploadReply, onUploadError },
+  ref,
+) {
   const supabase = createClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
 
-  async function handlePick(files: FileList | null) {
-    const file = files?.[0]
-    if (!file) return
+  async function uploadOne(file: File) {
     setBusy(true)
     onUploadStart(file.name)
     const result = await uploadEventFile(file, eventId, supabase)
@@ -42,6 +43,14 @@ export function AttachButton({
       return
     }
     onUploadReply(result.assistant_message ?? '')
+  }
+
+  useImperativeHandle(ref, () => ({ uploadFile: (file: File) => void uploadOne(file) }))
+
+  function handlePick(files: FileList | null) {
+    const file = files?.[0]
+    if (!file) return
+    void uploadOne(file)
   }
 
   return (
@@ -71,4 +80,4 @@ export function AttachButton({
       </button>
     </>
   )
-}
+})

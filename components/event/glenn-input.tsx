@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { AttachButton } from './attach-button'
+import { AttachButton, type AttachButtonHandle } from './attach-button'
 
 interface GlennInputProps {
   eventId: string
@@ -52,6 +52,7 @@ export function GlennInput({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submitInFlightRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const attachRef = useRef<AttachButtonHandle>(null)
   const [randomPlaceholder, setRandomPlaceholder] = useState(PLACEHOLDERS[0])
   useEffect(() => {
     // Intentional post-hydration randomization — avoids server/client mismatch
@@ -137,6 +138,20 @@ export function GlennInput({
     onSubmitError?.()
   }
 
+  // Paste a screenshot straight into the composer → same upload → extraction
+  // path as the paperclip. Only intercept image blobs; leave text paste alone.
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (isSubmitting) return
+    const imageItem = Array.from(e.clipboardData.items).find((item) => item.type.startsWith('image/'))
+    if (!imageItem) return
+    const blob = imageItem.getAsFile()
+    if (!blob) return
+    e.preventDefault()
+    const ext = blob.type === 'image/png' ? 'png' : 'jpg'
+    const named = new File([blob], blob.name || `pasted-screenshot-${Date.now()}.${ext}`, { type: blob.type })
+    attachRef.current?.uploadFile(named)
+  }
+
   if (variant === 'plain') {
     return (
       <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
@@ -146,6 +161,7 @@ export function GlennInput({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={placeholder}
             className="min-h-[64px] resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
             disabled={isSubmitting}
@@ -153,6 +169,7 @@ export function GlennInput({
 
           <div className="mt-2 flex items-center justify-between">
             <AttachButton
+              ref={attachRef}
               eventId={eventId}
               disabled={isSubmitting}
               onUploadStart={handleUploadStart}
@@ -193,6 +210,7 @@ export function GlennInput({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={placeholder}
             className="resize-none border-0 shadow-none focus-visible:ring-0 p-0 text-sm leading-relaxed min-h-[80px] bg-transparent"
             disabled={isSubmitting}
@@ -223,6 +241,7 @@ export function GlennInput({
           </p>
           <div className="flex items-center gap-1.5 shrink-0">
             <AttachButton
+              ref={attachRef}
               eventId={eventId}
               disabled={isSubmitting}
               onUploadStart={handleUploadStart}

@@ -29,6 +29,8 @@ export interface FileCardData {
   pending: number
   applied: number
   total: number
+  // Dev-only AI cost line, precomputed server-side. Gated by NEXT_PUBLIC_SHOW_AI_DEBUG.
+  debug?: string | null
 }
 
 interface PendingUpload {
@@ -305,6 +307,9 @@ export function FileLibrary({
                     <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{file.extraction_summary}</p>
                   )}
                   {tally && <p className="text-[11px] font-medium text-muted-foreground">{tally}</p>}
+                  {counts.debug && (
+                    <p className="font-mono text-[11px] text-muted-foreground">Processed by {counts.debug}</p>
+                  )}
                   {file.status === 'failed' && file.processing_error && (
                     <p className="text-xs text-rose-600">{file.processing_error}</p>
                   )}

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { mockExtract, groupExtracted, summarizeExtracted, type ExtractedItem } from '@/lib/ai/mock-extract'
-import { llmExtract, type ExtractAttachment } from '@/lib/ai/llm-extract'
+import { llmExtract, type ExtractAttachment, type LLMUsage } from '@/lib/ai/llm-extract'
+import { estimateCostUsd } from '@/lib/ai/pricing'
 import { dedupeExtractedItems, reconcileAgainstPending, type PendingProposalLite } from '@/lib/ai/dedupe'
 import { completePackages } from '@/lib/ai/complete-packages'
 import { composeFileReply, type FileReplyScenario, type ReplyItem } from '@/lib/ai/compose-reply'
@@ -490,12 +491,52 @@ export type RunExtractionResult =
   | { ok: true; data: RunExtractionData }
   | { ok: false; status: number; error: string }
 
-function fileInstruction(displayName: string): string {
-  return (
+interface AiRunTelemetry {
+  model: string
+  provider: string
+  source_type: 'text' | 'pdf' | 'image'
+  input_tokens: number | null
+  output_tokens: number | null
+  total_tokens: number | null
+  estimated_cost_usd: number | null
+  duration_ms: number
+}
+
+function buildTelemetry(
+  model: string | undefined,
+  usage: LLMUsage | null | undefined,
+  attachment: ExtractAttachment | null,
+  durationMs: number,
+): AiRunTelemetry {
+  const sourceType: AiRunTelemetry['source_type'] = attachment ? attachment.kind : 'text'
+  const inputTokens = usage?.input_tokens ?? null
+  const outputTokens = usage?.output_tokens ?? null
+  const totalTokens = inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null
+  return {
+    model: model ?? 'unknown',
+    provider: 'anthropic',
+    source_type: sourceType,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: totalTokens,
+    estimated_cost_usd: model ? estimateCostUsd(model, usage) : null,
+    duration_ms: durationMs,
+  }
+}
+
+function fileInstruction(displayName: string, kind: ExtractAttachment['kind'] | null): string {
+  const base =
     `This is an uploaded file named "${displayName}". Read it carefully. ` +
     `Transcribe its key content into source_text, suggest a concise file_title, a file_category, and up to 4 file_labels, ` +
     `then extract any event updates it states — vendors, costs, quotes, deposits, timing, tasks, decisions, risks, or open questions. ` +
     `Only extract facts actually stated in the file. If you cannot read it confidently, leave the item arrays empty and say so.`
+  if (kind !== 'image') return base
+  return (
+    base +
+    ` This file is a screenshot — likely of a text message, email, vendor quote, menu, or itinerary. ` +
+    `Extract only facts explicitly visible in the image. Do not infer dates, prices, names, or quantities that are not clearly shown. ` +
+    `If a value is ambiguous or cut off, raise it as an open_question rather than guessing. ` +
+    `Ignore UI chrome, app names, timestamps, status bars, and signatures.`
   )
 }
 
@@ -773,10 +814,14 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
     let documentReadable = !attachment // typed-text & TXT sources are always "read"
 
     const extractionMode: ExtractionMode = process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'mock'
-    const llmInput = attachment ? fileInstruction(displayName) : inputText
+    const llmInput = attachment ? fileInstruction(displayName, attachment.kind) : inputText
     const summarySource = isFile ? displayName : inputText
 
+    // Telemetry — populated only for real LLM runs; mock mode leaves it null.
+    let telemetry: AiRunTelemetry | null = null
+
     if (extractionMode === 'anthropic') {
+      const startedAt = Date.now()
       try {
         const result = await llmExtract(
           llmInput,
@@ -784,6 +829,7 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
           eventStateContext,
           attachment ? { attachment } : undefined,
         )
+        telemetry = buildTelemetry(result.model, result.usage, attachment, Date.now() - startedAt)
         rawExtracted = result.items
         assistantContent = result.responseMessage
         if (result.fileMeta) {
@@ -940,6 +986,7 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
         input_text: isFile ? llmInput : inputText,
         output_json: outputJson,
         created_by: userId,
+        ...(telemetry ?? {}),
       })
       .select('id')
       .single()
