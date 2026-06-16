@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import type { AiRun, Event, Message, ProposedUpdate } from '@/lib/types'
+import type { AiRun, Event, EventFile, Message, ProposedUpdate } from '@/lib/types'
 import { ChatView } from '@/components/event/chat-view'
 
 interface PageProps {
@@ -13,7 +13,7 @@ export default async function EventChatPage({ params, searchParams }: PageProps)
   const { source } = await searchParams
   const supabase = await createClient()
 
-  const [{ data: event }, { data: messages }, { data: pendingUpdates }] = await Promise.all([
+  const [{ data: event }, { data: messages }, { data: pendingUpdates }, { data: files }] = await Promise.all([
     supabase.from('events').select('*').eq('id', eventId).single(),
     supabase.from('messages').select('*').eq('event_id', eventId).order('created_at'),
     supabase
@@ -22,6 +22,7 @@ export default async function EventChatPage({ params, searchParams }: PageProps)
       .eq('event_id', eventId)
       .eq('status', 'pending')
       .order('created_at'),
+    supabase.from('files').select('*').eq('event_id', eventId),
   ])
 
   if (!event) notFound()
@@ -39,6 +40,7 @@ export default async function EventChatPage({ params, searchParams }: PageProps)
       messages={(messages ?? []) as Message[]}
       pendingUpdates={(pendingUpdates ?? []) as ProposedUpdate[]}
       aiRuns={(aiRuns ?? []) as AiRun[]}
+      files={(files ?? []) as EventFile[]}
       highlightMessageId={source ?? null}
     />
   )

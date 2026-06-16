@@ -148,6 +148,23 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
         description: '1-6 concise bullets summarizing the plan changes Glenn recommends. Use action-first event-planner language. No database terms and no duplicate/overlapping bullets.',
         items: { type: 'string' },
       },
+      source_text: {
+        type: 'string',
+        description: 'ONLY when the user message includes an attached document or image: a faithful plain-text transcription of its key content (max ~1500 chars). Leave empty for normal typed notes.',
+      },
+      file_title: {
+        type: 'string',
+        description: 'ONLY for an attached file you can read confidently: a concise human title for it, e.g. "Beacon Photo Co quote — photography coverage". Leave empty if it is a typed note or you cannot read the file confidently.',
+      },
+      file_category: {
+        type: 'string',
+        description: 'ONLY for an attached file: one short category such as "Vendor quote", "Contract", "Menu", "Invoice", "Itinerary", "Floorplan", or "Uploaded document". Leave empty for typed notes.',
+      },
+      file_labels: {
+        type: 'array',
+        description: 'ONLY for an attached file: up to 4 short labels describing what it touches, e.g. ["Photography", "Budget", "Timeline"]. Leave empty for typed notes.',
+        items: { type: 'string' },
+      },
       tasks: {
         type: 'array',
         description: 'Action items someone needs to do',
@@ -462,6 +479,10 @@ interface LLMOutput {
   response_message: string
   understood_summary: string[]
   recommended_summary: string[]
+  source_text?: string
+  file_title?: string
+  file_category?: string
+  file_labels?: string[]
   tasks: RawTask[]
   vendors: RawVendor[]
   budget_items: RawBudgetItem[]
@@ -471,12 +492,52 @@ interface LLMOutput {
   open_questions: RawOpenQuestion[]
 }
 
+// Optional AI-derived file metadata + transcription, populated only when an
+// attachment is present. Undefined for typed-chat extractions.
+export interface FileExtractionMeta {
+  sourceText: string | null
+  title: string | null
+  category: string | null
+  labels: string[] | null
+}
+
+export interface LLMUsage {
+  input_tokens: number
+  output_tokens: number
+  cache_read_input_tokens?: number | null
+  cache_creation_input_tokens?: number | null
+}
+
 export interface LLMResult {
   items: ExtractedItem[]
   responseMessage: string
   understoodSummary: string[]
   recommendedSummary: string[]
+  fileMeta?: FileExtractionMeta
+  model?: string
+  usage?: LLMUsage | null
 }
+
+// A document/image attached to an extraction request. Sent to Claude as a
+// native document/image content block — no external OCR.
+export interface ExtractAttachment {
+  kind: 'pdf' | 'image'
+  mediaType: string
+  base64: string
+}
+
+export interface ExtractOptions {
+  attachment?: ExtractAttachment | null
+}
+
+// The extraction seam. Claude-native multimodal today; a future engine can
+// route by file type for cost/accuracy without changing callers.
+export type ExtractEngine = (
+  inputText: string,
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+  eventStateContext?: EventStateContext,
+  options?: ExtractOptions,
+) => Promise<LLMResult>
 
 // An update without a target id can't merge anywhere — treat it as a plain insert.
 // An archive stays an archive even without a target: inserting a "canceled" record
@@ -523,7 +584,9 @@ export async function llmExtract(
   inputText: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   eventStateContext?: EventStateContext,
+  options?: ExtractOptions,
 ): Promise<LLMResult> {
+  const attachment = options?.attachment ?? null
   const isFirstExtraction = !history.some((message) => message.role === 'assistant')
   const reviewReminderRule = isFirstExtraction
     ? '\n\nThis is the user\'s first note for this event. End response_message with one extra line: "Review these in the Review panel — I won\'t touch the plan until you approve them."'
@@ -533,8 +596,33 @@ export async function llmExtract(
     ? SYSTEM_PROMPT + buildEventStateSection(eventStateContext)
     : SYSTEM_PROMPT) + reviewReminderRule
 
+  // Attach the document/image as a native content block. Claude reads it
+  // directly (handles scanned/image-only PDFs); no external OCR.
+  const userContent: Anthropic.MessageParam['content'] = attachment
+    ? [
+        attachment.kind === 'pdf'
+          ? {
+              type: 'document',
+              source: { type: 'base64', media_type: 'application/pdf', data: attachment.base64 },
+            }
+          : {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: attachment.mediaType as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+                data: attachment.base64,
+              },
+            },
+        { type: 'text', text: inputText },
+      ]
+    : inputText
+
+  const model = attachment
+    ? process.env.ANTHROPIC_FILE_EXTRACT_MODEL ?? process.env.ANTHROPIC_EXTRACT_MODEL ?? DEFAULT_EXTRACT_MODEL
+    : process.env.ANTHROPIC_EXTRACT_MODEL ?? DEFAULT_EXTRACT_MODEL
+
   const response = await anthropic.messages.create({
-    model: process.env.ANTHROPIC_EXTRACT_MODEL ?? DEFAULT_EXTRACT_MODEL,
+    model,
     // Item schemas are verbose (operation/target/replaces fields on every
     // item) — long notes hit 4096 and truncate the tool call, which degrades
     // to a near-empty batch. Haiku supports far larger outputs; 8192 gives
@@ -545,12 +633,19 @@ export async function llmExtract(
     system: systemPrompt,
     messages: [
       ...history,
-      { role: 'user', content: inputText },
+      { role: 'user', content: userContent },
     ],
   })
 
   if (response.stop_reason === 'max_tokens') {
     console.warn('extract: llm response truncated at max_tokens — batch may be incomplete')
+  }
+
+  const usage: LLMUsage = {
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    cache_read_input_tokens: response.usage.cache_read_input_tokens,
+    cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
   }
 
   const toolBlock = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
@@ -560,6 +655,8 @@ export async function llmExtract(
       responseMessage: "Got it — I saved your note. I didn't find anything to update in the plan yet.",
       understoodSummary: [],
       recommendedSummary: [],
+      model,
+      usage,
     }
   }
 
@@ -657,10 +754,28 @@ export async function llmExtract(
 
   const understoodSummary = normalizeSummary(raw.understood_summary)
 
+  const cleanString = (value: unknown): string | null => {
+    const text = typeof value === 'string' ? value.trim() : ''
+    return text.length > 0 ? text : null
+  }
+  const fileMeta: FileExtractionMeta | undefined = attachment
+    ? {
+        sourceText: cleanString(raw.source_text),
+        title: cleanString(raw.file_title),
+        category: cleanString(raw.file_category),
+        labels: Array.isArray(raw.file_labels)
+          ? raw.file_labels.filter((l): l is string => typeof l === 'string' && l.trim().length > 0).slice(0, 4)
+          : null,
+      }
+    : undefined
+
   return {
     items,
     responseMessage: sanitizeResponseMessage(raw.response_message ?? '', understoodSummary),
     understoodSummary,
     recommendedSummary: normalizeSummary(raw.recommended_summary),
+    ...(fileMeta ? { fileMeta } : {}),
+    model,
+    usage,
   }
 }

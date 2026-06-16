@@ -5,6 +5,40 @@
 > This document is the bridge: where the product is going and the
 > branch-sized path to get there. Written June 2026, post-m16.
 
+## 0. M19 Direction Update (post-M18)
+
+A product-direction pass (full detail in `docs/M19_PRODUCT_DIRECTION.md`)
+sharpened the near-term path. Headlines, all consistent with the thesis:
+
+- **Phone-first is now the headline, not a guardrail.** The planner captures
+  and reviews in the field, on a phone. Capture + review must be genuinely good
+  on mobile before document capture makes the phone primary.
+- **Simpler IA (evolving §2's "stable" claim).** Toward a phone-first hybrid
+  shell — **Today · Ask Glenn · Plan · Event Library · Activity** — where
+  "Today" merges Dashboard + Command Center into one landing. The *surface
+  responsibilities* in §4 are stable; their *phone-first packaging* is the new
+  decision. Records stay atomic; no surface label enters business logic; no
+  rename in code until pilots validate labels.
+- **Event Library = documents as a capture channel** (extends §5 beyond audio).
+  Uploaded PDFs/images become **linked sources of truth** Glenn extracts from:
+  `file → extract text/vision → messages row → existing extract-updates →
+  review batch → Plan`, file persists as the receipt. NOT Dropbox/Drive — files
+  are sources Glenn reads, not inert storage. Safe MVP is store→extract→
+  review→provenance (Stages 1–4); typed contract/menu parsers wait for evidence.
+- **Visual Run of Show** = the *day-of* mode of `timeline_items` (the `type`
+  field already distinguishes), a mobile-vertical lane view with overlap/gap
+  flagging. MVP read-only; drag/edit later.
+- **Reconciled roadmap:** m17 (review-state reconciliation) and m18 (coordinated
+  package recall) shipped. Next 8: **m19-deployment-readiness →
+  m20-entity-linking-vendor-anchor → m21-mobile-first-responsive-polish →
+  m22-event-library-file-upload → m23-document-image-extraction →
+  m24-today-command-center-refresh → m25-visual-run-of-show →
+  m26-guided-create-to-intake.** (The m17–m24 table in §6 below predates this
+  reconciliation; M19 doc §8 is authoritative.)
+- **Tomorrow:** deployment readiness — every phone-first, document, channel, and
+  pilot ambition is blocked on a hosted URL, and the loop is reliable enough to
+  ship.
+
 ## 1. Product Vision (future state)
 
 Glenn turns messy event updates into a trusted, current event plan.

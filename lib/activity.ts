@@ -33,6 +33,11 @@ function metadataString(entry: ActivityLog, key: string): string | null {
 export function activityLabel(entry: ActivityLog): string {
   const label = metadataString(entry, 'label')
 
+  if (entry.action === 'file_uploaded') {
+    const name = metadataString(entry, 'display_name') ?? metadataString(entry, 'filename') ?? 'a file'
+    return metadataString(entry, 'outcome') === 'failed' ? `Couldn't read ${name}` : `Uploaded ${name}`
+  }
+
   if (entry.action === 'proposed_updates_created') {
     const total = isRecord(entry.metadata_json) && typeof entry.metadata_json.total === 'number'
       ? entry.metadata_json.total
@@ -163,7 +168,29 @@ export function activityDot(action: string): string {
   if (action === 'record_updated')           return 'bg-sky-400'
   if (action === 'record_archived')          return 'bg-rose-500'
   if (action === 'proposed_update_superseded') return 'bg-slate-400'
+  if (action === 'file_uploaded')            return 'bg-violet-500'
   return 'bg-indigo-400'
+}
+
+// The source batch an entry belongs to (its ai_run). proposed_updates_created
+// carries the run id as entity_id; approvals/rejections/uploads carry it in
+// metadata. Returns null for standalone actions (manual edits) — those stay flat.
+export function activityRunId(entry: ActivityLog): string | null {
+  if (entry.action === 'proposed_updates_created') return entry.entity_id
+  if (isRecord(entry.metadata_json)) {
+    const value = entry.metadata_json.ai_run_id
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return null
+}
+
+// Glenn-attributed actions read as "Glenn …"; the rest are the user's actions.
+const GLENN_ATTRIBUTED = new Set(['proposed_updates_created', 'proposed_update_superseded'])
+
+export function activityActor(entry: ActivityLog, currentUserId: string | null): string | null {
+  if (GLENN_ATTRIBUTED.has(entry.action)) return null
+  if (!entry.actor_user_id) return null
+  return entry.actor_user_id === currentUserId ? 'You' : 'A teammate'
 }
 
 export function timeAgo(iso: string): string {

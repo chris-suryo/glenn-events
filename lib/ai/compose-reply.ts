@@ -1,0 +1,100 @@
+import type { UpdateType } from '@/lib/types'
+
+// Deterministic Glenn replies for file-upload scenarios. Structure is templated
+// (consistent, scannable, never claims an apply); the human bullets come from
+// extraction. Renders through GlennMessageContent markdown — section headers are
+// bold paragraphs, items are bullet blocks (blank line separates them).
+//
+// Branch 1 covers the file scenarios only. A later branch generalizes this
+// composer to typed-note updates, package completion, and failures.
+
+export interface ReplyItem {
+  type: UpdateType
+  label: string
+}
+
+const TYPE_LABEL: Record<UpdateType, string> = {
+  task: 'Task',
+  vendor: 'Vendor',
+  budget_item: 'Budget',
+  timeline_item: 'Timeline',
+  decision: 'Decision',
+  risk: 'Risk',
+  open_question: 'Question',
+}
+
+export type FileReplyScenario =
+  | 'updates'
+  | 'no_updates'
+  | 'low_confidence'
+  | 'failed'
+
+export interface FileReplyInput {
+  scenario: FileReplyScenario
+  displayName: string
+  fileName: string
+  ready?: ReplyItem[]
+  needsConfirmation?: string[]
+  removals?: ReplyItem[]
+}
+
+function bulletBlock(lines: string[]): string {
+  return lines.map((l) => `- ${l}`).join('\n')
+}
+
+export function composeFileReply(input: FileReplyInput): string {
+  const { scenario, displayName, fileName } = input
+  const ready = input.ready ?? []
+  const needsConfirmation = input.needsConfirmation ?? []
+  const removals = input.removals ?? []
+  const storedLine = `**Stored in Event Library** · ${fileName}`
+  const nothingApplied = '_Nothing applied yet._'
+
+  if (scenario === 'failed') {
+    return [
+      `I added **${displayName}** to the Event Library, but I had trouble reading it.`,
+      `It's saved as a source — you can open it directly or try uploading it again.`,
+      nothingApplied,
+    ].join('\n\n')
+  }
+
+  if (scenario === 'low_confidence') {
+    return [
+      `I added **${displayName}** to the Event Library.`,
+      `I couldn't read it confidently, so I kept it as a source for now — nothing to review.`,
+    ].join('\n\n')
+  }
+
+  if (scenario === 'no_updates') {
+    return [
+      `I added **${displayName}** to the Event Library.`,
+      `I didn't find anything that needs a plan change — it's saved as a source.`,
+    ].join('\n\n')
+  }
+
+  // scenario === 'updates'
+  const total = ready.length + needsConfirmation.length + removals.length
+  const countPhrase = total === 1 ? '**1 update**' : `**${total} updates**`
+  const blocks: string[] = [
+    `Got it — I added **${displayName}** to the Event Library and found ${countPhrase} to review.`,
+  ]
+
+  if (ready.length > 0) {
+    blocks.push('**Ready to review**')
+    blocks.push(bulletBlock(ready.map((r) => `${TYPE_LABEL[r.type]}: ${r.label}`)))
+  }
+
+  if (removals.length > 0) {
+    blocks.push('**Removals to confirm**')
+    blocks.push(bulletBlock(removals.map((r) => `${TYPE_LABEL[r.type]}: ${r.label}`)))
+  }
+
+  if (needsConfirmation.length > 0) {
+    blocks.push('**Needs your confirmation**')
+    blocks.push(bulletBlock(needsConfirmation))
+  }
+
+  blocks.push(storedLine)
+  blocks.push(nothingApplied)
+  return blocks.join('\n\n')
+}

@@ -112,20 +112,72 @@ undo/version history; Plan tab consolidation; notifications; integrations.
    stale pending rows via supersedes_proposed_update_id, with
    "Replaced by a newer suggestion" activity entries. Stale needs-answer rows
    and batch accumulation resolve through this.
-4. **m17-entity-consistency-2** — vendor_id population at approve time
-   (budget items get a real FK link to their vendor), replacement-flow
-   coordination (archive-old + insert-new clusters share linkage),
-   task-level cascade follow-ups.
-5. **m18-deployment-setup** — Netlify + hosted Supabase, all migrations,
-   Sentry verified, demo arc smoke-tested on the deployed URL.
-6. **m19-team-invite** — invite flow for event_members + RLS migration
-   widening profiles SELECT to event-mates (fixes approver/assignee names).
-7. **m20-voice-notes** — first capture channel: browser record/transcribe →
-   same extract-updates pipeline; add messages.channel.
+4. **m17-review-state-reconciliation** (DONE) — pending-review reconciliation
+   with `replaces_queued_id`.
+5. **m18-coordinated-package-recall** (DONE) — replacement/cancellation
+   storylines render and recall as one package; app-side completion for
+   vendor + budget + timeline packages.
+6. **m19-product-direction-event-library** (DONE — planning) — phone-first +
+   Event Library direction pass. See `docs/M19_PRODUCT_DIRECTION.md`.
+7. **m20-event-library-upload-extract** (DONE) — file upload → store in private
+   `event-files` bucket → PDF/TXT extraction via the shared `runExtraction`
+   pipeline → Review → provenance. Images source-only. Migration 009.
+8. **m20b-event-library-activity-hardening** (DONE) — fixed file status stuck on
+   "Reading…" (missing files UPDATE RLS policy, migration 010), Ask Glenn
+   composer upload (shared `lib/upload-file.ts` + paperclip), derived Library
+   card states (Ready/Applied/No-updates), and Activity source-batch grouping
+   (file → Glenn proposed N → you applied N) with actor + source links.
+9. **m21-review-package-cards** (DONE) — source-backed Review package cards +
+   source preview drawer (`01d94fb`).
+10. **m22-workspace-docs** (DONE) — workspace / AI-cost / demo playbook docs
+   (`9636b41`).
+11. **m22-image-extraction-with-ai-debug** (DONE — pushed, head `96f38bc`) —
+   PNG/JPG screenshot extraction via Claude vision through the same file →
+   `runExtraction` → Review pipeline as PDFs; screenshot-aware prompting to curb
+   over-extraction; unreadable images degrade to `source_only`. Lightweight AI
+   run telemetry on `ai_runs` (migration 011: model, provider, source_type,
+   input/output/total tokens, estimated_cost_usd, duration_ms; pricing in
+   `lib/ai/pricing.ts`) with a dev-only debug line behind
+   `NEXT_PUBLIC_SHOW_AI_DEBUG=true`. Composer attachment staging — paperclip and
+   image paste stage a preview in the composer; nothing uploads/extracts until
+   **Tell Glenn**. Validation: typecheck / lint / build pass; `test:extract`
+   real-LLM pass (exit 0). Manual QA passed (image upload, screenshot-of-PDF,
+   PDF, telemetry, staging). Observed cost ≈$0.01–0.02/run on Haiku
+   (`docs/AI_COST_AUDIT.md`). This subsumes the planned `m20c-ai-cost-audit`.
 
-Later: guided create-event intake (lighter than the current form; check the
-unmerged fable-production-mvp-run experiment for salvage), Command Center and
-Plan-tab simplification (reactive backlog — only with pilot evidence).
+**Roadmap (post-M22):**
+1. **Wedding scenario validation** — run `docs/DEMO_SCENARIOS.md` §2 end to end
+   to measure extraction quality, Review clarity, source traceability, and
+   **cost per accepted proposal** (record in `docs/AI_COST_AUDIT.md`).
+2. **Frontend polish arc** (capture the audit as `docs/FRONTEND_DIRECTION.md`
+   first), in branches:
+   - `frontend-foundation-tokens-type` — design tokens + typography.
+   - `frontend-glenn-working-states` — loading / pending / working states.
+   - `frontend-source-artifact-previews` — inline image previews in Ask Glenn
+     chat after send (today a sent image is a compact file card), plus Event
+     Library source-card visual polish and organization.
+   - onboarding / dashboard consolidation — **only after** scenario validation.
+
+**Reconciled roadmap (post-M18, predates the M20 reprioritization — file upload
+shipped ahead of deployment; see M19 doc §8 for original detail):**
+1. **m19-deployment-readiness** — Netlify + hosted Supabase, migrations, fresh
+   seed, Sentry verified, demo arc smoke-tested on the URL. *Do this next* —
+   it unblocks phone-first use, documents, pilots, invite, and every channel.
+2. **m20-entity-linking-vendor-anchor** — vendor_id at approve time (the
+   component anchor); extend nullable-FK pattern where extraction is confident.
+3. **m21-mobile-first-responsive-polish** — capture + review + Plan good on a
+   phone before documents make mobile primary.
+4. **m22-event-library-file-upload** — Stage 1: upload/store/link PDF + images.
+5. **m23-document-image-extraction** — Stages 2–4: doc/image → source message →
+   existing extraction → review → provenance leads with the file.
+6. **m24-today-command-center-refresh** — merged "Today" landing (countdown,
+   review count, attention, recent changes).
+7. **m25-visual-run-of-show** — read-only day-of lane view from timeline_items.
+8. **m26-guided-create-to-intake** — guided intake → lands in Ask Glenn.
+
+Later: team invite + voice/email/SMS channels (after the URL exists);
+client-request feasibility mode (a new mode, post-library); Command Center and
+Plan-tab simplification (only with pilot evidence).
 
 ## Screen Responsibilities
 
@@ -148,8 +200,17 @@ vendor marketplace, or autopilot AI. Glenn never changes the plan without
 review. No undo system (snapshots + activity are the safety net). No feature
 ships that doesn't strengthen the core loop.
 
+## Workspace & Playbooks
+
+For session resume and branch closeout, start at `docs/WORKSPACE.md` (base of
+operations), then this checkpoint. Cost telemetry spec + results live in
+`docs/AI_COST_AUDIT.md`; repeatable demo/QA flows in `docs/DEMO_SCENARIOS.md`.
+The Branch Closeout Checklist is in `CLAUDE.md`.
+
 ## Next Steps
 
-1. Merge m14-demo-hardening; run the friendly demo (docs/MVP_DEMO_SCRIPT.md).
-2. m15-plan-consistency-timeline before any pilot.
-3. m16-consolidation-supersession, then deployment (m17).
+1. **m19-deployment-readiness** — ship a hosted URL (the precondition for
+   everything phone-first and document-related). `docs/DEPLOYMENT.md` is the spec.
+2. **m20-entity-linking-vendor-anchor** — the component anchor.
+3. Then the phone-first + Event Library arc (m21–m23). Full direction and
+   rationale in `docs/M19_PRODUCT_DIRECTION.md`.
