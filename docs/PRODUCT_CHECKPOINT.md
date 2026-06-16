@@ -127,14 +127,36 @@ undo/version history; Plan tab consolidation; notifications; integrations.
    composer upload (shared `lib/upload-file.ts` + paperclip), derived Library
    card states (Ready/Applied/No-updates), and Activity source-batch grouping
    (file → Glenn proposed N → you applied N) with actor + source links.
+9. **m21-review-package-cards** (DONE) — source-backed Review package cards +
+   source preview drawer (`01d94fb`).
+10. **m22-workspace-docs** (DONE) — workspace / AI-cost / demo playbook docs
+   (`9636b41`).
+11. **m22-image-extraction-with-ai-debug** (DONE — pushed, head `96f38bc`) —
+   PNG/JPG screenshot extraction via Claude vision through the same file →
+   `runExtraction` → Review pipeline as PDFs; screenshot-aware prompting to curb
+   over-extraction; unreadable images degrade to `source_only`. Lightweight AI
+   run telemetry on `ai_runs` (migration 011: model, provider, source_type,
+   input/output/total tokens, estimated_cost_usd, duration_ms; pricing in
+   `lib/ai/pricing.ts`) with a dev-only debug line behind
+   `NEXT_PUBLIC_SHOW_AI_DEBUG=true`. Composer attachment staging — paperclip and
+   image paste stage a preview in the composer; nothing uploads/extracts until
+   **Tell Glenn**. Validation: typecheck / lint / build pass; `test:extract`
+   real-LLM pass (exit 0). Manual QA passed (image upload, screenshot-of-PDF,
+   PDF, telemetry, staging). Observed cost ≈$0.01–0.02/run on Haiku
+   (`docs/AI_COST_AUDIT.md`). This subsumes the planned `m20c-ai-cost-audit`.
 
-**Near-term next: `m20c-ai-cost-audit`** — before screenshot/image (vision)
-extraction, add durable per-run cost/usage logging (NOT a billing dashboard).
-Track on `ai_runs` (or a sibling table): provider, model, input/output/total/
-cache tokens, estimated USD, source type (text/pdf/image/file/chat), source
-file id, event/user id, status, duration_ms, proposal count (accepted count
-derivable later), error info. Rationale: image extraction multiplies token cost
-and we need visibility into model choice and proposal yield first.
+**Roadmap (post-M22):**
+1. **Wedding scenario validation** — run `docs/DEMO_SCENARIOS.md` §2 end to end
+   to measure extraction quality, Review clarity, source traceability, and
+   **cost per accepted proposal** (record in `docs/AI_COST_AUDIT.md`).
+2. **Frontend polish arc** (capture the audit as `docs/FRONTEND_DIRECTION.md`
+   first), in branches:
+   - `frontend-foundation-tokens-type` — design tokens + typography.
+   - `frontend-glenn-working-states` — loading / pending / working states.
+   - `frontend-source-artifact-previews` — inline image previews in Ask Glenn
+     chat after send (today a sent image is a compact file card), plus Event
+     Library source-card visual polish and organization.
+   - onboarding / dashboard consolidation — **only after** scenario validation.
 
 **Reconciled roadmap (post-M18, predates the M20 reprioritization — file upload
 shipped ahead of deployment; see M19 doc §8 for original detail):**

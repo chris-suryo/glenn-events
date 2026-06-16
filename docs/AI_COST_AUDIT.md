@@ -3,15 +3,15 @@
 Lightweight cost/usage visibility for extraction runs. This is a **dev/debug
 audit aid**, not a billing system, quota engine, or customer-facing dashboard.
 
-The telemetry described here is **planned for M22**
-(`m22-image-extraction-with-ai-debug`); this doc is the spec + the place to
-record results. It will become live once migration 011 + usage plumbing land.
+The telemetry described here is **live as of M22**
+(`m22-image-extraction-with-ai-debug`, head `96f38bc`): migration 011 + usage
+plumbing + the dev debug line all shipped. This doc is the spec + the place to
+record results.
 
-> **Pricing must be verified before it is hard-coded.** The rates in the table
-> below are placeholders. Confirm current Anthropic per-token pricing (via the
-> `claude-api` skill / Anthropic pricing docs) before committing real numbers to
-> `lib/ai/pricing.ts`. An unknown/unverified model should yield `~$?`, never a
-> confidently wrong figure.
+> **Pricing must stay verified.** The rates below were verified 2026-06 against
+> the `claude-api` reference and are hard-coded in `lib/ai/pricing.ts`. Re-verify
+> against current Anthropic pricing when models or rates change. An unknown model
+> yields `~$?` (null), never a confidently wrong figure.
 
 ---
 
@@ -41,14 +41,17 @@ not a failure.
 
 ---
 
-## Placeholder Pricing Table (VERIFY BEFORE USE)
+## Pricing Table (verified 2026-06)
 
-USD per 1M tokens. **Unverified — placeholders only.**
+USD per 1M tokens. Mirrors `lib/ai/pricing.ts`.
 
 | Model | Input / 1M | Output / 1M | Verified? |
 |---|---|---|---|
-| `claude-haiku-4-5` | $TBD | $TBD | ☐ |
-| `claude-sonnet-4-6` | $TBD | $TBD | ☐ |
+| `claude-haiku-4-5` | $1.00 | $5.00 | ✅ |
+| `claude-sonnet-4-6` | $3.00 | $15.00 | ✅ |
+
+Extraction defaults to `claude-haiku-4-5` (`DEFAULT_EXTRACT_MODEL`); attachments
+may override via `ANTHROPIC_FILE_EXTRACT_MODEL`.
 
 Cost formula:
 `estimated_cost_usd = (input_tokens/1e6)*inputPer1M + (output_tokens/1e6)*outputPer1M`
@@ -58,9 +61,27 @@ change is a one-line edit. Unknown model → `null` + `console.warn`.
 
 ---
 
+## Observed Results — M22 Manual QA (2026-06)
+
+Read off the dev debug line with `NEXT_PUBLIC_SHOW_AI_DEBUG=true`. All on
+`claude-haiku-4-5`. (in/out token split, duration, and accepted-count not
+captured in this pass — recorded as totals.)
+
+| # | Source type | Note | Model | Total tok | ~Cost USD | Proposals |
+|---|---|---|---|---|---|---|
+| 1 | image | Screenshot | Haiku | 10.3k | ~$0.014 | 4 |
+| 2 | image/pdf | Beacon (PDF screenshot-style) | Haiku | 12.2k | ~$0.020 | 7 |
+| 3 | pdf | Beacon PDF | Haiku | 11.6k | ~$0.019 | 8 |
+
+Early read: a screenshot/PDF extraction on Haiku lands around **~$0.01–0.02 per
+run** at ~10–12k tokens. Cost-per-accepted-proposal awaits a run where accepted
+counts are tracked (wedding scenario, below).
+
+---
+
 ## Test Results Template
 
-Fill one row per extraction run during M22 QA and the wedding scenario. Read
+Fill one row per extraction run during the wedding scenario. Read
 `model`/tokens/cost/`duration_ms` off the debug line (with
 `NEXT_PUBLIC_SHOW_AI_DEBUG=true`) or directly from `ai_runs`.
 

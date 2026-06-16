@@ -34,7 +34,7 @@ preview; cost line.
 
 ---
 
-## 2. Wedding Scenario — Full Outline (run after M22 image extraction)
+## 2. Wedding Scenario — Full Outline (ready to run — M22 shipped)
 
 A longer, realistic planning flow that stresses multiple source types,
 corrections, and replacements. Run each step as upload/note → Review → apply,
@@ -57,10 +57,12 @@ a live demo.
 
 ---
 
-## 3. Screenshot / Text-Message Scenario — Placeholder (M22)
+## 3. Screenshot / Text-Message Scenario — Shipped (M22)
 
-To be filled once image extraction ships. Target screenshot types and what each
-should yield:
+Image/screenshot extraction is live as of M22 (`m22-image-extraction-with-ai-debug`,
+head `96f38bc`). Upload a screenshot via Event Library, the Ask Glenn paperclip,
+or paste it into the composer. With staging, the file previews in the composer
+and uploads only on **Tell Glenn**. Target screenshot types and what each yields:
 
 - **Text-message screenshot** — extract the concrete commitment (date, time,
   who); ambiguous/cut-off values → open question, not a guess.
@@ -69,9 +71,17 @@ should yield:
 - **Menu screenshot** — reasonable menu items; ignore decorative chrome.
 - **Logistics / itinerary screenshot** — timeline items.
 
-**Acceptance to record here later:** unreadable/blurry image degrades to
-`source_only` (or needs-confirmation), never a silent apply and never a crash;
-the file stays visible in the Library.
+**M22 manual QA (passed):** image upload extracts into Review; a screenshot of a
+PDF extracts correctly; PDF behavior unchanged; the dev cost line appears behind
+`NEXT_PUBLIC_SHOW_AI_DEBUG=true`; composer staging works (paste/attach no longer
+auto-sends); Event Library reflects processed files. Observed costs in
+`docs/AI_COST_AUDIT.md` (≈$0.01–0.02/run on Haiku at ~10–12k tokens). An
+unreadable/blurry image degrades to `source_only` — never a silent apply, never
+a crash, file stays visible.
+
+**Known UI follow-up (roadmap):** Ask Glenn chat renders a sent image as a
+compact file card; inline image previews after send are a later polish item
+(see `docs/PRODUCT_CHECKPOINT.md` → Roadmap).
 
 ---
 

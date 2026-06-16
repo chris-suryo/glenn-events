@@ -13,8 +13,9 @@ and the Branch Closeout Checklist.
 | M20 | Done | Event Library: file upload → private `event-files` bucket → PDF/TXT extraction via shared `runExtraction` → Review → provenance. **Images source-only.** Migration 009. |
 | M20b | Done | Hardening: files UPDATE RLS fix (migration 010), Ask Glenn paperclip upload, derived Library card states, Activity source-batch grouping. |
 | M21 | Done | Source-backed Review package cards + source preview drawer (`01d94fb`). |
-| **m22-workspace-docs** | **this branch** | Workspace + AI cost audit + demo playbook docs. Docs only. |
-| M22 (next, planned) | Planned | `m22-image-extraction-with-ai-debug`: image/screenshot extraction + lightweight AI run telemetry. Migration 011. See `docs/AI_COST_AUDIT.md`. |
+| m22-workspace-docs | Done | Workspace + AI cost audit + demo playbook docs (`9636b41`). Docs only. |
+| **M22** | **Done** | `m22-image-extraction-with-ai-debug` (pushed, head `96f38bc`): PNG/JPG screenshot extraction via Claude vision + lightweight AI run telemetry/debug line + composer attachment staging. Migration 011. See `docs/AI_COST_AUDIT.md`. |
+| Next | Planned | Frontend polish arc (see `docs/PRODUCT_CHECKPOINT.md` → Roadmap) + wedding scenario validation. |
 
 The core loop is unchanged: **messy input or source file → Glenn proposes
 structured plan updates → user reviews (nothing applies silently) → plan updates
