@@ -13,29 +13,19 @@ import {
   X,
   Sparkles,
 } from 'lucide-react'
-import type { Event, EventFile, FileStatus } from '@/lib/types'
+import type { Event, EventFile } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
+import { uploadEventFile, UPLOAD_ACCEPT } from '@/lib/upload-file'
 import { cn, formatDistanceToNow } from '@/lib/utils'
 
-const EXT_MIME: Record<string, string> = {
-  pdf: 'application/pdf',
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  txt: 'text/plain',
-  md: 'text/markdown',
-}
-const ALLOWED_MIME = new Set(Object.values(EXT_MIME))
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
-const ACCEPT = '.pdf,.png,.jpg,.jpeg,.txt,.md,application/pdf,image/png,image/jpeg,text/plain,text/markdown'
-
-const STATUS_PILL: Record<FileStatus, { label: string; className: string; spin?: boolean }> = {
-  uploaded:     { label: 'Uploaded',         className: 'bg-muted text-muted-foreground' },
-  extracting:   { label: 'Reading…',         className: 'bg-amber-500/10 text-amber-600', spin: true },
-  needs_review: { label: 'Ready for review', className: 'bg-indigo-500/10 text-indigo-600' },
-  extracted:    { label: 'No updates',       className: 'bg-muted text-muted-foreground' },
-  source_only:  { label: 'Source only',      className: 'bg-muted text-muted-foreground' },
-  failed:       { label: 'Failed',           className: 'bg-rose-500/10 text-rose-600' },
+// Per-file proposal tallies, computed on the server from proposed_updates so
+// the card can derive "Ready for review (N)" vs "Applied updates" vs "No
+// updates found" without a new DB status.
+export interface FileCardData {
+  file: EventFile
+  pending: number
+  applied: number
+  total: number
 }
 
 interface PendingUpload {
@@ -45,10 +35,41 @@ interface PendingUpload {
   error?: string
 }
 
-function resolveMime(file: File): string {
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-  if (file.type && ALLOWED_MIME.has(file.type)) return file.type
-  return EXT_MIME[ext] ?? file.type ?? ''
+interface DisplayPill {
+  label: string
+  className: string
+  spin?: boolean
+}
+
+const MUTED = 'bg-muted text-muted-foreground'
+
+function deriveDisplay(file: EventFile, counts: Omit<FileCardData, 'file'>): DisplayPill {
+  switch (file.status) {
+    case 'extracting':
+      return { label: 'Reading…', className: 'bg-amber-500/10 text-amber-600', spin: true }
+    case 'failed':
+      return { label: 'Failed', className: 'bg-rose-500/10 text-rose-600' }
+    case 'source_only':
+      return { label: 'Source only', className: MUTED }
+    case 'extracted':
+      return { label: 'No updates found', className: MUTED }
+    case 'uploaded':
+      return { label: 'Uploaded', className: MUTED }
+    case 'needs_review':
+      if (counts.pending > 0) return { label: 'Ready for review', className: 'bg-indigo-500/10 text-indigo-600' }
+      if (counts.applied > 0) return { label: 'Applied updates', className: 'bg-emerald-500/10 text-emerald-600' }
+      return { label: 'Reviewed', className: MUTED }
+    default:
+      return { label: 'Uploaded', className: MUTED }
+  }
+}
+
+function countsLine(counts: Omit<FileCardData, 'file'>): string | null {
+  if (counts.total === 0) return null
+  const parts = [`${counts.total} update${counts.total !== 1 ? 's' : ''} found`]
+  if (counts.pending > 0) parts.push(`${counts.pending} pending`)
+  if (counts.applied > 0) parts.push(`${counts.applied} applied`)
+  return parts.join(' · ')
 }
 
 function FileIcon({ mime, className }: { mime: string | null; className?: string }) {
@@ -66,11 +87,11 @@ function formatBytes(bytes: number | null): string {
 export function FileLibrary({
   event,
   eventId,
-  initialFiles,
+  files,
 }: {
   event: Event
   eventId: string
-  initialFiles: EventFile[]
+  files: FileCardData[]
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -82,63 +103,27 @@ export function FileLibrary({
   const uploadOne = useCallback(
     async (file: File) => {
       const localId = crypto.randomUUID()
-      const mime = resolveMime(file)
-
-      if (!ALLOWED_MIME.has(mime)) {
-        setPending((p) => [...p, { id: localId, name: file.name, phase: 'error', error: 'Unsupported file type' }])
-        return
-      }
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        setPending((p) => [...p, { id: localId, name: file.name, phase: 'error', error: 'File is larger than 10 MB' }])
-        return
-      }
-
       setPending((p) => [...p, { id: localId, name: file.name, phase: 'uploading' }])
-      try {
-        const fileId = crypto.randomUUID()
-        const ext = file.name.split('.').pop()?.toLowerCase()
-        const path = `${eventId}/${fileId}${ext ? `.${ext}` : ''}`
-
-        const { error: upErr } = await supabase.storage
-          .from('event-files')
-          .upload(path, file, { contentType: mime, upsert: false })
-        if (upErr) throw new Error(upErr.message)
-
-        setPending((p) => p.map((x) => (x.id === localId ? { ...x, phase: 'reading' } : x)))
-
-        const res = await fetch(`/api/events/${eventId}/files`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            file_id: fileId,
-            filename: file.name,
-            storage_path: path,
-            mime_type: mime,
-            size_bytes: file.size,
-          }),
-        })
-        if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as { error?: string }
-          throw new Error(data.error ?? 'Upload failed')
-        }
-        setPending((p) => p.filter((x) => x.id !== localId))
-      } catch (err) {
+      const result = await uploadEventFile(file, eventId, supabase, (phase) =>
+        setPending((p) => p.map((x) => (x.id === localId ? { ...x, phase } : x))),
+      )
+      if (!result.ok) {
         setPending((p) =>
-          p.map((x) =>
-            x.id === localId ? { ...x, phase: 'error', error: err instanceof Error ? err.message : 'Upload failed' } : x,
-          ),
+          p.map((x) => (x.id === localId ? { ...x, phase: 'error', error: result.error ?? 'Upload failed' } : x)),
         )
+        return
       }
+      setPending((p) => p.filter((x) => x.id !== localId))
     },
     [eventId, supabase],
   )
 
   const handleFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0) return
+    async (fileList: FileList | null) => {
+      if (!fileList || fileList.length === 0) return
       setBusy(true)
       // Sequential — extraction is an LLM call per file; avoids rate spikes.
-      for (const file of Array.from(files)) {
+      for (const file of Array.from(fileList)) {
         await uploadOne(file)
       }
       setBusy(false)
@@ -156,7 +141,7 @@ export function FileLibrary({
     [supabase],
   )
 
-  const hasFiles = initialFiles.length > 0 || pending.length > 0
+  const hasFiles = files.length > 0 || pending.length > 0
 
   return (
     <div className="p-6 sm:p-8 max-w-4xl mx-auto space-y-6">
@@ -188,7 +173,7 @@ export function FileLibrary({
         <input
           ref={inputRef}
           type="file"
-          accept={ACCEPT}
+          accept={UPLOAD_ACCEPT}
           multiple
           className="hidden"
           onChange={(e) => {
@@ -258,12 +243,13 @@ export function FileLibrary({
       )}
 
       {/* File cards */}
-      {initialFiles.length > 0 && (
+      {files.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {initialFiles.map((file) => {
-            const pill = STATUS_PILL[file.status]
+          {files.map(({ file, ...counts }) => {
+            const pill = deriveDisplay(file, counts)
             const title = file.ai_suggested_name || file.display_name || file.filename
             const labels = Array.isArray(file.ai_labels) ? file.ai_labels : []
+            const tally = countsLine(counts)
             return (
               <div key={file.id} className="flex flex-col rounded-xl border bg-card p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
@@ -304,12 +290,13 @@ export function FileLibrary({
                 {file.extraction_summary && (
                   <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{file.extraction_summary}</p>
                 )}
+                {tally && <p className="mt-2 text-[11px] font-medium text-muted-foreground">{tally}</p>}
                 {file.status === 'failed' && file.processing_error && (
                   <p className="mt-3 text-xs text-rose-600">{file.processing_error}</p>
                 )}
 
                 <div className="mt-4 flex items-center gap-3 border-t pt-3 text-xs">
-                  {file.status === 'needs_review' && file.source_message_id && (
+                  {counts.pending > 0 && file.source_message_id && (
                     <Link
                       href={`/events/${eventId}/chat?source=${file.source_message_id}`}
                       className="font-medium text-primary hover:underline"

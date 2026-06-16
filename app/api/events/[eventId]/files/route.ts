@@ -6,6 +6,53 @@ import type { FileStatus } from '@/lib/types'
 
 const STORAGE_BUCKET = 'event-files'
 
+type ServerClient = Awaited<ReturnType<typeof createClient>>
+
+// Every files UPDATE goes through here so a 0-row update (e.g. a missing RLS
+// UPDATE policy — the M20b bug) can never fail silently again.
+async function updateFile(supabase: ServerClient, fileId: string, patch: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('files')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', fileId)
+    .select('id')
+  if (error) {
+    console.error('files: update error:', error)
+  } else if (!data || data.length === 0) {
+    console.error(`files: update affected 0 rows for ${fileId} — check the files UPDATE RLS policy (migration 010)`)
+  }
+}
+
+async function logFileUploaded(
+  supabase: ServerClient,
+  eventId: string,
+  userId: string,
+  meta: {
+    fileId: string
+    filename: string
+    displayName: string
+    aiRunId: string | null
+    proposedCount: number
+    outcome: string
+  },
+) {
+  await supabase.from('activity_log').insert({
+    event_id: eventId,
+    actor_user_id: userId,
+    action: 'file_uploaded',
+    entity_type: 'file',
+    entity_id: meta.fileId,
+    metadata_json: {
+      filename: meta.filename,
+      display_name: meta.displayName,
+      ai_run_id: meta.aiRunId,
+      proposed_count: meta.proposedCount,
+      outcome: meta.outcome,
+      channel: 'file',
+    },
+  })
+}
+
 // The browser uploads the bytes directly to Storage (RLS-enforced, avoids
 // routing large binaries through serverless functions). This route registers
 // the file as a managed library item and kicks off extraction through the
@@ -47,7 +94,7 @@ export async function POST(
   const isPdf = mime_type === 'application/pdf'
   const isImage = mime_type === 'image/png' || mime_type === 'image/jpeg'
 
-  // Insert the managed library item. Images are source-only in Branch 1.
+  // Insert the managed library item. Images are source-only in this branch.
   const initialStatus: FileStatus = isImage ? 'source_only' : 'extracting'
   const { data: fileRow, error: insertErr } = await supabase
     .from('files')
@@ -72,6 +119,14 @@ export async function POST(
 
   // Images: store as source only (no extraction in this branch).
   if (isImage) {
+    await logFileUploaded(supabase, eventId, user.id, {
+      fileId: file_id,
+      filename,
+      displayName,
+      aiRunId: null,
+      proposedCount: 0,
+      outcome: 'source_only',
+    })
     return NextResponse.json({ file_id, status: 'source_only' satisfies FileStatus })
   }
 
@@ -79,10 +134,18 @@ export async function POST(
   const { data: blob, error: downloadErr } = await supabase.storage.from(STORAGE_BUCKET).download(storage_path)
   if (downloadErr || !blob) {
     console.error('files download error:', downloadErr)
-    await supabase
-      .from('files')
-      .update({ status: 'failed', processing_error: 'Could not read the uploaded file from storage.', updated_at: new Date().toISOString() })
-      .eq('id', file_id)
+    await updateFile(supabase, file_id, {
+      status: 'failed',
+      processing_error: 'Could not read the uploaded file from storage.',
+    })
+    await logFileUploaded(supabase, eventId, user.id, {
+      fileId: file_id,
+      filename,
+      displayName,
+      aiRunId: null,
+      proposedCount: 0,
+      outcome: 'failed',
+    })
     return NextResponse.json({ file_id, status: 'failed' satisfies FileStatus })
   }
 
@@ -121,10 +184,15 @@ export async function POST(
   }
 
   if (!result.ok) {
-    await supabase
-      .from('files')
-      .update({ status: 'failed', processing_error: result.error, updated_at: new Date().toISOString() })
-      .eq('id', file_id)
+    await updateFile(supabase, file_id, { status: 'failed', processing_error: result.error })
+    await logFileUploaded(supabase, eventId, user.id, {
+      fileId: file_id,
+      filename,
+      displayName,
+      aiRunId: null,
+      proposedCount: 0,
+      outcome: 'failed',
+    })
     return NextResponse.json({ file_id, status: 'failed' satisfies FileStatus, error: result.error })
   }
 
@@ -137,20 +205,25 @@ export async function POST(
   const status = outcomeToStatus[result.data.outcome]
   const meta = result.data.file_meta
 
-  await supabase
-    .from('files')
-    .update({
-      status,
-      source_message_id: result.data.message_id,
-      ai_run_id: result.data.ai_run_id,
-      ai_suggested_name: meta?.title ?? null,
-      ai_category: meta?.category ?? null,
-      ai_labels: meta?.labels ?? null,
-      extraction_summary: meta?.summary ?? null,
-      processing_error: result.data.outcome === 'failed' ? 'Glenn could not read this file confidently.' : null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', file_id)
+  await updateFile(supabase, file_id, {
+    status,
+    source_message_id: result.data.message_id,
+    ai_run_id: result.data.ai_run_id,
+    ai_suggested_name: meta?.title ?? null,
+    ai_category: meta?.category ?? null,
+    ai_labels: meta?.labels ?? null,
+    extraction_summary: meta?.summary ?? null,
+    processing_error: result.data.outcome === 'failed' ? 'Glenn could not read this file confidently.' : null,
+  })
+
+  await logFileUploaded(supabase, eventId, user.id, {
+    fileId: file_id,
+    filename,
+    displayName,
+    aiRunId: result.data.ai_run_id,
+    proposedCount: result.data.proposed_count,
+    outcome: result.data.outcome,
+  })
 
   return NextResponse.json({
     file_id,

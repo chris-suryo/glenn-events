@@ -278,6 +278,7 @@ export async function POST(
         target_record_id:   updateForApply.target_record_id,
         label:              beforeLabel,
         reason,
+        ai_run_id:          updateForApply.ai_run_id,
       }
     } else {
       const trace = {
@@ -313,6 +314,7 @@ export async function POST(
         before_label:       beforeLabel,
         after_label:        afterLabel,
         changed_fields:     fieldsChanged,
+        ai_run_id:          updateForApply.ai_run_id,
       }
     }
 
@@ -429,6 +431,7 @@ export async function POST(
       proposed_update_id: id,
       update_type:        typedUpdate.update_type,
       label:              recordLabel(updateForApply.payload_json),
+      ai_run_id:          typedUpdate.ai_run_id,
     },
   })
 

@@ -70,6 +70,7 @@ export async function POST(
     metadata_json: {
       update_type: typedUpdate.update_type,
       label:       recordLabel(typedUpdate.payload_json),
+      ai_run_id:   typedUpdate.ai_run_id,
     },
   })
 

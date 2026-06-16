@@ -119,8 +119,25 @@ undo/version history; Plan tab consolidation; notifications; integrations.
    vendor + budget + timeline packages.
 6. **m19-product-direction-event-library** (DONE — planning) — phone-first +
    Event Library direction pass. See `docs/M19_PRODUCT_DIRECTION.md`.
+7. **m20-event-library-upload-extract** (DONE) — file upload → store in private
+   `event-files` bucket → PDF/TXT extraction via the shared `runExtraction`
+   pipeline → Review → provenance. Images source-only. Migration 009.
+8. **m20b-event-library-activity-hardening** (DONE) — fixed file status stuck on
+   "Reading…" (missing files UPDATE RLS policy, migration 010), Ask Glenn
+   composer upload (shared `lib/upload-file.ts` + paperclip), derived Library
+   card states (Ready/Applied/No-updates), and Activity source-batch grouping
+   (file → Glenn proposed N → you applied N) with actor + source links.
 
-**Reconciled roadmap (post-M18), see M19 doc §8 for full detail:**
+**Near-term next: `m20c-ai-cost-audit`** — before screenshot/image (vision)
+extraction, add durable per-run cost/usage logging (NOT a billing dashboard).
+Track on `ai_runs` (or a sibling table): provider, model, input/output/total/
+cache tokens, estimated USD, source type (text/pdf/image/file/chat), source
+file id, event/user id, status, duration_ms, proposal count (accepted count
+derivable later), error info. Rationale: image extraction multiplies token cost
+and we need visibility into model choice and proposal yield first.
+
+**Reconciled roadmap (post-M18, predates the M20 reprioritization — file upload
+shipped ahead of deployment; see M19 doc §8 for original detail):**
 1. **m19-deployment-readiness** — Netlify + hosted Supabase, migrations, fresh
    seed, Sentry verified, demo arc smoke-tested on the URL. *Do this next* —
    it unblocks phone-first use, documents, pilots, invite, and every channel.

@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { AttachButton } from './attach-button'
 
 interface GlennInputProps {
   eventId: string
@@ -121,6 +122,21 @@ export function GlennInput({
     textareaRef.current?.focus()
   }
 
+  // File upload reuses the same optimistic + streaming path as a text submit.
+  function handleUploadStart(filename: string) {
+    onUserMessage?.(`Uploading "${filename}"…`)
+    onPendingChange?.(true)
+  }
+  function handleUploadReply(reply: string) {
+    onPendingChange?.(false)
+    if (onGlennReply) onGlennReply(reply)
+    else router.push(`/events/${eventId}/chat`)
+  }
+  function handleUploadError() {
+    onPendingChange?.(false)
+    onSubmitError?.()
+  }
+
   if (variant === 'plain') {
     return (
       <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)]">
@@ -135,7 +151,14 @@ export function GlennInput({
             disabled={isSubmitting}
           />
 
-          <div className="mt-2 flex items-center justify-end">
+          <div className="mt-2 flex items-center justify-between">
+            <AttachButton
+              eventId={eventId}
+              disabled={isSubmitting}
+              onUploadStart={handleUploadStart}
+              onUploadReply={handleUploadReply}
+              onUploadError={handleUploadError}
+            />
             <Button
               type="submit"
               size="sm"
@@ -195,25 +218,34 @@ export function GlennInput({
 
         <div className="flex items-center justify-between pl-9">
           <p className="text-xs text-muted-foreground">
-            Paste notes, emails, or updates — Glenn proposes plan changes for your review.{' '}
+            Paste notes, emails, or updates — or attach a file. Glenn proposes plan changes for your review.{' '}
             <span className="opacity-60">Enter to send · Shift+Enter for newline</span>
           </p>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!text.trim() || isSubmitting}
-            suppressHydrationWarning
-            className="shrink-0 shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Sending…
-              </>
-            ) : (
-              'Tell Glenn'
-            )}
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <AttachButton
+              eventId={eventId}
+              disabled={isSubmitting}
+              onUploadStart={handleUploadStart}
+              onUploadReply={handleUploadReply}
+              onUploadError={handleUploadError}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!text.trim() || isSubmitting}
+              suppressHydrationWarning
+              className="shrink-0 shadow-[0px_0px_0px_1px_rgba(255,255,255,0.12)_inset]"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                'Tell Glenn'
+              )}
+            </Button>
+          </div>
         </div>
       </form>
     </div>
