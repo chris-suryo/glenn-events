@@ -55,7 +55,38 @@ export interface Message {
   user_id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  // null for typed chat notes ('web'); 'file' for document-sourced messages.
+  channel: string | null
   created_at: string
+}
+
+export type FileStatus =
+  | 'uploaded'
+  | 'extracting'
+  | 'extracted'
+  | 'needs_review'
+  | 'source_only'
+  | 'failed'
+
+export interface EventFile {
+  id: string
+  event_id: string
+  uploaded_by: string | null
+  filename: string
+  display_name: string | null
+  storage_path: string | null
+  mime_type: string | null
+  size_bytes: number | null
+  status: FileStatus
+  ai_suggested_name: string | null
+  ai_category: string | null
+  ai_labels: string[] | null
+  extraction_summary: string | null
+  source_message_id: string | null
+  ai_run_id: string | null
+  processing_error: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface AiRun {

@@ -48,6 +48,7 @@ const eventSubNav = [
   { href: '',          label: 'Command Center' },
   { href: '/chat',     label: 'Ask Glenn' },
   { href: '/plan',     label: 'Plan' },
+  { href: '/library',  label: 'Event Library' },
   { href: '/activity', label: 'Activity' },
 ]
 

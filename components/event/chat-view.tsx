@@ -6,7 +6,7 @@ import type { AiRun, Event, Message, ProposedUpdate } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { ProposedUpdatesQueue } from './proposed-updates-queue'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, Paperclip } from 'lucide-react'
 
 interface ExtractUpdatesResponse {
   assistant_message?: string
@@ -340,7 +340,14 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
                           } ${activeHighlight === msg.id ? 'ring-2 ring-primary/60 shadow-[0_0_0_4px_rgba(99,102,241,0.12)]' : ''}`}>
                             {msg.role === 'assistant'
                               ? <GlennMessageContent text={msg.content} />
-                              : msg.content
+                              : msg.channel === 'file'
+                                ? (
+                                  <span className="flex items-start gap-1.5">
+                                    <Paperclip className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
+                                    <span className="whitespace-pre-line">{msg.content}</span>
+                                  </span>
+                                )
+                                : msg.content
                             }
                           </div>
                           {/* suppressHydrationWarning: relative time drifts between server render and hydration */}
