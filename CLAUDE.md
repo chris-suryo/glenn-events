@@ -151,3 +151,25 @@ See `.env.example`. Required:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (scripts only)
+
+## Branch Closeout Checklist
+
+Run this at the end of every branch before handing back. Keep it lightweight — a
+short report, not ceremony. See `docs/WORKSPACE.md` for the base-of-operations
+context this feeds.
+
+Report:
+- **Branch name** and **commit hash(es)**
+- **Files changed** (`git status --short` / `git diff --stat`)
+- **Validation results** — typecheck/lint/build if app code changed; `git diff --check` always
+- **Manual QA status** — what was verified, what wasn't
+- **Known limitations** — anything intentionally deferred or unverified
+- **Next recommended branch**
+
+Confirm before stopping:
+- `git status --short` reported
+- `.claude/launch.json` is **unstaged** (never committed)
+- `git stash@{0}` (`m19-visual-polish` WIP) is **untouched** — `git stash list` unchanged
+- **No push** unless the user explicitly asked
+- `docs/PRODUCT_CHECKPOINT.md` updated to reflect the new milestone (when the
+  branch changes product state)

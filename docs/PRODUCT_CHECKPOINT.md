@@ -178,6 +178,13 @@ vendor marketplace, or autopilot AI. Glenn never changes the plan without
 review. No undo system (snapshots + activity are the safety net). No feature
 ships that doesn't strengthen the core loop.
 
+## Workspace & Playbooks
+
+For session resume and branch closeout, start at `docs/WORKSPACE.md` (base of
+operations), then this checkpoint. Cost telemetry spec + results live in
+`docs/AI_COST_AUDIT.md`; repeatable demo/QA flows in `docs/DEMO_SCENARIOS.md`.
+The Branch Closeout Checklist is in `CLAUDE.md`.
+
 ## Next Steps
 
 1. **m19-deployment-readiness** — ship a hosted URL (the precondition for
