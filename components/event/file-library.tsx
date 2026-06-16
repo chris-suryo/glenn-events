@@ -10,13 +10,16 @@ import {
   Loader2,
   AlertTriangle,
   ExternalLink,
+  Eye,
   X,
   Sparkles,
 } from 'lucide-react'
 import type { Event, EventFile } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import { uploadEventFile, UPLOAD_ACCEPT } from '@/lib/upload-file'
+import { fileToReviewSource, fileTypeLabel } from '@/lib/review'
 import { cn, formatDistanceToNow } from '@/lib/utils'
+import { SourcePreviewDrawer } from './source-preview-drawer'
 
 // Per-file proposal tallies, computed on the server from proposed_updates so
 // the card can derive "Ready for review (N)" vs "Applied updates" vs "No
@@ -66,7 +69,7 @@ function deriveDisplay(file: EventFile, counts: Omit<FileCardData, 'file'>): Dis
 
 function countsLine(counts: Omit<FileCardData, 'file'>): string | null {
   if (counts.total === 0) return null
-  const parts = [`${counts.total} update${counts.total !== 1 ? 's' : ''} found`]
+  const parts = [`${counts.total} found`]
   if (counts.pending > 0) parts.push(`${counts.pending} pending`)
   if (counts.applied > 0) parts.push(`${counts.applied} applied`)
   return parts.join(' · ')
@@ -99,6 +102,7 @@ export function FileLibrary({
   const [pending, setPending] = useState<PendingUpload[]>([])
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [previewFile, setPreviewFile] = useState<EventFile | null>(null)
 
   const uploadOne = useCallback(
     async (file: File) => {
@@ -248,21 +252,21 @@ export function FileLibrary({
           {files.map(({ file, ...counts }) => {
             const pill = deriveDisplay(file, counts)
             const title = file.ai_suggested_name || file.display_name || file.filename
-            const labels = Array.isArray(file.ai_labels) ? file.ai_labels : []
+            const allLabels = Array.isArray(file.ai_labels) ? file.ai_labels : []
+            const labels = allLabels.slice(0, 2)
+            const extraLabels = allLabels.length - labels.length
             const tally = countsLine(counts)
             return (
-              <div key={file.id} className="flex flex-col rounded-xl border bg-card p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-2.5">
-                    <FileIcon mime={file.mime_type} className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium leading-tight">{title}</p>
-                      <p className="truncate text-xs text-muted-foreground">{file.filename}</p>
-                    </div>
-                  </div>
+              <div key={file.id} className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+                {/* Artifact header — reads like a source document */}
+                <div className="relative flex h-24 items-center justify-center border-b bg-gradient-to-b from-muted/30 to-muted/60">
+                  <FileIcon mime={file.mime_type} className="h-9 w-9 text-muted-foreground/70" />
+                  <span className="absolute left-2.5 top-2.5 rounded-md border bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {fileTypeLabel(file.mime_type)}
+                  </span>
                   <span
                     className={cn(
-                      'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                      'absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
                       pill.className,
                     )}
                   >
@@ -271,57 +275,82 @@ export function FileLibrary({
                   </span>
                 </div>
 
-                {(file.ai_category || labels.length > 0) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                    {file.ai_category && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
-                        <Sparkles className="h-3 w-3" />
-                        {file.ai_category}
-                      </span>
-                    )}
-                    {labels.map((label) => (
-                      <span key={label} className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                        {label}
-                      </span>
-                    ))}
+                {/* Body */}
+                <div className="flex flex-1 flex-col gap-2 p-3.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium leading-tight">{title}</p>
+                    <p className="truncate text-xs text-muted-foreground">{file.filename}</p>
                   </div>
-                )}
 
-                {file.extraction_summary && (
-                  <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{file.extraction_summary}</p>
-                )}
-                {tally && <p className="mt-2 text-[11px] font-medium text-muted-foreground">{tally}</p>}
-                {file.status === 'failed' && file.processing_error && (
-                  <p className="mt-3 text-xs text-rose-600">{file.processing_error}</p>
-                )}
+                  {(file.ai_category || labels.length > 0) && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {file.ai_category && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+                          <Sparkles className="h-3 w-3" />
+                          {file.ai_category}
+                        </span>
+                      )}
+                      {labels.map((label) => (
+                        <span key={label} className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                          {label}
+                        </span>
+                      ))}
+                      {extraLabels > 0 && (
+                        <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">+{extraLabels}</span>
+                      )}
+                    </div>
+                  )}
 
-                <div className="mt-4 flex items-center gap-3 border-t pt-3 text-xs">
-                  {counts.pending > 0 && file.source_message_id && (
-                    <Link
-                      href={`/events/${eventId}/chat?source=${file.source_message_id}`}
-                      className="font-medium text-primary hover:underline"
-                    >
-                      Review updates
-                    </Link>
+                  {file.extraction_summary && (
+                    <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{file.extraction_summary}</p>
                   )}
-                  {file.storage_path && (
-                    <button
-                      type="button"
-                      onClick={() => openFile(file)}
-                      className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Open file
-                    </button>
+                  {tally && <p className="text-[11px] font-medium text-muted-foreground">{tally}</p>}
+                  {file.status === 'failed' && file.processing_error && (
+                    <p className="text-xs text-rose-600">{file.processing_error}</p>
                   )}
-                  <span className="ml-auto text-muted-foreground" suppressHydrationWarning>
-                    {formatBytes(file.size_bytes)} · {formatDistanceToNow(file.created_at)}
-                  </span>
+
+                  <div className="mt-auto flex items-center gap-3 border-t pt-2.5 text-xs">
+                    {counts.pending > 0 && file.source_message_id && (
+                      <Link
+                        href={`/events/${eventId}/chat?source=${file.source_message_id}`}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        Review updates
+                      </Link>
+                    )}
+                    {file.storage_path && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFile(file)}
+                        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <Eye className="h-3 w-3" />
+                        Preview
+                      </button>
+                    )}
+                    {file.storage_path && (
+                      <button
+                        type="button"
+                        onClick={() => openFile(file)}
+                        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Open
+                      </button>
+                    )}
+                    <span className="ml-auto text-muted-foreground" suppressHydrationWarning>
+                      {formatBytes(file.size_bytes)} · {formatDistanceToNow(file.created_at)}
+                    </span>
+                  </div>
                 </div>
               </div>
             )
           })}
         </div>
+      )}
+
+      {previewFile && (
+        <SourcePreviewDrawer source={fileToReviewSource(previewFile)} onClose={() => setPreviewFile(null)} />
       )}
     </div>
   )

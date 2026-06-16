@@ -2,11 +2,13 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AiRun, Event, Message, ProposedUpdate } from '@/lib/types'
+import type { AiRun, Event, EventFile, Message, ProposedUpdate } from '@/lib/types'
 import { GlennInput } from './glenn-input'
 import { ProposedUpdatesQueue } from './proposed-updates-queue'
+import { SourcePreviewDrawer } from './source-preview-drawer'
+import { fileStatusLabel, fileToReviewSource, fileTypeLabel } from '@/lib/review'
 import { formatDistanceToNow } from '@/lib/utils'
-import { CheckCircle2, Paperclip } from 'lucide-react'
+import { CheckCircle2, Eye, FileText, Image as ImageIcon, Paperclip } from 'lucide-react'
 
 interface ExtractUpdatesResponse {
   assistant_message?: string
@@ -18,6 +20,7 @@ interface ChatViewProps {
   messages: Message[]
   pendingUpdates: ProposedUpdate[]
   aiRuns: AiRun[]
+  files: EventFile[]
   highlightMessageId?: string | null
 }
 
@@ -92,7 +95,7 @@ function GlennMessageContent({ text }: { text: string }) {
 const STREAM_WORD_DELAY_MS = 30
 
 // ── Component ───────────────────────────────────────────────────────────────────
-export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMessageId = null }: ChatViewProps) {
+export function ChatView({ event, messages, pendingUpdates, aiRuns, files, highlightMessageId = null }: ChatViewProps) {
   const router = useRouter()
   const threadScrollRef = useRef<HTMLDivElement>(null)
   const reviewPanelRef = useRef<HTMLDivElement>(null)
@@ -110,6 +113,14 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
   // Source-traceability highlight — when arriving via an "AI source" badge link
   const [activeHighlight, setActiveHighlight] = useState<string | null>(highlightMessageId)
   const skipAutoScrollRef = useRef(!!highlightMessageId)
+
+  // File-channel messages render as attachment cards; map them to their library
+  // file row (linked via source_message_id) so the same preview drawer opens.
+  const [previewFile, setPreviewFile] = useState<EventFile | null>(null)
+  const fileBySourceMessage = new Map<string, EventFile>()
+  for (const f of files) {
+    if (f.source_message_id) fileBySourceMessage.set(f.source_message_id, f)
+  }
 
   useEffect(() => {
     if (!highlightMessageId) return
@@ -327,17 +338,42 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
                     let lastUserMsgId: string | null = null
 
                     for (const msg of messages) {
+                      const attachedFile =
+                        msg.role === 'user' && msg.channel === 'file'
+                          ? fileBySourceMessage.get(msg.id) ?? null
+                          : null
+                      const isHighlighted = activeHighlight === msg.id
                       items.push(
                         <div
                           key={msg.id}
                           id={`msg-${msg.id}`}
                           className={`flex flex-col gap-1 ${msg.role === 'assistant' ? 'items-start' : 'items-end'}`}
                         >
+                          {attachedFile ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewFile(attachedFile)}
+                              className={`group flex max-w-[75%] items-center gap-2.5 rounded-2xl rounded-br-sm border bg-card px-3 py-2.5 text-left shadow-sm transition-shadow duration-700 hover:bg-muted/40 ${isHighlighted ? 'ring-2 ring-primary/60 shadow-[0_0_0_4px_rgba(99,102,241,0.12)]' : ''}`}
+                            >
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                                {attachedFile.mime_type?.startsWith('image/') ? <ImageIcon className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium leading-tight text-foreground">
+                                  {attachedFile.display_name || attachedFile.filename}
+                                </span>
+                                <span className="block truncate text-[11px] text-muted-foreground">
+                                  {fileTypeLabel(attachedFile.mime_type)} · {fileStatusLabel(attachedFile.status)}
+                                </span>
+                              </span>
+                              <Eye className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                            </button>
+                          ) : (
                           <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-shadow duration-700 ${
                             msg.role === 'user'
                               ? 'bg-primary text-primary-foreground rounded-br-sm'
                               : 'bg-muted text-foreground rounded-bl-sm'
-                          } ${activeHighlight === msg.id ? 'ring-2 ring-primary/60 shadow-[0_0_0_4px_rgba(99,102,241,0.12)]' : ''}`}>
+                          } ${isHighlighted ? 'ring-2 ring-primary/60 shadow-[0_0_0_4px_rgba(99,102,241,0.12)]' : ''}`}>
                             {msg.role === 'assistant'
                               ? <GlennMessageContent text={msg.content} />
                               : msg.channel === 'file'
@@ -350,6 +386,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
                                 : msg.content
                             }
                           </div>
+                          )}
                           {/* suppressHydrationWarning: relative time drifts between server render and hydration */}
                           <span className="text-xs text-muted-foreground px-1" suppressHydrationWarning>
                             {msg.role === 'assistant' ? 'Glenn · ' : ''}
@@ -462,6 +499,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
             <ProposedUpdatesQueue
               updates={pendingUpdates}
               aiRuns={aiRuns}
+              files={files}
               eventId={event.id}
               onClarify={handleClarifyReviewItem}
             />
@@ -469,6 +507,10 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, highlightMes
         </div>
 
       </div>
+
+      {previewFile && (
+        <SourcePreviewDrawer source={fileToReviewSource(previewFile)} onClose={() => setPreviewFile(null)} />
+      )}
     </div>
   )
 }
