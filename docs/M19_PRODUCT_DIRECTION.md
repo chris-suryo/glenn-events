@@ -14,6 +14,28 @@ user reviews → Plan updates → Activity/provenance receipts.* Everything belo
 is about new **input surfaces** and a **simpler shell** over that same loop —
 not a new product.
 
+> **DIRECTION UPDATE — June 2026 (supersedes §3's "Today" IA model).**
+> The locked planner-facing IA is now **Home · Plan · Files**, with **Ask Glenn** and **Review** as
+> persistent companions (not tabs):
+> - **Home** = the event brain/brief/next actions (rename of "Command Center"; page header reads
+>   **"Event Brief"**). Owns summary + "what matters now."
+> - **Plan** = the current truth as **one scrollable sectioned page** (not 7 separate tabs);
+>   **"Run of Show" is the lead section**, then Vendors · Budget · Tasks · Questions · Risks · Decisions.
+> - **Files** = the merged **Event Library + Activity** (uploaded sources + what each changed +
+>   history/provenance). Activity folds in here, not a top-level destination.
+> - **Ask Glenn** = persistent capture/update action layer (CTA "Tell Glenn what changed").
+> - **Review** = persistent decision gate (badge + drawer), openable anywhere; the deliberate
+>   Ready/Needs-answer/Removals flow is unchanged — only its entry point goes global.
+>
+> **Onboarding:** a sleek **mobile-first guided setup** (event-type cards → guests → date/time →
+> location → "what you know") → a short Glenn interview → Glenn **auto-creates a clearly-labeled,
+> editable starter draft** ("Here's the starting plan I drafted — edit anything"). This is the one
+> intentional exception to the review-gate; **every later update still goes through Review.**
+>
+> This refines Model C: "Today" → "Home/Event Brief"; "Event Library + Activity" → "Files." The §3
+> non-negotiables still hold (shell relabel only; records stay atomic; no surface name in business
+> logic). Build order in `docs/PILOT_READINESS_AUDIT.md` (trust-hardening precedes the onboarding/IA build).
+
 ---
 
 ## 1. Product Synthesis

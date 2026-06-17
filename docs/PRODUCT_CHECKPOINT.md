@@ -181,17 +181,22 @@ Plan-tab simplification (only with pilot evidence).
 
 ## Screen Responsibilities
 
-- Dashboard — pick/create an event. Nothing else.
-- Command Center — daily briefing, what needs attention, routing. Never
-  duplicates Plan data views.
-- Ask Glenn — capture messy input + host Review. The thread is capture
-  history; not a free-form chatbot.
-- Review — decide: apply, clarify, dismiss, remove. One primary action per
-  batch; destructive actions get deliberate friction.
-- Plan — source of truth. 7 tabs at /plan?tab=…. Provenance drawer lives here.
-- Activity — event-wide audit log (not a message log). Entries link to records.
-- Provenance drawer — record-scoped "where did this come from," opened from
-  the record; links out to Ask Glenn and Activity.
+> **Updated June 2026** to the locked **Home · Plan · Files** IA (see the `M19_PRODUCT_DIRECTION.md`
+> update + `PILOT_READINESS_AUDIT.md`). Renames are a shell relabel; records stay atomic.
+
+- Dashboard / "Events" — pick/create an event. Nothing else.
+- Home ("Event Brief") — daily briefing: what the event is, what needs attention, what's next,
+  routing. Owns summary; never duplicates Plan's full data views. (Rename of "Command Center.")
+- Ask Glenn — persistent capture/update layer (CTA "Tell Glenn what changed"); the thread is
+  capture history, not a free-form chatbot.
+- Review — persistent decision gate (badge + drawer, openable anywhere): apply, clarify, dismiss,
+  remove. One primary action per batch; destructive actions get deliberate friction.
+- Plan — source of truth, **one scrollable sectioned page** (Run of Show first, then Vendors ·
+  Budget · Tasks · Questions · Risks · Decisions). Provenance drawer lives here.
+- Files — merged Event Library + Activity: uploaded sources + what each changed + the audit/receipt
+  trail. (Activity folds in here.)
+- Provenance drawer — record-scoped "where did this come from," opened from the record; links to
+  Ask Glenn and Files.
 
 ## Non-Goals
 
@@ -209,8 +214,17 @@ The Branch Closeout Checklist is in `CLAUDE.md`.
 
 ## Next Steps
 
-1. **m19-deployment-readiness** — ship a hosted URL (the precondition for
-   everything phone-first and document-related). `docs/DEPLOYMENT.md` is the spec.
-2. **m20-entity-linking-vendor-anchor** — the component anchor.
-3. Then the phone-first + Event Library arc (m21–m23). Full direction and
-   rationale in `docs/M19_PRODUCT_DIRECTION.md`.
+> **Updated June 2026.** The app is **deployed** (https://glenn-events.netlify.app), so
+> `m19-deployment-readiness` is largely satisfied (verify env/migrations/bucket). Current locked
+> sequence (detail in `docs/PILOT_READINESS_AUDIT.md`):
+
+1. **`frontend-aesthetic-foundation`** — warm Operations-Desk tokens + typography (built; serif
+   corrected to opt-in only). Review + commit.
+2. **Docs-save** — IA direction + trust backlog (this update).
+3. **`pilot-trust-hardening`** — pre-demo safety fixes (error boundaries, upload timeout/reading
+   state, library-package targeting, timeline/decision dedupe, mock-mode guard, preflight script).
+4. **`onboarding-guided-setup`** → **`event-home-shell`** (Home/"Event Brief" + persistent Ask Glenn
+   & Review) → **`plan-unified`** → **`files-merge`** → **`frontend-source-artifact-kit`** →
+   wedding-scenario validation.
+
+Full IA in the `docs/M19_PRODUCT_DIRECTION.md` June-2026 update.
