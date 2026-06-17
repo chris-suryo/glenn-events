@@ -4,6 +4,11 @@ import { RegisterFileSchema } from '@/lib/validators/file-upload'
 import { runExtraction, type RunExtractionResult } from '@/lib/ai/run-extraction'
 import type { FileStatus } from '@/lib/types'
 
+// File extraction runs a synchronous LLM call (Haiku, + vision for PDF/image)
+// inside this handler. Give it headroom so a slow read can't be killed mid-flight
+// at the platform's default function timeout.
+export const maxDuration = 60
+
 const STORAGE_BUCKET = 'event-files'
 
 type ServerClient = Awaited<ReturnType<typeof createClient>>

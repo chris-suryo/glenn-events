@@ -44,6 +44,12 @@ extraction/review/apply architecture except as required.
 4. **Timeline/decision dedupe:** populate the `decision` + `timeline_item` branches in
    `lib/ai/dedupe.ts` from existing plan records (thread through `run-extraction.ts`); dedupe
    timeline on title + start clock-time; add a re-upload regression case to `scripts/test-extraction.ts`.
+   **Status — June 2026 QA: REVERTED.** A title-only timeline dedupe was tried in `pilot-trust-hardening`
+   then reverted: it wrongly dropped a legitimate time correction (existing "Guest arrival" 3:30 vs a new
+   3:45 matched by title and was discarded as "already tracked"). Only exact duplicates (same title **and**
+   start time) are safe to drop. Any re-attempt must be **correction-aware** — match on title + start
+   clock-time, and treat a same-title item with a different time as a *correction*, never a duplicate.
+   Decision dedupe also still deferred (needs `existing_decisions` in `EventStateContext`).
 5. **Mock-mode guard:** require explicit `GLENN_USE_MOCK=true` (preferred) else fail clearly; a
    missing key must never silently fabricate; if mock runs, show an unmistakable banner.
 6. **Preflight script:** `scripts/preflight.ts` — assert migration-011 columns, the files UPDATE
