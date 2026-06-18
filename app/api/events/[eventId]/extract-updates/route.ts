@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { ExtractUpdatesSchema } from '@/lib/validators/extract'
 import { runExtraction } from '@/lib/ai/run-extraction'
 
+// Extraction runs a synchronous LLM call inside this handler; give it headroom.
+export const maxDuration = 60
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ eventId: string }> }

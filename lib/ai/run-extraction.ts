@@ -813,7 +813,22 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
     let extractionFailed = false
     let documentReadable = !attachment // typed-text & TXT sources are always "read"
 
-    const extractionMode: ExtractionMode = process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'mock'
+    const useMock = process.env.GLENN_USE_MOCK === 'true'
+    const hasApiKey = !!process.env.ANTHROPIC_API_KEY
+    const extractionMode: ExtractionMode = hasApiKey && !useMock ? 'anthropic' : 'mock'
+
+    // Trust guard: never silently fabricate. Mock extraction is opt-in only
+    // (GLENN_USE_MOCK=true). Without an API key and without explicit mock, refuse a
+    // typed note rather than invent keyword-matched suggestions. (A file with no
+    // engine is kept as source-only below — no fabrication risk there.)
+    if (extractionMode === 'mock' && !useMock && !isFile) {
+      await supabase.from('messages').delete().eq('id', message.id)
+      return {
+        ok: false,
+        status: 503,
+        error: "Glenn isn't set up to read notes right now. Add ANTHROPIC_API_KEY, or set GLENN_USE_MOCK=true for offline demo mode.",
+      }
+    }
     const llmInput = attachment ? fileInstruction(displayName, attachment.kind) : inputText
     const summarySource = isFile ? displayName : inputText
 
@@ -861,10 +876,16 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
       }
     } else if (!attachment) {
       // Mock mode has no vision — it only runs on real text (typed notes, TXT).
-      rawExtracted = mockExtract(inputText)
-      const summary = summarizeExtracted(summarySource, rawExtracted)
-      understoodSummary = summary.understoodSummary
-      recommendedSummary = summary.recommendedSummary
+      // Reaching here without explicit GLENN_USE_MOCK means a TXT file with no
+      // engine: keep it as source-only rather than fabricating from keywords.
+      if (!useMock) {
+        documentReadable = false
+      } else {
+        rawExtracted = mockExtract(inputText)
+        const summary = summarizeExtracted(summarySource, rawExtracted)
+        understoodSummary = summary.understoodSummary
+        recommendedSummary = summary.recommendedSummary
+      }
     } else {
       // Image/PDF with no LLM available — keep as a source, nothing extracted.
       documentReadable = false
@@ -919,10 +940,13 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
     const totalDroppedCount = dedupeResult.deduped_count + reconcileResult.dropped.length
 
     if (extractionMode === 'mock' && !isFile) {
+      const offlineNotice =
+        '⚠️ Offline demo mode (GLENN_USE_MOCK) — these suggestions are generated locally, not from a live AI read of your notes.\n\n'
       assistantContent =
-        extracted.length === 0
+        offlineNotice +
+        (extracted.length === 0
           ? "Got it — I saved your note. I didn't see anything that needs to update the event plan yet, but you can tell me about vendors, tasks, costs, deadlines, risks, or decisions anytime."
-          : `Got it — I found ${extracted.length} thing${extracted.length !== 1 ? 's' : ''} to add to the plan. Review the suggestions on the right and click Apply on anything that looks right.`
+          : `Got it — I found ${extracted.length} thing${extracted.length !== 1 ? 's' : ''} to add to the plan. Review the suggestions on the right and click Apply on anything that looks right.`)
     }
 
     if (!isFile && extracted.length === 0 && totalDroppedCount > 0) {
