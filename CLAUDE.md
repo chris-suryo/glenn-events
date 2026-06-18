@@ -89,6 +89,7 @@ scripts/              — seed-demo.ts (dev only)
 - **Supabase join shape is ambiguous** — `.select('user_id, profiles(full_name)')` may return `profiles` as an object or `[object]`. Always guard: `const p = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles`.
 - **`OpenQuestion.status` is `'open' | 'answered'`** — not 'resolved'. Budget item vendor references are stored as `(Vendor reference: [name])` suffix in `description`; parse with `/\(Vendor reference: ([^)]+)\)/`.
 - **`express-rate-limit` in package.json is unused** — it's Express-only and incompatible with Next.js App Router. Rate limit via DB count: `.select('id', { count: 'exact', head: true }).gte('created_at', oneHourAgo)`.
+- **Update docs in the same change as the code** — when a change alters behavior, schema, migrations, routes, or env vars, update the relevant docs (`docs/DEPLOYMENT.md`, this `CLAUDE.md`, etc.) in the same commit. Migrations are manual-apply, so adding a `supabase/migrations/NNN_*.sql` means also adding it to the `DEPLOYMENT.md` migration list. Don't let docs drift.
 
 ## Core UI Principles
 

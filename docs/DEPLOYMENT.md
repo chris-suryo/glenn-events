@@ -13,13 +13,23 @@
 ## 1. Supabase setup
 
 1. Create a new Supabase project (keep it separate from your local dev project)
-2. Run **all six migrations** in order via Settings → SQL Editor:
+2. Run **all migrations in order** via Settings → SQL Editor:
    - `001_init.sql` — full schema: 17 tables, RLS policies, indexes
-   - `002_...` / `003_...` — incremental schema additions
+   - `002_rls_tighten_members_and_statuses.sql` — tightens membership policies + adds status CHECKs
+   - `003_profiles_insert_policy.sql` — lets users insert their own profile row
    - `004_open_questions_answer.sql` — adds `open_questions.answer` column
    - `005_grant_authenticated_permissions.sql` — **critical**: grants SELECT/INSERT/UPDATE/DELETE on all tables to the `authenticated` role. Without this, PostgREST returns 403 even when RLS policies are correct.
    - `006_fix_rls_bootstrap.sql` — fixes org/event creation RLS bootstrap and adds the event delete policy. Without this, new users cannot create organizations or events.
+   - `007_vendor_correction_proposals.sql` — correction metadata on `proposed_updates`
+   - `008_archive_and_corrections.sql` — soft-archive columns (`archived_at`, `archived_reason`)
+   - `009_event_library_files.sql` — event library file metadata + Storage policies
+   - `010_files_update_policy.sql` — adds the missing `files` UPDATE policy
+   - `011_ai_run_telemetry.sql` — model/provider/token/cost tracking on `ai_runs`
+   - `012_profile_event_type_preference.sql` — adds `profiles.typical_event_types` (guided onboarding)
+   - `013_public_profiles_view.sql` — `public_profiles` view + `shares_event_or_org()` so co-members can resolve each other's name/avatar in shared events (profiles base RLS stays self-only)
 3. Note your project URL and anon key from Settings → API
+
+> **Migrations are applied manually — there is no migration runner in this repo.** Apply each migration's SQL in the SQL Editor (dev *and* hosted), in order, and keep this list current whenever you add a `supabase/migrations/NNN_*.sql`.
 
 ---
 

@@ -79,15 +79,28 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
         const q = supabase.from('tasks').select('*').eq('event_id', eventId).order('created_at')
         return statusFilter ? q.eq('status', statusFilter) : q
       })(),
-      supabase.from('event_members').select('user_id, profiles(full_name, avatar_url)').eq('event_id', eventId),
+      supabase.from('event_members').select('user_id').eq('event_id', eventId),
     ])
     tasks = (t ?? []) as Task[]
-    eventMembers = (m ?? []).map((mem) => {
-      const profile = Array.isArray(mem.profiles) ? mem.profiles[0] : mem.profiles
+    // profiles base-table RLS is self-only; co-member names/avatars come from
+    // the public_profiles view (013), row-scoped to shared events/orgs.
+    type PublicProfile = { id: string; full_name: string | null; avatar_url: string | null }
+    const memberIds = (m ?? []).map((mem) => mem.user_id as string)
+    let publicProfiles: PublicProfile[] = []
+    if (memberIds.length > 0) {
+      const { data: p } = await supabase
+        .from('public_profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', memberIds)
+      publicProfiles = (p ?? []) as PublicProfile[]
+    }
+    const profileById = new Map(publicProfiles.map((p) => [p.id, p] as const))
+    eventMembers = memberIds.map((userId) => {
+      const profile = profileById.get(userId)
       return {
-        user_id: mem.user_id,
-        full_name: (profile as { full_name?: string | null } | null)?.full_name ?? null,
-        avatar_url: (profile as { avatar_url?: string | null } | null)?.avatar_url ?? null,
+        user_id: userId,
+        full_name: profile?.full_name ?? null,
+        avatar_url: profile?.avatar_url ?? null,
       }
     })
   } else if (tab === 'vendors') {
