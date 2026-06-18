@@ -525,34 +525,44 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
             </Button>
           </div>
 
-          <form
-            className="grid grid-cols-[1fr_auto] gap-2 pl-5"
-            onSubmit={(event) => {
-              event.preventDefault()
-              handleClarifySubmit(update)
-            }}
-          >
-            <Input
-              value={answer}
-              onChange={(event) => setAnswerDrafts((current) => ({ ...current, [update.id]: event.target.value }))}
-              placeholder={update.rationale?.trim().endsWith('?') ? 'Answer in plain language...' : 'Add what you know...'}
-              disabled={isBusy || !onClarify}
-              className="h-8 bg-background text-sm"
-              aria-label={`Answer clarification for ${title}`}
-            />
-            <Button
-              type="submit"
-              size="icon-sm"
-              disabled={!canClarify}
-              aria-label="Send clarification"
+          {onClarify ? (
+            <form
+              className="grid grid-cols-[1fr_auto] gap-2 pl-5"
+              onSubmit={(event) => {
+                event.preventDefault()
+                handleClarifySubmit(update)
+              }}
             >
-              {clarifyingState === 'answering' ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <ArrowRight />
-              )}
-            </Button>
-          </form>
+              <Input
+                value={answer}
+                onChange={(event) => setAnswerDrafts((current) => ({ ...current, [update.id]: event.target.value }))}
+                placeholder={update.rationale?.trim().endsWith('?') ? 'Answer in plain language...' : 'Add what you know...'}
+                disabled={isBusy}
+                className="h-8 bg-background text-sm"
+                aria-label={`Answer clarification for ${title}`}
+              />
+              <Button
+                type="submit"
+                size="icon-sm"
+                disabled={!canClarify}
+                aria-label="Send clarification"
+              >
+                {clarifyingState === 'answering' ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <ArrowRight />
+                )}
+              </Button>
+            </form>
+          ) : (
+            <Link
+              href={`/events/${eventId}/chat`}
+              className="ml-5 inline-flex w-fit items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              <MessageSquareText className="h-3 w-3" />
+              Answer in Ask Glenn
+            </Link>
+          )}
         </div>
 
         {isExpanded ? (
