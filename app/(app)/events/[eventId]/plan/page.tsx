@@ -370,8 +370,12 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                   <p className="text-sm text-muted-foreground">No timeline items yet. Tell Glenn about key dates and milestones.</p>
                 </div>
               ) : (
-                <>
-                  <TimelineCalendar items={timelineItems} eventId={eventId} />
+                <TimelineCalendar
+                  items={timelineItems}
+                  eventId={eventId}
+                  eventDate={ev.event_date}
+                  defaultView={highlight ? 'list' : 'lead-up'}
+                >
                   <div className="relative space-y-2.5 pl-6">
                   <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
                   {timelineItems.map((item) => {
@@ -413,7 +417,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                     )
                   })}
                   </div>
-                </>
+                </TimelineCalendar>
               )}
             </>
           )}
