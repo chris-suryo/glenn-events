@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, CalendarDays, List } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, CalendarClock, List } from 'lucide-react'
 import type { TimelineItem } from '@/lib/types'
+import { DayOfGrid } from './day-of-grid'
 
 interface TimelineCalendarProps {
   items: TimelineItem[]
@@ -44,7 +45,7 @@ function daysInMonth(year: number, month: number): number {
 }
 
 export function TimelineCalendar({ items, eventDate, defaultView = 'lead-up', children }: TimelineCalendarProps) {
-  const [view, setView] = useState<'lead-up' | 'list'>(defaultView)
+  const [view, setView] = useState<'lead-up' | 'day-of' | 'list'>(defaultView)
 
   const eventDay = parseDate(eventDate)
   const eventDayKey = eventDay ? isoDate(eventDay) : null
@@ -99,6 +100,12 @@ export function TimelineCalendar({ items, eventDate, defaultView = 'lead-up', ch
           <CalendarDays className="h-3 w-3" /> Lead-up
         </button>
         <button
+          onClick={() => setView('day-of')}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${view === 'day-of' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+        >
+          <CalendarClock className="h-3 w-3" /> Day of
+        </button>
+        <button
           onClick={() => setView('list')}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${view === 'list' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
         >
@@ -106,9 +113,9 @@ export function TimelineCalendar({ items, eventDate, defaultView = 'lead-up', ch
         </button>
       </div>
 
-      {view === 'list' ? (
-        children
-      ) : (
+      {view === 'list' && children}
+      {view === 'day-of' && <DayOfGrid items={items} eventDate={eventDate} />}
+      {view === 'lead-up' && (
         <>
           <div className="rounded-lg border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
             {/* Month navigation */}

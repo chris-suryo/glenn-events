@@ -1,4 +1,4 @@
-interface TimelineDateValue {
+export interface TimelineDateValue {
   date: Date
   hasTime: boolean
   hour: number
@@ -6,7 +6,7 @@ interface TimelineDateValue {
   second: number
 }
 
-function parseTimelineDateValue(value: string | null): TimelineDateValue | null {
+export function parseTimelineDateValue(value: string | null): TimelineDateValue | null {
   if (!value) return null
   const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (dateOnly) {
@@ -77,13 +77,13 @@ function withoutPeriod(value: string): string {
   return value.replace(/\s(AM|PM)$/, '')
 }
 
-function sameCalendarDay(a: TimelineDateValue, b: TimelineDateValue): boolean {
+export function sameCalendarDay(a: TimelineDateValue, b: TimelineDateValue): boolean {
   return a.date.getFullYear() === b.date.getFullYear() &&
     a.date.getMonth() === b.date.getMonth() &&
     a.date.getDate() === b.date.getDate()
 }
 
-function formatTimeRange(start: TimelineDateValue, end: TimelineDateValue | null): string {
+export function formatTimeRange(start: TimelineDateValue, end: TimelineDateValue | null): string {
   const startTime = formatTime(start)
   if (
     !end ||
