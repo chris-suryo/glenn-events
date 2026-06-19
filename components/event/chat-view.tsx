@@ -462,7 +462,7 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, files, highl
               onClick={() => reviewPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })}
               className="lg:hidden flex items-center justify-center gap-1 border-t bg-primary/[0.04] py-2 text-xs font-medium text-primary"
             >
-              {pendingUpdates.length} to review ↓
+              {pendingUpdates.length} update{pendingUpdates.length !== 1 ? 's' : ''} to review ↓
             </button>
           )}
 

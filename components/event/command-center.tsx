@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Event, Task, Vendor, BudgetItem, Risk, ProposedUpdate, OpenQuestion, Decision, TimelineItem, ActivityLog } from '@/lib/types'
 import { EventBriefPanel, type CommandCenterBrief, type EventBriefRow } from './event-brief-panel'
-import { ProposedUpdatesBadge } from './proposed-updates-badge'
+import { useReviewDrawer } from './review-companion'
 import { activityDot, activityLabel, timeAgo } from '@/lib/activity'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatEventDateTime } from '@/lib/utils'
@@ -19,16 +19,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
-
-const PENDING_TYPE_LABELS: Record<string, string> = {
-  task:          'task',
-  vendor:        'vendor',
-  budget_item:   'budget item',
-  timeline_item: 'timeline item',
-  decision:      'decision',
-  risk:          'risk',
-  open_question: 'question',
-}
 
 const INTAKE_CHECKLIST = [
   ['Event basics', 'date/time, location, guest count'],
@@ -84,12 +74,6 @@ function snippet(text: string | null, max = 72): string | null {
 
 function plural(count: number, singular: string, pluralLabel = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralLabel}`
-}
-
-function joinParts(parts: string[]): string {
-  if (parts.length <= 1) return parts[0] ?? ''
-  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`
-  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`
 }
 
 function isOverdue(date: string | null): boolean {
@@ -178,7 +162,6 @@ function buildReadinessStatus(
 
 function buildNextBestActions(
   eventId: string,
-  pendingUpdates: ProposedUpdate[],
   openQuestions: OpenQuestion[],
   openRisks: Risk[],
   openTasks: Task[],
@@ -186,25 +169,6 @@ function buildNextBestActions(
   pendingDecisions: Decision[],
 ): NeedsAttentionItem[] {
   const items: NeedsAttentionItem[] = []
-
-  if (pendingUpdates.length > 0) {
-    const typeCounts = new Map<string, number>()
-    for (const update of pendingUpdates) {
-      typeCounts.set(update.update_type, (typeCounts.get(update.update_type) ?? 0) + 1)
-    }
-    const typeParts = [...typeCounts.entries()].map(([type, count]) => {
-      const label = PENDING_TYPE_LABELS[type] ?? type
-      return count === 1 ? label : `${count} ${label}s`
-    })
-    items.push({
-      id: 'pending-updates',
-      title: `Review ${plural(pendingUpdates.length, 'update')}`,
-      badge: 'Review',
-      context: joinParts(typeParts),
-      href: `/events/${eventId}/chat`,
-      tone: 'review',
-    })
-  }
 
   for (const risk of openRisks.filter((r) => r.severity === 'high')) {
     items.push({
@@ -334,6 +298,7 @@ export function CommandCenter({
 }: CommandCenterProps) {
   const [isDeleting, startDelete] = useTransition()
   const router = useRouter()
+  const { open: openReview } = useReviewDrawer()
 
   const confirmedVendors = vendors.filter((v) => v.status === 'confirmed')
   const totalEstimated = budgetItems.reduce((s, i) => s + (i.estimated_cost ?? 0), 0)
@@ -365,7 +330,6 @@ export function CommandCenter({
   )
   const nextBestActions = buildNextBestActions(
     event.id,
-    pendingUpdates,
     openQuestions,
     openRisks,
     openTasks,
@@ -410,14 +374,7 @@ export function CommandCenter({
       value: confirmedParts.join(' · '),
     })
   }
-  if (pendingUpdates.length > 0) {
-    eventBriefRows.push({
-      label: 'Needs attention',
-      value: `${plural(pendingUpdates.length, 'update')} to review`,
-      href: `/events/${event.id}/chat`,
-      tone: 'attention',
-    })
-  } else if (highRisk) {
+  if (highRisk) {
     eventBriefRows.push({
       label: 'Needs attention',
       value: `${snippet(highRisk.title, 58) ?? highRisk.title} · high risk`,
@@ -493,9 +450,6 @@ export function CommandCenter({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {pendingUpdates.length > 0 && (
-            <ProposedUpdatesBadge count={pendingUpdates.length} eventId={event.id} />
-          )}
           {!planIsEmpty && (
             <Link
               href={`/events/${event.id}/chat`}
@@ -610,7 +564,16 @@ export function CommandCenter({
                       <p className="text-sm text-foreground/70 mt-0.5">{readinessStatus.detail}</p>
                     </div>
                   </div>
-                  {readinessStatus.href ? (
+                  {readinessStatus.tone === 'review' ? (
+                    <button
+                      type="button"
+                      onClick={openReview}
+                      className="text-xs font-medium text-foreground/70 hover:text-foreground transition-colors inline-flex items-center gap-0.5 sm:shrink-0"
+                    >
+                      Review
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
+                  ) : readinessStatus.href ? (
                     <Link
                       href={readinessStatus.href}
                       className="text-xs font-medium text-foreground/70 hover:text-foreground transition-colors inline-flex items-center gap-0.5 sm:shrink-0"

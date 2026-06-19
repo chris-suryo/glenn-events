@@ -91,7 +91,7 @@ export async function GET(
   let reviewerName: string | null = null
   if (proposal?.reviewed_by) {
     const { data: profile } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('full_name')
       .eq('id', proposal.reviewed_by)
       .single()
