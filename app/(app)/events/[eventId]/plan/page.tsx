@@ -24,13 +24,13 @@ interface PageProps {
 }
 
 const TABS = [
-  { key: 'tasks',          label: 'Tasks',     icon: CheckCircle2 },
-  { key: 'vendors',        label: 'Vendors',   icon: Users },
-  { key: 'budget',         label: 'Budget',    icon: DollarSign },
-  { key: 'timeline',       label: 'Timeline',  icon: Calendar },
-  { key: 'decisions',      label: 'Decisions', icon: Scale },
-  { key: 'risks',          label: 'Risks',     icon: AlertTriangle },
-  { key: 'open-questions', label: 'Questions', icon: HelpCircle },
+  { key: 'timeline',       label: 'Run of Show', icon: Calendar },
+  { key: 'vendors',        label: 'Vendors',     icon: Users },
+  { key: 'budget',         label: 'Budget',      icon: DollarSign },
+  { key: 'tasks',          label: 'Tasks',       icon: CheckCircle2 },
+  { key: 'open-questions', label: 'Questions',   icon: HelpCircle },
+  { key: 'risks',          label: 'Risks',       icon: AlertTriangle },
+  { key: 'decisions',      label: 'Decisions',   icon: Scale },
 ]
 
 function fmt(n: number | null) {
@@ -49,7 +49,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
   const { eventId } = await params
   const { tab: rawTab, filter, highlight } = await searchParams
   const normalizedTab = rawTab === 'questions' ? 'open-questions' : rawTab
-  const tab = TABS.some((t) => t.key === normalizedTab) ? normalizedTab! : 'tasks'
+  const tab = TABS.some((t) => t.key === normalizedTab) ? normalizedTab! : TABS[0].key
 
   const highlightClasses = (id: string) =>
     highlight === id
