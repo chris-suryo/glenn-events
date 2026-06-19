@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays, CalendarClock, List } from 'lucide-react'
 import type { TimelineItem } from '@/lib/types'
 import { DayOfGrid } from './day-of-grid'
+import { RecordDetailDrawer } from './record-detail-drawer'
 
 interface TimelineCalendarProps {
   items: TimelineItem[]
@@ -44,8 +45,9 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate()
 }
 
-export function TimelineCalendar({ items, eventDate, defaultView = 'lead-up', children }: TimelineCalendarProps) {
+export function TimelineCalendar({ items, eventId, eventDate, defaultView = 'lead-up', children }: TimelineCalendarProps) {
   const [view, setView] = useState<'lead-up' | 'day-of' | 'list'>(defaultView)
+  const [picked, setPicked] = useState<TimelineItem | null>(null)
 
   const eventDay = parseDate(eventDate)
   const eventDayKey = eventDay ? isoDate(eventDay) : null
@@ -114,7 +116,7 @@ export function TimelineCalendar({ items, eventDate, defaultView = 'lead-up', ch
       </div>
 
       {view === 'list' && children}
-      {view === 'day-of' && <DayOfGrid items={items} eventDate={eventDate} />}
+      {view === 'day-of' && <DayOfGrid items={items} eventDate={eventDate} onPick={setPicked} />}
       {view === 'lead-up' && (
         <>
           <div className="rounded-lg border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
@@ -169,14 +171,24 @@ export function TimelineCalendar({ items, eventDate, defaultView = 'lead-up', ch
                         <div className="space-y-0.5">
                           {dayItems.slice(0, 2).map((item) =>
                             item.type === 'deadline' ? (
-                              <div key={item.id} className="rounded bg-rose-100 px-1.5 py-0.5">
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setPicked(item)}
+                                className="block w-full rounded bg-rose-100 px-1.5 py-0.5 text-left transition-colors hover:bg-rose-200/70"
+                              >
                                 <span className="block truncate text-[10px] font-medium leading-tight text-rose-700">{item.title}</span>
-                              </div>
+                              </button>
                             ) : (
-                              <div key={item.id} className="flex items-center gap-1 overflow-hidden">
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setPicked(item)}
+                                className="flex w-full items-center gap-1 overflow-hidden rounded text-left transition-colors hover:bg-muted/60"
+                              >
                                 <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${TYPE_DOT[item.type]}`} />
                                 <span className="text-[10px] text-foreground/80 truncate leading-tight">{item.title}</span>
-                              </div>
+                              </button>
                             )
                           )}
                           {dayItems.length > 2 && (
@@ -211,6 +223,10 @@ export function TimelineCalendar({ items, eventDate, defaultView = 'lead-up', ch
             </p>
           )}
         </>
+      )}
+
+      {picked && (
+        <RecordDetailDrawer eventId={eventId} item={picked} onClose={() => setPicked(null)} />
       )}
     </div>
   )

@@ -23,6 +23,7 @@ export interface ProvenanceBundle {
   } | null
   understood_summary: string[]
   trail: ActivityLog[]
+  same_update: { record_type: string; id: string; label: string }[]
 }
 
 function stringArray(value: unknown): string[] {
@@ -98,6 +99,31 @@ export async function GET(
     reviewerName = (profile?.full_name as string | null) ?? null
   }
 
+  // "From the same update" — sibling records created by the same AI run.
+  let sameUpdate: { record_type: string; id: string; label: string }[] = []
+  if (aiRunId) {
+    const groups = await Promise.all(
+      Object.entries(RECORD_EDIT_CONFIG).map(async ([type, cfg]) => {
+        const { data } = await supabase
+          .from(cfg.table)
+          .select('*')
+          .eq('event_id', eventId)
+          .eq('ai_run_id', aiRunId)
+          .neq('id', recordId)
+        // Dynamic table name yields loosely-typed rows; read the label by key.
+        return ((data ?? []) as Record<string, unknown>[]).map((sibling) => {
+          const label = sibling[cfg.labelField]
+          return {
+            record_type: type,
+            id: String(sibling.id),
+            label: typeof label === 'string' && label.trim() ? label : 'Untitled',
+          }
+        })
+      })
+    )
+    sameUpdate = groups.flat()
+  }
+
   const outputJson =
     aiRun && typeof aiRun.output_json === 'object' && aiRun.output_json !== null
       ? (aiRun.output_json as Record<string, unknown>)
@@ -133,6 +159,7 @@ export async function GET(
       : null,
     understood_summary: stringArray(outputJson.understood_summary),
     trail: (trail ?? []) as ActivityLog[],
+    same_update: sameUpdate,
   }
 
   return NextResponse.json(bundle)
