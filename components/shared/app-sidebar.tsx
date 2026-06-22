@@ -45,7 +45,7 @@ function NavItem({ href, label, icon: Icon, active }: NavItemProps) {
 }
 
 const eventSubNav = [
-  { href: '',          label: 'Command Center' },
+  { href: '',          label: 'Overview' },
   { href: '/chat',     label: 'Ask Glenn' },
   { href: '/plan',     label: 'Plan' },
   { href: '/library',  label: 'Event Library' },

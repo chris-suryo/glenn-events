@@ -105,7 +105,7 @@ scripts/              — seed-demo.ts (dev only)
 | Login | `/login` | Email/password auth |
 | Dashboard | `/dashboard` | Event cards list |
 | Create Event | `/events/new` | New event form |
-| Command Center | `/events/[id]` | Main operating view — brief, stats, tasks, vendors, risks, Glenn input |
+| Overview | `/events/[id]` | Main operating view — brief, stats, tasks, vendors, risks, Glenn input |
 | Chat | `/events/[id]/chat` | Input history + proposed updates queue |
 | Tasks | `/events/[id]/tasks` | Task list |
 | Vendors | `/events/[id]/vendors` | Vendor list |

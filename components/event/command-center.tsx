@@ -489,7 +489,7 @@ export function CommandCenter({
                   </div>
                   <h2 className="mt-2 text-xl font-semibold tracking-tight">Build the first plan update</h2>
                   <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Command Center will become useful once Glenn has a few details to propose. Capture the messy notes in Ask Glenn, then review what should enter the plan.
+                    Overview will become useful once Glenn has a few details to propose. Capture the messy notes in Ask Glenn, then review what should enter the plan.
                   </p>
                 </div>
               </div>
