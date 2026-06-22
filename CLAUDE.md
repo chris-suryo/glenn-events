@@ -46,14 +46,10 @@ app/
   (app)/
     dashboard/           — event list
     events/new/          — create event
-    events/[eventId]/    — command center
+    events/[eventId]/    — overview (command center)
       chat/              — message history + proposed updates queue
-      tasks/             — task list
-      vendors/           — vendor list
-      budget/            — budget items
-      timeline/          — timeline items
-      decisions/         — decisions log
-      risks/             — risk register
+      plan/              — Plan tabs: Run of Show · Vendors · Budget · Tasks · Open Items
+      tasks/ vendors/ budget/ timeline/ decisions/ risks/ open-questions/ — legacy routes; redirect into the matching Plan tab
     settings/            — account settings
   api/
     events/[eventId]/extract-updates/  — POST: mock AI extraction
@@ -107,16 +103,12 @@ scripts/              — seed-demo.ts (dev only)
 | Create Event | `/events/new` | New event form |
 | Overview | `/events/[id]` | Main operating view — brief, stats, tasks, vendors, risks, Glenn input |
 | Chat | `/events/[id]/chat` | Input history + proposed updates queue |
-| Tasks | `/events/[id]/tasks` | Task list |
-| Vendors | `/events/[id]/vendors` | Vendor list |
-| Budget | `/events/[id]/budget` | Budget line items |
-| Timeline | `/events/[id]/timeline` | Milestones/deadlines |
-| Decisions | `/events/[id]/decisions` | Decision log |
-| Risks | `/events/[id]/risks` | Risk register |
+| Plan | `/events/[id]/plan` | 5 tabs: Run of Show · Vendors · Budget · Tasks · Open Items |
 | Settings | `/settings` | Account |
 | Forgot Password | `/forgot-password` | Sends Supabase reset email |
 | Update Password | `/update-password` | Sets new password after email link |
-| Open Questions | `/events/[id]/open-questions` | Question log with resolve actions |
+
+> Legacy per-type routes (`/tasks`, `/vendors`, `/budget`, `/timeline`, `/risks`, `/decisions`, `/open-questions`) redirect into the relevant **Plan** tab. The **Open Items** tab merges open questions, risks, and decisions into one place.
 
 ## Database Tables (summary)
 

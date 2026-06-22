@@ -117,7 +117,7 @@ function buildReadinessStatus(
       .filter((risk) => risk.severity === 'high')
       .map((risk) => ({
         text: `${snippet(risk.title, 48) ?? risk.title} (high risk)`,
-        href: `/events/${eventId}/plan?tab=risks&highlight=${risk.id}`,
+        href: `/events/${eventId}/plan?tab=open-items&highlight=${risk.id}`,
       })),
     ...openTasks
       .filter((task) => isOverdue(task.due_date))
@@ -127,7 +127,7 @@ function buildReadinessStatus(
       })),
     ...openQuestions.map((question) => ({
       text: snippet(question.question, 56) ?? question.question,
-      href: `/events/${eventId}/plan?tab=open-questions&highlight=${question.id}`,
+      href: `/events/${eventId}/plan?tab=open-items&highlight=${question.id}`,
     })),
     ...openTasks
       .filter((task) => task.priority === 'high' && !isOverdue(task.due_date))
@@ -137,7 +137,7 @@ function buildReadinessStatus(
       })),
     ...pendingDecisions.map((decision) => ({
       text: `Decide: ${snippet(decision.title, 44) ?? decision.title}`,
-      href: `/events/${eventId}/plan?tab=decisions&highlight=${decision.id}`,
+      href: `/events/${eventId}/plan?tab=open-items&highlight=${decision.id}`,
     })),
   ]
 
@@ -176,7 +176,7 @@ function buildNextBestActions(
       title: risk.title,
       badge: 'Resolve risk',
       context: snippet(risk.mitigation) ?? snippet(risk.description),
-      href: `/events/${eventId}/plan?tab=risks&highlight=${risk.id}`,
+      href: `/events/${eventId}/plan?tab=open-items&highlight=${risk.id}`,
       tone: 'risk',
     })
   }
@@ -187,7 +187,7 @@ function buildNextBestActions(
       title: question.question,
       badge: 'Needs answer',
       context: null,
-      href: `/events/${eventId}/plan?tab=open-questions&highlight=${question.id}`,
+      href: `/events/${eventId}/plan?tab=open-items&highlight=${question.id}`,
       tone: 'question',
     })
   }
@@ -239,7 +239,7 @@ function buildNextBestActions(
       title: `Decide: ${decision.title}`,
       badge: 'Decide',
       context: snippet(decision.description),
-      href: `/events/${eventId}/plan?tab=decisions&highlight=${decision.id}`,
+      href: `/events/${eventId}/plan?tab=open-items&highlight=${decision.id}`,
       tone: 'decision',
     })
   }
@@ -378,14 +378,14 @@ export function CommandCenter({
     eventBriefRows.push({
       label: 'Needs attention',
       value: `${snippet(highRisk.title, 58) ?? highRisk.title} · high risk`,
-      href: `/events/${event.id}/plan?tab=risks&highlight=${highRisk.id}`,
+      href: `/events/${event.id}/plan?tab=open-items&highlight=${highRisk.id}`,
       tone: 'attention',
     })
   } else if (openQuestions.length > 0) {
     eventBriefRows.push({
       label: 'Needs attention',
       value: snippet(openQuestions[0].question, 64) ?? openQuestions[0].question,
-      href: `/events/${event.id}/plan?tab=open-questions&highlight=${openQuestions[0].id}`,
+      href: `/events/${event.id}/plan?tab=open-items&highlight=${openQuestions[0].id}`,
       tone: 'attention',
     })
   } else if (highPriorityTask) {
@@ -399,7 +399,7 @@ export function CommandCenter({
     eventBriefRows.push({
       label: 'Needs attention',
       value: `Decide: ${snippet(pendingDecisions[0].title, 54) ?? pendingDecisions[0].title}`,
-      href: `/events/${event.id}/plan?tab=decisions&highlight=${pendingDecisions[0].id}`,
+      href: `/events/${event.id}/plan?tab=open-items&highlight=${pendingDecisions[0].id}`,
       tone: 'attention',
     })
   }
@@ -727,13 +727,13 @@ export function CommandCenter({
                 {
                   icon: AlertTriangle, label: 'Open risks',
                   value: openRisks.length,
-                  href: `/events/${event.id}/plan?tab=risks`,
+                  href: `/events/${event.id}/plan?tab=open-items`,
                   alert: openRisks.length > 0,
                 },
                 {
                   icon: HelpCircle, label: 'Questions',
                   value: openQuestions.length,
-                  href: `/events/${event.id}/plan?tab=open-questions`,
+                  href: `/events/${event.id}/plan?tab=open-items`,
                   alert: false,
                 },
               ] as const).map(({ icon: Icon, label, value, href, alert, ...rest }) => (
