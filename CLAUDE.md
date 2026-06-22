@@ -27,7 +27,7 @@ It is NOT a ticketing, RSVP, seating chart, vendor marketplace, or general event
 | Styling | Tailwind CSS + shadcn/ui |
 | Database / Auth | Supabase (Postgres, Auth, RLS, Realtime) |
 | Validation | Zod |
-| Deployment | Netlify-compatible |
+| Deployment | Vercel |
 
 ## Architecture Decisions
 

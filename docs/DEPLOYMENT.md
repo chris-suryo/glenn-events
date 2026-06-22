@@ -4,7 +4,7 @@
 
 - Node.js 20+
 - A [Supabase](https://supabase.com) project (production or staging)
-- A [Netlify](https://netlify.com) account
+- A [Vercel](https://vercel.com) account (Hobby tier is non-commercial — a paid pilot needs **Pro**)
 - An [Anthropic](https://console.anthropic.com) API key
 - (Optional) A [Sentry](https://sentry.io) project for error monitoring
 
@@ -33,21 +33,26 @@
 
 ---
 
-## 2. Netlify setup
+## 2. Vercel setup
 
 1. Push this repo to GitHub
-2. In Netlify: **Add new site → Import from Git → select your repo**
-3. Build settings are already in `netlify.toml` — no changes needed:
-   - Build command: `npm run build`
-   - Publish directory: `.next`
+2. In Vercel: **Add New… → Project → Import** your GitHub repo
+3. Vercel auto-detects Next.js — no build config needed:
+   - Framework preset: **Next.js**
+   - Build command: `next build` (default)
+   - Output: handled by the Next.js preset (do **not** set Output Directory to `.next`)
 4. Set all required environment variables (see below)
 5. Deploy
+
+> **No `vercel.json` is needed.** Per-route timeouts use Next's native
+> `export const maxDuration` (already set to 60 on the slow Claude routes:
+> `extract-updates`, `files`, `onboard`) — Vercel honors it directly.
 
 ---
 
 ## 3. Environment variables
 
-Set these in **Netlify → Site settings → Environment variables**.
+Set these in **Vercel → Project → Settings → Environment Variables** (apply to Production, Preview, and Development as needed).
 
 ### Required
 
@@ -67,9 +72,9 @@ Set these in **Netlify → Site settings → Environment variables**.
 | `SENTRY_ORG` | Required alongside `SENTRY_AUTH_TOKEN` |
 | `SENTRY_PROJECT` | Required alongside `SENTRY_AUTH_TOKEN` |
 
-**Do NOT set `SUPABASE_SERVICE_ROLE_KEY` in Netlify.** That key is for local dev scripts only (`npm run seed`) and must never be present in the app environment.
+**Do NOT set `SUPABASE_SERVICE_ROLE_KEY` in Vercel.** That key is for local dev scripts only (`npm run seed`) and must never be present in the app environment.
 
-**Do NOT set `SEED_USER_EMAIL` or `SEED_USER_PASSWORD` in Netlify.** Those are local dev-only seed script variables.
+**Do NOT set `SEED_USER_EMAIL` or `SEED_USER_PASSWORD` in Vercel.** Those are local dev-only seed script variables.
 
 ---
 
@@ -90,8 +95,12 @@ The app works without optional env vars:
 Supabase needs to know your production URL to send password reset emails to the right callback:
 
 1. Supabase → Authentication → URL Configuration
-2. Set **Site URL** to your Netlify domain (e.g. `https://your-app.netlify.app`)
-3. Add to **Redirect URLs**: `https://your-app.netlify.app/auth/callback`
+2. Set **Site URL** to your Vercel domain (e.g. `https://your-app.vercel.app`, or your custom domain)
+3. Add to **Redirect URLs**: `https://your-app.vercel.app/auth/callback`
+   - If you use Vercel preview deployments for auth-flow testing, also add the preview pattern `https://*-your-team.vercel.app/auth/callback`
+
+> **Critical:** skipping this step breaks password-reset and OAuth — Supabase
+> will reject the callback because it doesn't match an allowed redirect.
 
 ---
 
@@ -113,7 +122,7 @@ npm run seed:reset   # wipe and re-seed demo event
 
 After deploying, run through the MVP demo:
 
-1. Visit your Netlify URL → you should be redirected to `/login`
+1. Visit your Vercel URL → you should be redirected to `/login`
 2. Sign up with a new account
 3. Create an event via `/events/new`
 4. Paste the demo scenario into Glenn input → real Claude extraction should return structured updates
@@ -126,6 +135,6 @@ After deploying, run through the MVP demo:
 
 For a proper staging setup:
 - Create a second Supabase project for staging
-- Create a second Netlify site pointing to the same repo with a `staging` branch
-- Set staging-specific env vars in Netlify (different Supabase credentials, same Anthropic key)
-- Use Netlify branch deploy previews for feature branches
+- In Vercel, scope env vars by environment: set staging Supabase credentials on the **Preview** environment and production credentials on **Production** (same Anthropic key is fine)
+- Vercel automatically builds a **preview deployment** for every branch/PR — use these for feature-branch QA
+- Remember to add each preview/staging domain to Supabase **Redirect URLs** (see §5) or auth flows will fail there
