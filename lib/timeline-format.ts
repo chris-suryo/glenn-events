@@ -1,3 +1,5 @@
+import { DEFAULT_EVENT_TZ } from './utils'
+
 export interface TimelineDateValue {
   date: Date
   hasTime: boolean
@@ -6,8 +8,16 @@ export interface TimelineDateValue {
   second: number
 }
 
-export function parseTimelineDateValue(value: string | null): TimelineDateValue | null {
+// `value` is a timestamptz (UTC instant) or a date-only string. Time-bearing values
+// are resolved to the event's local wall-clock in `timeZone` — Postgres does not
+// preserve the original offset, so we must convert the instant ourselves.
+export function parseTimelineDateValue(
+  value: string | null,
+  timeZone: string = DEFAULT_EVENT_TZ,
+): TimelineDateValue | null {
   if (!value) return null
+
+  // Date-only: a plain calendar date — never timezone-shift it.
   const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (dateOnly) {
     const [, year, month, day] = dateOnly
@@ -20,36 +30,32 @@ export function parseTimelineDateValue(value: string | null): TimelineDateValue 
     }
   }
 
-  const dateTime = value.match(
-    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/,
-  )
-  if (dateTime) {
-    const [, year, month, day, hour, minute, second = '0'] = dateTime
-    const h = Number(hour)
-    const m = Number(minute)
-    const s = Number(second)
-    return {
-      date:    new Date(Number(year), Number(month) - 1, Number(day)),
-      hasTime: h !== 0 || m !== 0 || s !== 0,
-      hour:    h,
-      minute:  m,
-      second:  s,
-    }
-  }
+  const instant = new Date(value)
+  if (Number.isNaN(instant.getTime())) return null
 
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year:   'numeric',
+    month:  '2-digit',
+    day:    '2-digit',
+    hour:   '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant)
+  const part = (t: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === t)?.value ?? '0')
+
+  let hour = part('hour')
+  if (hour === 24) hour = 0 // Intl can emit '24' for midnight in hour12:false
+  const minute = part('minute')
+  const second = part('second')
 
   return {
-    date,
-    hasTime: value.includes('T') && (
-      date.getHours() !== 0 ||
-      date.getMinutes() !== 0 ||
-      date.getSeconds() !== 0
-    ),
-    hour:   date.getHours(),
-    minute: date.getMinutes(),
-    second: date.getSeconds(),
+    date:    new Date(part('year'), part('month') - 1, part('day')),
+    hasTime: hour !== 0 || minute !== 0 || second !== 0,
+    hour,
+    minute,
+    second,
   }
 }
 
@@ -108,11 +114,12 @@ export function formatTimelineDateTime(
   startsAt: string | null,
   endsAt: string | null,
   location?: string | null,
+  timeZone: string = DEFAULT_EVENT_TZ,
 ): string | null {
-  const start = parseTimelineDateValue(startsAt)
+  const start = parseTimelineDateValue(startsAt, timeZone)
   if (!start) return location?.trim() || null
 
-  const end = parseTimelineDateValue(endsAt)
+  const end = parseTimelineDateValue(endsAt, timeZone)
 
   let when: string
   if (start.hasTime || end?.hasTime) {

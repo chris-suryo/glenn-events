@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { CalendarClock } from 'lucide-react'
 import type { TimelineItem } from '@/lib/types'
 import { parseTimelineDateValue, formatTimeRange, sameCalendarDay, type TimelineDateValue } from '@/lib/timeline-format'
+import { DEFAULT_EVENT_TZ } from '@/lib/utils'
 
 const PX_PER_MIN = 1.2
 
@@ -28,12 +29,12 @@ function minutesOf(v: TimelineDateValue): number {
 }
 
 /** Timed items on the event day, laid into side-by-side columns where they overlap. */
-function layout(items: TimelineItem[], eventDay: TimelineDateValue): PositionedBlock[] {
+function layout(items: TimelineItem[], eventDay: TimelineDateValue, timeZone: string): PositionedBlock[] {
   const raw: Omit<PositionedBlock, 'col' | 'cols'>[] = []
   for (const item of items) {
-    const start = parseTimelineDateValue(item.starts_at)
+    const start = parseTimelineDateValue(item.starts_at, timeZone)
     if (!start || !start.hasTime || !sameCalendarDay(start, eventDay)) continue
-    const rawEnd = parseTimelineDateValue(item.ends_at)
+    const rawEnd = parseTimelineDateValue(item.ends_at, timeZone)
     const validEnd = rawEnd && rawEnd.hasTime && sameCalendarDay(start, rawEnd) ? rawEnd : null
     const startMin = minutesOf(start)
     let endMin = validEnd ? minutesOf(validEnd) : startMin + 60
@@ -91,24 +92,29 @@ function hourLabel(min: number): string {
 interface DayOfGridProps {
   items: TimelineItem[]
   eventDate: string | null
+  timeZone?: string
   onPick?: (item: TimelineItem) => void
 }
 
-export function DayOfGrid({ items, eventDate, onPick }: DayOfGridProps) {
-  const eventDay = parseTimelineDateValue(eventDate)
+export function DayOfGrid({ items, eventDate, timeZone = DEFAULT_EVENT_TZ, onPick }: DayOfGridProps) {
+  const eventDay = parseTimelineDateValue(eventDate, timeZone)
 
   if (!eventDay) {
     return <Empty>Set an event date to see the day-of schedule.</Empty>
   }
 
-  const blocks = layout(items, eventDay)
+  const blocks = layout(items, eventDay, timeZone)
   if (blocks.length === 0) {
     return <Empty>No timed segments for the event day yet. Add start/end times to your run-of-show items and they’ll appear here.</Empty>
   }
 
-  const windowStart = Math.floor(Math.min(...blocks.map((b) => b.start)) / 60) * 60
-  let windowEnd = Math.ceil(Math.max(...blocks.map((b) => b.end)) / 60) * 60
-  if (windowEnd - windowStart < 120) windowEnd = windowStart + 120
+  // Pad an hour before the first segment and after the last so the grid breathes;
+  // clamp to the day and keep a 3-hour minimum window.
+  const firstStart = Math.min(...blocks.map((b) => b.start))
+  const lastEnd = Math.max(...blocks.map((b) => b.end))
+  const windowStart = Math.max(0, Math.floor(firstStart / 60) * 60 - 60)
+  let windowEnd = Math.min(1440, Math.ceil(lastEnd / 60) * 60 + 60)
+  if (windowEnd - windowStart < 180) windowEnd = Math.min(1440, windowStart + 180)
   const height = (windowEnd - windowStart) * PX_PER_MIN
 
   const hours: number[] = []

@@ -32,7 +32,7 @@ function buildIdentityLine(event: Event): string {
   const parts: string[] = []
   parts.push(event.event_type || event.name)
   if (event.event_date) {
-    const formatted = formatEventDateTime(event.event_date, { year: false })
+    const formatted = formatEventDateTime(event.event_date, { year: false }, event.timezone ?? undefined)
     if (formatted) parts.push(formatted)
   }
   if (event.attendee_target) parts.push(`${event.attendee_target} guests`)

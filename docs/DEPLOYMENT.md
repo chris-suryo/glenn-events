@@ -28,6 +28,7 @@
    - `012_profile_event_type_preference.sql` — adds `profiles.typical_event_types` (guided onboarding)
    - `013_public_profiles_view.sql` — `public_profiles` view + `shares_event_or_org()` so co-members can resolve each other's name/avatar in shared events (profiles base RLS stays self-only)
    - `014_event_ai_summary.sql` — adds `events.ai_summary` + `events.ai_summary_updated_at` for the cached, Glenn-authored Overview brief (generated on demand via `POST /api/events/[id]/summary`). The Overview shows a data-assembled brief until this is applied and a summary is generated; no new RLS needed.
+   - `015_event_timezone.sql` — adds `events.timezone` (IANA) so day-of times render in the event's local wall-clock (timestamptz only stores a UTC instant). Backfills existing rows + defaults new rows to `America/New_York`. The app falls back to `America/New_York` (see `DEFAULT_EVENT_TZ` in `lib/utils.ts`) until this is applied, so times render correctly for US-Eastern events beforehand.
 3. Note your project URL and anon key from Settings → API
 
 > **Migrations are applied manually — there is no migration runner in this repo.** Apply each migration's SQL in the SQL Editor (dev *and* hosted), in order, and keep this list current whenever you add a `supabase/migrations/NNN_*.sql`.
