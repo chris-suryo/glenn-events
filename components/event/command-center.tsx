@@ -9,9 +9,10 @@ import { useReviewDrawer } from './review-companion'
 import { activityDot, activityLabel, timeAgo } from '@/lib/activity'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatEventDateTime } from '@/lib/utils'
+import { toast } from 'sonner'
 import {
   Activity, AlertTriangle, CalendarDays, CheckCircle2,
-  ChevronRight, DollarSign, HelpCircle, MoreHorizontal, Sparkles, Trash2, Users,
+  ChevronRight, DollarSign, HelpCircle, Loader2, MoreHorizontal, RefreshCw, Sparkles, Trash2, Users,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -306,6 +307,7 @@ export function CommandCenter({
   recentActivity,
 }: CommandCenterProps) {
   const [isDeleting, startDelete] = useTransition()
+  const [isSummarizing, startSummarize] = useTransition()
   const router = useRouter()
   const { open: openReview } = useReviewDrawer()
 
@@ -446,15 +448,31 @@ export function CommandCenter({
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const day = new Date(target); day.setHours(0, 0, 0, 0)
     const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000)
-    if (diff > 0) return { value: String(diff), label: diff === 1 ? 'day to go' : 'days to go', soon: diff <= 7, past: false }
-    if (diff === 0) return { value: 'Today', label: 'event day', soon: true, past: false }
-    return { value: String(-diff), label: -diff === 1 ? 'day ago' : 'days ago', soon: false, past: true }
+    if (diff > 0) return { phrase: `in ${diff} ${diff === 1 ? 'day' : 'days'}`, soon: diff <= 7, past: false }
+    if (diff === 0) return { phrase: 'Today', soon: true, past: false }
+    return { phrase: `${-diff} ${-diff === 1 ? 'day' : 'days'} ago`, soon: false, past: true }
   })()
 
   const budgetTarget = event.budget_target
   const vendorProgress = vendors.length > 0 ? confirmedVendors.length / vendors.length : null
   const budgetProgress = budgetTarget !== null && budgetTarget > 0 ? Math.min(totalEstimated / budgetTarget, 1) : null
   const budgetOver = budgetTarget !== null && budgetTarget > 0 && totalEstimated > budgetTarget
+
+  function regenerateSummary() {
+    startSummarize(async () => {
+      try {
+        const res = await fetch(`/api/events/${event.id}/summary`, { method: 'POST' })
+        if (!res.ok) {
+          const body = await res.json().catch(() => null)
+          toast.error(body?.error ?? 'Could not generate the brief. Try again.')
+          return
+        }
+        router.refresh()
+      } catch {
+        toast.error('Could not reach Glenn. Try again.')
+      }
+    })
+  }
 
   function handleDeleteEvent() {
     if (!window.confirm(`Delete "${event.name}"? This cannot be undone — all tasks, vendors, budget, and chat history will be permanently removed.`)) return
@@ -474,6 +492,12 @@ export function CommandCenter({
             {event.event_date && (
               <span className="text-xs text-muted-foreground">
                 {formatEventDateTime(event.event_date, { weekday: true })}
+              </span>
+            )}
+            {countdown && (
+              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
+                countdown.past ? 'bg-muted text-muted-foreground' : countdown.soon ? 'bg-amber-50 text-amber-700' : 'bg-primary/10 text-primary'}`}>
+                {countdown.phrase}
               </span>
             )}
             {event.location && (
@@ -596,54 +620,40 @@ export function CommandCenter({
             </div>
           </div>
         ) : (
-          <div className="max-w-5xl mx-auto space-y-5">
-            {/* Event brief — what this event is + how it's tracking */}
+          <div className="max-w-6xl mx-auto space-y-5">
+            {/* Event brief — Glenn's read on what this event is + how it's tracking */}
             <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-5">
-              <div className="flex items-start justify-between gap-5">
-                <div className="min-w-0">
-                  <div className="mb-1.5 flex items-center gap-1.5 text-primary">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span className="text-[11px] font-semibold uppercase tracking-widest">Brief</span>
-                  </div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 text-primary">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-semibold uppercase tracking-widest">Brief</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={regenerateSummary}
+                  disabled={isSummarizing}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
+                >
+                  {isSummarizing
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <RefreshCw className="h-3 w-3" />}
+                  {isSummarizing ? 'Generating…' : event.ai_summary ? 'Refresh' : 'Generate'}
+                </button>
+              </div>
+              {event.ai_summary ? (
+                <>
+                  <p className="text-sm leading-relaxed text-foreground">{event.ai_summary}</p>
+                  {event.ai_summary_updated_at && (
+                    <p className="mt-2 text-[11px] text-muted-foreground">Glenn · updated {timeAgo(event.ai_summary_updated_at)}</p>
+                  )}
+                </>
+              ) : (
+                <>
                   <p className="text-base font-medium leading-snug tracking-tight text-foreground">{eventBrief.headline}</p>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{eventBrief.status}</p>
-                </div>
-                {countdown && (
-                  <div className="shrink-0 rounded-xl border bg-muted/30 px-4 py-3 text-center">
-                    <p className={`text-2xl font-semibold leading-none tracking-tight tabular-nums ${countdown.past ? 'text-muted-foreground' : countdown.soon ? 'text-amber-600' : 'text-primary'}`}>
-                      {countdown.value}
-                    </p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{countdown.label}</p>
-                  </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
-
-            {readinessStatus.tone === 'review' && (
-              <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${statusClasses('review')}`}>
-                <CardContent className="py-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-start gap-3">
-                      <span className="mt-0.5 shrink-0">
-                        <StatusIcon tone="review" />
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold leading-tight">{readinessStatus.title}</p>
-                        <p className="text-sm text-foreground/70 mt-0.5">{readinessStatus.detail}</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={openReview}
-                      className="text-xs font-medium text-foreground/70 hover:text-foreground transition-colors inline-flex items-center gap-0.5 sm:shrink-0"
-                    >
-                      Review
-                      <ChevronRight className="h-3 w-3" />
-                    </button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
             {/* KPI tiles — at-a-glance health */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -756,8 +766,26 @@ export function CommandCenter({
                 </div>
               </div>
 
-              {/* Run of show (visual) + Recent */}
+              {/* Side rail: review · run of show · recent */}
               <div className="lg:col-span-1 space-y-4">
+                {readinessStatus.tone === 'review' && (
+                  <button
+                    type="button"
+                    onClick={openReview}
+                    className={`w-full text-left rounded-xl border p-4 shadow-[0px_1px_3px_rgba(0,0,0,0.05)] transition-opacity hover:opacity-90 ${statusClasses('review')}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <StatusIcon tone="review" />
+                      <p className="text-sm font-semibold leading-tight">{readinessStatus.title}</p>
+                    </div>
+                    <p className="mt-1 text-sm text-foreground/70">{readinessStatus.detail}</p>
+                    <span className="mt-2 inline-flex items-center gap-0.5 text-xs font-medium text-foreground/70">
+                      Review
+                      <ChevronRight className="h-3 w-3" />
+                    </span>
+                  </button>
+                )}
+
                 <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
                   <div className="flex items-center gap-1.5 mb-3">
                     <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />

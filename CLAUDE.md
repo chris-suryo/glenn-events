@@ -37,6 +37,7 @@ It is NOT a ticketing, RSVP, seating chart, vendor marketplace, or general event
 4. **Approval flow via fetch to API routes** — mutations go through `/api/updates/[id]/approve` and `/api/updates/[id]/reject`, which use the user session.
 5. **Real LLM extraction live** — `extract-updates` route uses `claude-haiku-4-5` via `lib/ai/llm-extract.ts` if `ANTHROPIC_API_KEY` is set; falls back to `lib/ai/mock-extract.ts` if not. Tool-use schema uses grouped arrays per type (separate `tasks[]`, `vendors[]`, etc.) — avoids discriminated-union complexity.
 6. **`payload_json` is strongly typed** — each `proposed_updates` row has a `payload_json` that maps 1:1 to the destination table insert shape. This makes the approval flow straightforward.
+7. **Overview "Brief" is a cached AI summary with a deterministic fallback** — `events.ai_summary` (migration 014) holds a Glenn-authored situation brief generated on demand via `POST /api/events/[id]/summary` (`lib/ai/event-summary.ts`, `claude-haiku-4-5`, written with the user session so RLS applies; no service role). It is **not** auto-generated on load (cost) — the user clicks Generate/Refresh. Until a summary exists (or migration 014 is applied), the Overview shows a data-assembled brief built from event fields + counts. The Anthropic client is instantiated lazily inside the generator so the no-key fallback path doesn't throw at import.
 
 ## Folder Structure
 
@@ -53,6 +54,7 @@ app/
     settings/            — account settings
   api/
     events/[eventId]/extract-updates/  — POST: mock AI extraction
+    events/[eventId]/summary/          — POST: generate cached Glenn brief (events.ai_summary)
     updates/[id]/approve/              — POST: approve a proposed update
     updates/[id]/reject/               — POST: reject a proposed update
 
