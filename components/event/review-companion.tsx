@@ -44,14 +44,19 @@ export function ReviewCompanion({ eventId, pendingUpdates, aiRuns, files, childr
   const openDrawer = useCallback(() => setOpen(true), [])
   const closeDrawer = useCallback(() => setOpen(false), [])
 
-  // Ask Glenn already embeds the same review surface inline — don't double it up.
-  const showCompanion = !(pathname?.endsWith('/chat') ?? false)
+  // Ask Glenn embeds the same review surface inline; the Overview (event root)
+  // shows its own "Review pending" banner. Suppress the floating chip on both so
+  // the prompt never doubles up — but keep the drawer available (the Overview
+  // banner opens it via useReviewDrawer), so gate the drawer on route only.
+  const isChat = pathname?.endsWith('/chat') ?? false
+  const isEventRoot = /^\/events\/[^/]+\/?$/.test(pathname ?? '')
+  const showChip = !isChat && !isEventRoot
 
   return (
     <ReviewDrawerContext.Provider value={{ open: openDrawer, close: closeDrawer, count }}>
       {children}
 
-      {showCompanion && count > 0 && (
+      {showChip && count > 0 && (
         <button
           type="button"
           onClick={openDrawer}
@@ -65,7 +70,7 @@ export function ReviewCompanion({ eventId, pendingUpdates, aiRuns, files, childr
         </button>
       )}
 
-      {showCompanion && open && (
+      {!isChat && open && (
         <div className="fixed inset-0 z-50">
           <button
             type="button"

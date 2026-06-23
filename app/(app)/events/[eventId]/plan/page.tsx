@@ -24,13 +24,11 @@ interface PageProps {
 }
 
 const TABS = [
-  { key: 'timeline',       label: 'Run of Show', icon: Calendar },
-  { key: 'vendors',        label: 'Vendors',     icon: Users },
-  { key: 'budget',         label: 'Budget',      icon: DollarSign },
-  { key: 'tasks',          label: 'Tasks',       icon: CheckCircle2 },
-  { key: 'open-questions', label: 'Questions',   icon: HelpCircle },
-  { key: 'risks',          label: 'Risks',       icon: AlertTriangle },
-  { key: 'decisions',      label: 'Decisions',   icon: Scale },
+  { key: 'timeline',   label: 'Run of Show', icon: Calendar },
+  { key: 'vendors',    label: 'Vendors',     icon: Users },
+  { key: 'budget',     label: 'Budget',      icon: DollarSign },
+  { key: 'tasks',      label: 'Tasks',       icon: CheckCircle2 },
+  { key: 'open-items', label: 'Open Items',  icon: HelpCircle },
 ]
 
 function fmt(n: number | null) {
@@ -48,7 +46,9 @@ const TYPE_COLORS: Record<TimelineItem['type'], string> = {
 export default async function PlanPage({ params, searchParams }: PageProps) {
   const { eventId } = await params
   const { tab: rawTab, filter, highlight } = await searchParams
-  const normalizedTab = rawTab === 'questions' ? 'open-questions' : rawTab
+  // Legacy per-type keys (and bookmarked deep-links) fold into the merged Open Items tab.
+  const OPEN_ITEMS_ALIASES = new Set(['open-items', 'open-questions', 'questions', 'risks', 'decisions'])
+  const normalizedTab = OPEN_ITEMS_ALIASES.has(rawTab ?? '') ? 'open-items' : rawTab
   const tab = TABS.some((t) => t.key === normalizedTab) ? normalizedTab! : TABS[0].key
 
   const highlightClasses = (id: string) =>
@@ -112,15 +112,15 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
   } else if (tab === 'timeline') {
     const { data: tl } = await supabase.from('timeline_items').select('*').eq('event_id', eventId).is('archived_at', null).order('starts_at', { ascending: true })
     timelineItems = (tl ?? []) as TimelineItem[]
-  } else if (tab === 'decisions') {
-    const { data: d } = await supabase.from('decisions').select('*').eq('event_id', eventId).order('created_at')
-    decisions = (d ?? []) as Decision[]
-  } else if (tab === 'risks') {
-    const { data: r } = await supabase.from('risks').select('*').eq('event_id', eventId).order('created_at')
-    risks = (r ?? []) as Risk[]
-  } else if (tab === 'open-questions') {
-    const { data: q } = await supabase.from('open_questions').select('*').eq('event_id', eventId).order('created_at')
+  } else if (tab === 'open-items') {
+    const [{ data: q }, { data: r }, { data: d }] = await Promise.all([
+      supabase.from('open_questions').select('*').eq('event_id', eventId).order('created_at'),
+      supabase.from('risks').select('*').eq('event_id', eventId).order('created_at'),
+      supabase.from('decisions').select('*').eq('event_id', eventId).order('created_at'),
+    ])
     openQuestions = (q ?? []) as OpenQuestion[]
+    risks = (r ?? []) as Risk[]
+    decisions = (d ?? []) as Decision[]
   }
 
   const activeFilter = filter === 'done' ? 'done' : filter === 'all' ? 'all' : 'open'
@@ -422,168 +422,186 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
             </>
           )}
 
-          {/* ── Decisions ─────────────────────────────────────────────── */}
-          {tab === 'decisions' && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                {decisions.filter((d) => d.status === 'pending').length} pending ·{' '}
-                {decisions.filter((d) => d.status === 'decided').length} decided
-              </p>
-              {decisions.length === 0 ? (
-                <div className="rounded-xl border-2 border-dashed py-14 text-center">
-                  <p className="text-sm text-muted-foreground">No decisions tracked yet. Tell Glenn about things that need a decision.</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {decisions.map((dec) => (
-                    <div key={dec.id} id={`record-${dec.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightClasses(dec.id)}`}>
-                      <div className="flex items-start gap-2">
-                        <p className="text-sm font-medium flex-1 tracking-tight">{dec.title}</p>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize
-                            ${dec.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                            {dec.status}
-                          </span>
-                          <RecordEditButton
-                            eventId={eventId}
-                            recordType="decision"
-                            recordId={dec.id}
-                            initial={{ title: dec.title, description: dec.description, decision: dec.decision }}
-                          />
-                        </div>
-                      </div>
-                      {dec.description && <p className="text-xs text-muted-foreground">{dec.description}</p>}
-                      {dec.decision && (
-                        <div className="rounded-md bg-primary/[0.05] border border-primary/10 px-3 py-2">
-                          <p className="text-xs font-medium text-primary">Decision: {dec.decision}</p>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {dec.ai_generated && (
-                          <AiSourceBadge eventId={eventId} recordType="decision" recordId={dec.id} />
-                        )}
-                        {dec.status === 'pending' && (
-                          <DecisionResolveButton decisionId={dec.id} eventId={eventId} />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
+          {/* ── Open Items (questions · risks · decisions) ─────────────── */}
+          {tab === 'open-items' && (
+            openQuestions.length === 0 && risks.length === 0 && decisions.length === 0 ? (
+              <div className="rounded-xl border-2 border-dashed py-14 flex flex-col items-center gap-3 text-center">
+                <HelpCircle className="h-8 w-8 text-muted-foreground/25" />
+                <p className="text-sm text-muted-foreground">No open items yet. Tell Glenn about decisions, risks, or questions to track.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
 
-          {/* ── Risks ─────────────────────────────────────────────────── */}
-          {tab === 'risks' && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                {risks.filter((r) => r.status === 'open').length} open risk{risks.filter((r) => r.status === 'open').length !== 1 ? 's' : ''}
-              </p>
-              {risks.length === 0 ? (
-                <div className="rounded-xl border-2 border-dashed py-14 flex flex-col items-center gap-3 text-center">
-                  <AlertTriangle className="h-8 w-8 text-muted-foreground/25" />
-                  <p className="text-sm text-muted-foreground">No risks tracked. Tell Glenn about anything that could go wrong.</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {risks.map((risk) => (
-                    <div key={risk.id} id={`record-${risk.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)]
-                      ${risk.severity === 'high' && risk.status === 'open' ? 'border-l-[3px] border-l-rose-400' : ''} ${highlightClasses(risk.id)}`}>
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${risk.severity === 'high' ? 'text-rose-500' : 'text-muted-foreground/50'}`} />
-                        <p className="text-sm font-medium flex-1 tracking-tight">{risk.title}</p>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <Badge
-                            variant="outline"
-                            className={`text-xs capitalize
-                              ${risk.severity === 'high' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                                risk.severity === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                'bg-slate-100 text-slate-600 border-slate-200'}`}
-                          >
-                            {risk.severity}
-                          </Badge>
-                          <RecordEditButton
-                            eventId={eventId}
-                            recordType="risk"
-                            recordId={risk.id}
-                            initial={{ title: risk.title, description: risk.description, severity: risk.severity, mitigation: risk.mitigation }}
-                          />
-                          <RiskStatusButton riskId={risk.id} eventId={eventId} currentStatus={risk.status} />
-                        </div>
-                      </div>
-                      {risk.description && <p className="text-xs text-muted-foreground pl-6">{risk.description}</p>}
-                      {risk.mitigation && (
-                        <p className="text-xs text-muted-foreground pl-6">
-                          <span className="font-medium text-foreground/70">Mitigation:</span> {risk.mitigation}
-                        </p>
-                      )}
-                      {risk.ai_generated && (
-                        <div className="pl-6">
-                          <AiSourceBadge eventId={eventId} recordType="risk" recordId={risk.id} />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── Open Questions ────────────────────────────────────────── */}
-          {tab === 'open-questions' && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                {openQuestions.filter((q) => q.status === 'open').length} open ·{' '}
-                {openQuestions.filter((q) => q.status === 'answered').length} answered
-              </p>
-              {openQuestions.length === 0 ? (
-                <div className="rounded-xl border-2 border-dashed py-14 flex flex-col items-center gap-3 text-center">
-                  <HelpCircle className="h-8 w-8 text-muted-foreground/25" />
-                  <p className="text-sm text-muted-foreground">No open questions. Tell Glenn about things the team still needs to figure out.</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {openQuestions.map((question) => (
-                    <div
-                      key={question.id}
-                      id={`record-${question.id}`}
-                      className={`rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] space-y-2
-                        ${question.status === 'answered' ? 'opacity-60' : ''} ${highlightClasses(question.id)}`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <HelpCircle className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground/50" />
-                        <p className="text-sm flex-1 tracking-tight">{question.question}</p>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {question.ai_generated && (
-                            <AiSourceBadge eventId={eventId} recordType="open_question" recordId={question.id} />
+                {/* Questions */}
+                <section className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Questions</h3>
+                    {openQuestions.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {openQuestions.filter((q) => q.status === 'open').length} open ·{' '}
+                        {openQuestions.filter((q) => q.status === 'answered').length} answered
+                      </span>
+                    )}
+                  </div>
+                  {openQuestions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No open questions yet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {openQuestions.map((question) => (
+                        <div
+                          key={question.id}
+                          id={`record-${question.id}`}
+                          className={`rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] space-y-2
+                            ${question.status === 'answered' ? 'opacity-60' : ''} ${highlightClasses(question.id)}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <HelpCircle className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground/50" />
+                            <p className="text-sm flex-1 tracking-tight">{question.question}</p>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {question.ai_generated && (
+                                <AiSourceBadge eventId={eventId} recordType="open_question" recordId={question.id} />
+                              )}
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize
+                                ${question.status === 'open' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                {question.status}
+                              </span>
+                              <RecordEditButton
+                                eventId={eventId}
+                                recordType="open_question"
+                                recordId={question.id}
+                                initial={{ question: question.question }}
+                              />
+                            </div>
+                          </div>
+                          {question.status === 'open' && (
+                            <div className="pl-6">
+                              <OpenQuestionResolveButton questionId={question.id} eventId={eventId} />
+                            </div>
                           )}
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize
-                            ${question.status === 'open' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                            {question.status}
-                          </span>
-                          <RecordEditButton
-                            eventId={eventId}
-                            recordType="open_question"
-                            recordId={question.id}
-                            initial={{ question: question.question }}
-                          />
+                          {question.status === 'answered' && question.answer && (
+                            <div className="pl-6">
+                              <p className="text-xs text-muted-foreground italic">&ldquo;{question.answer}&rdquo;</p>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                      {question.status === 'open' && (
-                        <div className="pl-6">
-                          <OpenQuestionResolveButton questionId={question.id} eventId={eventId} />
-                        </div>
-                      )}
-                      {question.status === 'answered' && question.answer && (
-                        <div className="pl-6">
-                          <p className="text-xs text-muted-foreground italic">&ldquo;{question.answer}&rdquo;</p>
-                        </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </>
+                  )}
+                </section>
+
+                {/* Risks */}
+                <section className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Risks</h3>
+                    {risks.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {risks.filter((r) => r.status === 'open').length} open risk{risks.filter((r) => r.status === 'open').length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {risks.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No risks tracked yet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {risks.map((risk) => (
+                        <div key={risk.id} id={`record-${risk.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)]
+                          ${risk.severity === 'high' && risk.status === 'open' ? 'border-l-[3px] border-l-rose-400' : ''} ${highlightClasses(risk.id)}`}>
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${risk.severity === 'high' ? 'text-rose-500' : 'text-muted-foreground/50'}`} />
+                            <p className="text-sm font-medium flex-1 tracking-tight">{risk.title}</p>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Badge
+                                variant="outline"
+                                className={`text-xs capitalize
+                                  ${risk.severity === 'high' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                    risk.severity === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                    'bg-slate-100 text-slate-600 border-slate-200'}`}
+                              >
+                                {risk.severity}
+                              </Badge>
+                              <RecordEditButton
+                                eventId={eventId}
+                                recordType="risk"
+                                recordId={risk.id}
+                                initial={{ title: risk.title, description: risk.description, severity: risk.severity, mitigation: risk.mitigation }}
+                              />
+                              <RiskStatusButton riskId={risk.id} eventId={eventId} currentStatus={risk.status} />
+                            </div>
+                          </div>
+                          {risk.description && <p className="text-xs text-muted-foreground pl-6">{risk.description}</p>}
+                          {risk.mitigation && (
+                            <p className="text-xs text-muted-foreground pl-6">
+                              <span className="font-medium text-foreground/70">Mitigation:</span> {risk.mitigation}
+                            </p>
+                          )}
+                          {risk.ai_generated && (
+                            <div className="pl-6">
+                              <AiSourceBadge eventId={eventId} recordType="risk" recordId={risk.id} />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* Decisions */}
+                <section className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Scale className="h-3.5 w-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Decisions</h3>
+                    {decisions.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {decisions.filter((d) => d.status === 'pending').length} pending ·{' '}
+                        {decisions.filter((d) => d.status === 'decided').length} decided
+                      </span>
+                    )}
+                  </div>
+                  {decisions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No decisions tracked yet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {decisions.map((dec) => (
+                        <div key={dec.id} id={`record-${dec.id}`} className={`rounded-lg border bg-card p-3.5 space-y-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightClasses(dec.id)}`}>
+                          <div className="flex items-start gap-2">
+                            <p className="text-sm font-medium flex-1 tracking-tight">{dec.title}</p>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize
+                                ${dec.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                {dec.status}
+                              </span>
+                              <RecordEditButton
+                                eventId={eventId}
+                                recordType="decision"
+                                recordId={dec.id}
+                                initial={{ title: dec.title, description: dec.description, decision: dec.decision }}
+                              />
+                            </div>
+                          </div>
+                          {dec.description && <p className="text-xs text-muted-foreground">{dec.description}</p>}
+                          {dec.decision && (
+                            <div className="rounded-md bg-primary/[0.05] border border-primary/10 px-3 py-2">
+                              <p className="text-xs font-medium text-primary">Decision: {dec.decision}</p>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {dec.ai_generated && (
+                              <AiSourceBadge eventId={eventId} recordType="decision" recordId={dec.id} />
+                            )}
+                            {dec.status === 'pending' && (
+                              <DecisionResolveButton decisionId={dec.id} eventId={eventId} />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+              </div>
+            )
           )}
 
         </div>

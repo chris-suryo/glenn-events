@@ -7,5 +7,5 @@ interface PageProps {
 
 export default async function OpenQuestionsPage(props: PageProps) {
   const { eventId } = await props.params
-  redirectToPlanTab(eventId, 'questions', await props.searchParams)
+  redirectToPlanTab(eventId, 'open-items', await props.searchParams)
 }

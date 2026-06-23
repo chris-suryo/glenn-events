@@ -7,5 +7,5 @@ interface PageProps {
 
 export default async function RisksPage(props: PageProps) {
   const { eventId } = await props.params
-  redirectToPlanTab(eventId, 'risks', await props.searchParams)
+  redirectToPlanTab(eventId, 'open-items', await props.searchParams)
 }
