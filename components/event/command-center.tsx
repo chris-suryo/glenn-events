@@ -343,7 +343,7 @@ export function CommandCenter({
     pendingDecisions,
   )
   const nextTimelineItem = upcomingTimeline[0]
-  const eventDateLabel = formatEventDateTime(event.event_date, { year: false })
+  const eventDateLabel = formatEventDateTime(event.event_date, { year: false }, event.timezone ?? undefined)
   const highRisk = openRisks.find((risk) => risk.severity === 'high')
   const highPriorityTask = openTasks.find((task) => task.priority === 'high' || isOverdue(task.due_date))
   const confirmedParts = [
@@ -491,7 +491,7 @@ export function CommandCenter({
           <div className="flex items-center gap-2.5 mt-1 flex-wrap">
             {event.event_date && (
               <span className="text-xs text-muted-foreground">
-                {formatEventDateTime(event.event_date, { weekday: true })}
+                {formatEventDateTime(event.event_date, { weekday: true }, event.timezone ?? undefined)}
               </span>
             )}
             {countdown && (

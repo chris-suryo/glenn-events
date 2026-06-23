@@ -11,6 +11,8 @@ interface TimelineCalendarProps {
   eventId: string
   /** The event's own date — highlighted on the lead-up calendar. */
   eventDate: string | null
+  /** The event's timezone — used to render day-of times in local wall-clock. */
+  timeZone?: string
   /** Deep-linked highlight opens the List view so the target row is visible. */
   defaultView?: 'lead-up' | 'list'
   /** The existing vertical list, rendered as the List-view fallback. */
@@ -45,7 +47,7 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate()
 }
 
-export function TimelineCalendar({ items, eventId, eventDate, defaultView = 'lead-up', children }: TimelineCalendarProps) {
+export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultView = 'lead-up', children }: TimelineCalendarProps) {
   const [view, setView] = useState<'lead-up' | 'day-of' | 'list'>(defaultView)
   const [picked, setPicked] = useState<TimelineItem | null>(null)
 
@@ -116,7 +118,7 @@ export function TimelineCalendar({ items, eventId, eventDate, defaultView = 'lea
       </div>
 
       {view === 'list' && children}
-      {view === 'day-of' && <DayOfGrid items={items} eventDate={eventDate} onPick={setPicked} />}
+      {view === 'day-of' && <DayOfGrid items={items} eventDate={eventDate} timeZone={timeZone} onPick={setPicked} />}
       {view === 'lead-up' && (
         <>
           <div className="rounded-lg border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">

@@ -10,59 +10,47 @@ interface EventDateTimeFormatOptions {
   year?: boolean
 }
 
+// Event times are stored as timestamptz (a UTC instant); the original wall-clock
+// offset is not preserved. To render the event's *local* time we format the instant
+// in the event's timezone. Falls back to this default when an event has no timezone
+// set yet (e.g. before migration 015 / for older rows).
+export const DEFAULT_EVENT_TZ = 'America/New_York'
+
 export function formatEventDateTime(
   dateStr: string | null,
   options: EventDateTimeFormatOptions = {},
+  timeZone: string = DEFAULT_EVENT_TZ,
 ): string | null {
   if (!dateStr) return null
 
-  const parts = dateStr.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?/,
-  )
-
-  if (parts) {
-    const [, year, month, day, hour, minute, second = '0'] = parts
-    const date = new Date(Number(year), Number(month) - 1, Number(day))
-    const hasTime = !!hour && (hour !== '00' || minute !== '00' || second !== '00')
-    const dateLabel = date.toLocaleDateString('en-US', {
-      ...(options.weekday ? { weekday: 'short' as const } : {}),
-      month: 'short',
-      day: 'numeric',
-      ...(options.year !== false ? { year: 'numeric' as const } : {}),
-    })
-
-    if (!hasTime) return dateLabel
-
-    const wallClock = new Date(2000, 0, 1, Number(hour), Number(minute), Number(second))
-    const timeLabel = wallClock.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-    return `${dateLabel} at ${timeLabel}`
-  }
-
-  const date = new Date(dateStr)
-  if (Number.isNaN(date.getTime())) return null
-
-  const dateLabel = date.toLocaleDateString('en-US', {
+  const dateLabelOpts = {
     ...(options.weekday ? { weekday: 'short' as const } : {}),
-    month: 'short',
-    day: 'numeric',
+    month: 'short' as const,
+    day: 'numeric' as const,
     ...(options.year !== false ? { year: 'numeric' as const } : {}),
-  })
-
-  if (
-    date.getHours() === 0 &&
-    date.getMinutes() === 0 &&
-    date.getSeconds() === 0
-  ) {
-    return dateLabel
   }
 
-  return `${dateLabel} at ${date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  })}`
+  // Date-only values are calendar dates, not instants — never timezone-shift them
+  // (that could roll back a day). Build from local components.
+  const dateOnly = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dateOnly) {
+    const [, y, m, d] = dateOnly
+    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US', dateLabelOpts)
+  }
+
+  const instant = new Date(dateStr)
+  if (Number.isNaN(instant.getTime())) return null
+
+  const dateLabel = instant.toLocaleDateString('en-US', { timeZone, ...dateLabelOpts })
+
+  const hm = new Intl.DateTimeFormat('en-US', { timeZone, hour12: false, hour: '2-digit', minute: '2-digit' })
+    .formatToParts(instant)
+  const hh = hm.find((p) => p.type === 'hour')?.value
+  const mm = hm.find((p) => p.type === 'minute')?.value
+  if ((hh === '00' || hh === '24') && mm === '00') return dateLabel
+
+  const timeLabel = instant.toLocaleTimeString('en-US', { timeZone, hour: 'numeric', minute: '2-digit' })
+  return `${dateLabel} at ${timeLabel}`
 }
 
 export function formatDistanceToNow(dateStr: string): string {

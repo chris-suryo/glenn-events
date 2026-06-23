@@ -42,6 +42,7 @@ export interface Event {
   updated_at: string
   ai_summary: string | null
   ai_summary_updated_at: string | null
+  timezone: string | null
 }
 
 export interface EventMember {

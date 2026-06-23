@@ -374,12 +374,13 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                   items={timelineItems}
                   eventId={eventId}
                   eventDate={ev.event_date}
+                  timeZone={ev.timezone ?? undefined}
                   defaultView={highlight ? 'list' : 'lead-up'}
                 >
                   <div className="relative space-y-2.5 pl-6">
                   <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
                   {timelineItems.map((item) => {
-                    const timelineWhen = formatTimelineDateTime(item.starts_at, item.ends_at, ev.location)
+                    const timelineWhen = formatTimelineDateTime(item.starts_at, item.ends_at, ev.location, ev.timezone ?? undefined)
                     return (
                       <div key={item.id} id={`record-${item.id}`} className="relative">
                         <div className="absolute -left-4 mt-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
