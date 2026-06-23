@@ -343,6 +343,58 @@ per-channel review queues.
 Ordering note: swap m18 ↔ m19 if a pilot date gets fixed first.
 Acceptance criteria per branch live in the checkpoint when each starts.
 
+## 6.5 Visual Day-of Calendar — design direction (feeds m25-visual-run-of-show)
+
+Owner-validated visual direction for the **Run of Show** experience (June 2026).
+Full prototype saved at **`docs/reference/day-of-calendar-mockup.md`** (a
+non-production reference — inline styles + bespoke palette; real work must use the
+"Operations Desk" tokens and the existing `day-of-grid.tsx` / `timeline-calendar.tsx`
+/ `record-detail-drawer.tsx`).
+
+**What the owner liked (carry these over):**
+- A **Google-Calendar-style day column** for *Day of*: colorful timed blocks
+  positioned by clock time, **overlaps shown side-by-side** (e.g. AV check vs.
+  cocktail arrival; exec remarks nested inside dinner service). Fast and
+  glanceable, not a list.
+- A **hard-constraint line** across the grid — a red marker like
+  "MD departs 8:15" the schedule must respect.
+- **Left calendar + right context panel** split. The panel in the mockup holds
+  *Hard constraint*, *Overlaps to watch*, and *Source*. Owner likes related
+  notes beside the calendar but is **unsure what the panel's ideal contents
+  are** — treat the panel's contract as an open question.
+- A **lead-up month** with Gantt-style **bars for multi-day work windows**
+  (vendor work, open/not-started work, multi-day tasks) plus single-day
+  deadline / submit-by chips.
+- A **reusable detail drawer**: kind badge, time, location, description, **linked
+  records**, **AI source** (confidence, or "flagged — needs your answer"), and
+  **Edit / Tell Glenn** actions.
+
+**How this maps to what exists today:**
+- The **Day of** and **Lead-up** views already ship (`day-of-grid.tsx`,
+  `timeline-calendar.tsx`) with overlap columns and an "overlaps to watch" list
+  — this direction is a *visual + context upgrade*, not a from-scratch build.
+- A `record-detail-drawer.tsx` already exists; the mockup's drawer is a richer
+  superset (confidence + linked records).
+
+**Open questions / placement (owner is undecided):**
+1. **Home:** keep this under **Plan → Run of Show** (the `Day of` / `Lead-up`
+   toggle), which is the current home — recommended — vs. promoting it elsewhere.
+2. **Right panel contract:** what it should always show (hard constraints,
+   overlaps, source?) and the **minimum fields per timed block** (title,
+   start/end, type/color, source are the floor; location optional).
+
+**Data-model prerequisites (previously deferred in Phase 2 — required before build):**
+- **Hard constraints** as first-class data (so "MD departs 8:15" is a record,
+  not prose) to drive the red line + the panel.
+- **Work-window fields** (start/end on the relevant records) to render the
+  lead-up multi-day **bars**.
+- A **relationship store** to populate the drawer's "linked records" across types.
+- **Confidence** surfacing: `ai_runs` telemetry exists (model/tokens/cost from
+  migration 011); a per-record confidence to display may need to be derived or stored.
+
+MVP stays **read-only** (consistent with §0's "Visual Run of Show … MVP
+read-only; drag/edit later").
+
 ## 7. Design Principles
 
 1. **Glenn never silently changes the plan.** Every Glenn-originated
