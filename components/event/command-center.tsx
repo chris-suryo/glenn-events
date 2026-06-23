@@ -256,6 +256,15 @@ function actionBadgeClasses(tone: NeedsAttentionItem['tone']) {
   return 'bg-slate-100 text-slate-700'
 }
 
+function actionDotClasses(tone: NeedsAttentionItem['tone']) {
+  if (tone === 'review') return 'bg-indigo-500'
+  if (tone === 'risk') return 'bg-rose-500'
+  if (tone === 'question') return 'bg-amber-500'
+  if (tone === 'task') return 'bg-sky-500'
+  if (tone === 'timeline') return 'bg-emerald-500'
+  return 'bg-slate-400'
+}
+
 function statusClasses(tone: ReadinessStatus['tone']) {
   if (tone === 'review') return 'border-indigo-200 bg-indigo-50/50 text-indigo-700'
   if (tone === 'empty') return 'border-indigo-200 bg-indigo-50/50 text-indigo-700'
@@ -303,11 +312,6 @@ export function CommandCenter({
   const confirmedVendors = vendors.filter((v) => v.status === 'confirmed')
   const totalEstimated = budgetItems.reduce((s, i) => s + (i.estimated_cost ?? 0), 0)
   const unpricedBudgetCount = budgetItems.filter((i) => i.estimated_cost === null).length
-  const budgetTileValue = totalEstimated > 0
-    ? formatCurrency(totalEstimated)
-    : unpricedBudgetCount > 0
-      ? `$0 · ${unpricedBudgetCount} unpriced item${unpricedBudgetCount !== 1 ? 's' : ''}`
-      : formatCurrency(0)
 
   const planIsEmpty =
     openTasks.length === 0 &&
@@ -552,19 +556,19 @@ export function CommandCenter({
           </div>
         ) : (
           <div className="max-w-5xl mx-auto space-y-5">
-            <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${statusClasses(readinessStatus.tone)}`}>
-              <CardContent className="py-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-start gap-3">
-                    <span className="mt-0.5 shrink-0">
-                      <StatusIcon tone={readinessStatus.tone} />
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold leading-tight">{readinessStatus.title}</p>
-                      <p className="text-sm text-foreground/70 mt-0.5">{readinessStatus.detail}</p>
+            {readinessStatus.tone === 'review' && (
+              <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${statusClasses('review')}`}>
+                <CardContent className="py-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 shrink-0">
+                        <StatusIcon tone="review" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold leading-tight">{readinessStatus.title}</p>
+                        <p className="text-sm text-foreground/70 mt-0.5">{readinessStatus.detail}</p>
+                      </div>
                     </div>
-                  </div>
-                  {readinessStatus.tone === 'review' ? (
                     <button
                       type="button"
                       onClick={openReview}
@@ -573,27 +577,145 @@ export function CommandCenter({
                       Review
                       <ChevronRight className="h-3 w-3" />
                     </button>
-                  ) : readinessStatus.href ? (
-                    <Link
-                      href={readinessStatus.href}
-                      className="text-xs font-medium text-foreground/70 hover:text-foreground transition-colors inline-flex items-center gap-0.5 sm:shrink-0"
-                    >
-                      Open
-                      <ChevronRight className="h-3 w-3" />
-                    </Link>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-              <div className="lg:col-span-2 space-y-4">
-                <EventBriefPanel
-                  event={event}
-                  commandCenterBrief={commandCenterBrief}
-                  eventId={event.id}
-                  rows={eventBriefRows}
-                />
+            {/* KPI tiles — at-a-glance health */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {([
+                {
+                  icon: CheckCircle2, label: 'Open tasks', sub: null,
+                  value: String(openTasks.length),
+                  href: `/events/${event.id}/plan?tab=tasks`, alert: false,
+                },
+                {
+                  icon: Users, label: 'Vendors', sub: 'confirmed',
+                  value: `${confirmedVendors.length}/${vendors.length}`,
+                  href: `/events/${event.id}/plan?tab=vendors`, alert: false,
+                },
+                {
+                  icon: DollarSign, label: 'Est. budget',
+                  value: formatCurrency(totalEstimated),
+                  sub: event.budget_target !== null
+                    ? `of ${formatCurrency(event.budget_target)}`
+                    : unpricedBudgetCount > 0
+                      ? `${unpricedBudgetCount} unpriced`
+                      : null,
+                  href: `/events/${event.id}/plan?tab=budget`, alert: false,
+                },
+                {
+                  icon: AlertTriangle, label: 'Open risks', sub: null,
+                  value: String(openRisks.length),
+                  href: `/events/${event.id}/plan?tab=open-items`, alert: openRisks.length > 0,
+                },
+                {
+                  icon: HelpCircle, label: 'Open questions', sub: null,
+                  value: String(openQuestions.length),
+                  href: `/events/${event.id}/plan?tab=open-items`, alert: false,
+                },
+              ] as const).map(({ icon: Icon, label, value, sub, href, alert }) => (
+                <Link key={label} href={href} className="group">
+                  <Card className={`h-full border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] transition-colors group-hover:border-primary/30
+                    ${alert ? 'border-rose-200 bg-rose-50/40' : ''}`}>
+                    <CardContent className="p-4">
+                      <div className={`mb-2.5 inline-flex h-8 w-8 items-center justify-center rounded-lg
+                        ${alert ? 'bg-rose-100 text-rose-600' : 'bg-primary/10 text-primary'}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <p className={`text-2xl font-semibold leading-none tracking-tight ${alert ? 'text-rose-600' : ''}`}>
+                        {value}
+                      </p>
+                      <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
+                        {label}{sub ? <span className="text-muted-foreground/70"> · {sub}</span> : null}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              {/* Needs your attention — the single "what needs me" column */}
+              <div className="lg:col-span-2">
+                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needs your attention</p>
+                  </div>
+                  {nextBestActions.length > 0 ? (
+                    <div className="space-y-1">
+                      {nextBestActions.map((item) => (
+                        <Link
+                          key={item.id}
+                          href={item.href}
+                          className="group flex items-start gap-3 rounded-lg border border-transparent px-2.5 py-2.5 hover:border-border hover:bg-muted/30 transition-colors"
+                        >
+                          <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${actionDotClasses(item.tone)}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${actionBadgeClasses(item.tone)}`}>
+                                {item.badge}
+                              </span>
+                              <span className="text-sm font-medium leading-snug text-foreground group-hover:text-primary">
+                                {item.title}
+                              </span>
+                            </div>
+                            {item.context ? (
+                              <p className="text-xs text-muted-foreground mt-1 leading-snug line-clamp-2">
+                                {item.context}
+                              </p>
+                            ) : null}
+                          </div>
+                          <ChevronRight className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground/40 group-hover:text-primary" />
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 rounded-lg bg-muted/30 px-4 py-10 text-center">
+                      <CheckCircle2 className="h-7 w-7 text-emerald-500/70" />
+                      <p className="text-sm font-medium">You&rsquo;re on track</p>
+                      <p className="text-xs text-muted-foreground">No urgent blockers. Keep the plan current as details change.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Run of show (visual) + Recent */}
+              <div className="lg:col-span-1 space-y-4">
+                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Run of show</p>
+                  </div>
+                  {upcomingTimeline.length > 0 ? (
+                    <ol className="relative ml-1 space-y-3.5 border-l border-border pl-4">
+                      {upcomingTimeline.slice(0, 5).map((item) => (
+                        <li key={item.id} className="relative">
+                          <span className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-primary/50 ring-2 ring-card" />
+                          <Link
+                            href={`/events/${event.id}/plan?tab=timeline&highlight=${item.id}`}
+                            className="group block"
+                          >
+                            <p className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">{item.title}</p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              {item.starts_at ? shortDate(item.starts_at) : snippet(item.description) ?? 'Timing TBD'}
+                            </p>
+                          </Link>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No upcoming items yet. Add schedule notes in Ask Glenn.</p>
+                  )}
+                  <Link
+                    href={`/events/${event.id}/plan?tab=timeline`}
+                    className="text-xs text-muted-foreground hover:text-foreground mt-3 inline-block transition-colors"
+                  >
+                    View run of show →
+                  </Link>
+                </div>
 
                 <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
                   <div className="flex items-center gap-1.5 mb-3">
@@ -602,7 +724,7 @@ export function CommandCenter({
                   </div>
                   {recentActivity.length > 0 ? (
                     <div className="space-y-2.5">
-                      {recentActivity.slice(0, 5).map((entry) => (
+                      {recentActivity.slice(0, 4).map((entry) => (
                         <div key={entry.id} className="flex items-start gap-2">
                           <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${activityDot(entry.action)}`} />
                           <span className="text-xs text-muted-foreground flex-1 leading-snug min-w-0">
@@ -613,7 +735,7 @@ export function CommandCenter({
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs leading-relaxed text-muted-foreground">No recent review activity yet.</p>
+                    <p className="text-xs leading-relaxed text-muted-foreground">No recent activity yet.</p>
                   )}
                   <Link
                     href={`/events/${event.id}/activity`}
@@ -623,135 +745,6 @@ export function CommandCenter({
                   </Link>
                 </div>
               </div>
-
-              <div className="lg:col-span-3 space-y-4">
-                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Run of show</p>
-                  </div>
-                  {upcomingTimeline.length > 0 ? (
-                    <div className="space-y-2">
-                      {upcomingTimeline.slice(0, 4).map((item) => (
-                        <Link
-                          key={item.id}
-                          href={`/events/${event.id}/plan?tab=timeline&highlight=${item.id}`}
-                          className="group block rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/30 transition-colors"
-                        >
-                          <div className="flex items-start gap-2">
-                            <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">{item.title}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {item.starts_at ? shortDate(item.starts_at) : snippet(item.description) ?? 'Timing TBD'}
-                              </p>
-                            </div>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg bg-muted/30 px-3 py-3">
-                      <p className="text-xs text-muted-foreground">No upcoming timeline items yet. Add schedule notes in Ask Glenn.</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Next best actions</p>
-                  </div>
-                  {nextBestActions.length > 0 ? (
-                    <div className="space-y-2">
-                      {nextBestActions.map((item) => (
-                        <Link
-                          key={item.id}
-                          href={item.href}
-                          className="group block rounded-lg border border-transparent px-2 py-2 hover:border-border hover:bg-muted/30 transition-colors"
-                        >
-                          <div className="flex items-start gap-2">
-                            <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${actionBadgeClasses(item.tone)}`}>
-                                  {item.badge}
-                                </span>
-                                <span className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">
-                                  {item.title}
-                                </span>
-                              </div>
-                              {item.context ? (
-                                <p className="text-xs text-muted-foreground mt-1 leading-snug line-clamp-2">
-                                  {item.context}
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg bg-muted/30 px-3 py-3">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                        <p className="text-xs text-muted-foreground">No urgent actions. Keep the plan current as details change.</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {([
-                {
-                  icon: CheckCircle2, label: 'Open tasks',
-                  value: openTasks.length,
-                  href: `/events/${event.id}/plan?tab=tasks`,
-                  alert: false,
-                },
-                {
-                  icon: Users, label: 'Vendors',
-                  value: `${confirmedVendors.length}/${vendors.length}`,
-                  href: `/events/${event.id}/plan?tab=vendors`,
-                  alert: false,
-                },
-                {
-                  icon: DollarSign, label: 'Est. budget',
-                  value: budgetTileValue,
-                  href: `/events/${event.id}/plan?tab=budget`,
-                  alert: false,
-                  small: unpricedBudgetCount > 0 && totalEstimated === 0,
-                },
-                {
-                  icon: AlertTriangle, label: 'Open risks',
-                  value: openRisks.length,
-                  href: `/events/${event.id}/plan?tab=open-items`,
-                  alert: openRisks.length > 0,
-                },
-                {
-                  icon: HelpCircle, label: 'Questions',
-                  value: openQuestions.length,
-                  href: `/events/${event.id}/plan?tab=open-items`,
-                  alert: false,
-                },
-              ] as const).map(({ icon: Icon, label, value, href, alert, ...rest }) => (
-                <Link key={label} href={href}>
-                  <Card className={`h-full border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] hover:border-primary/30 transition-colors
-                    ${alert ? 'border-rose-200 bg-rose-50/40' : ''}`}>
-                    <CardContent className="pt-4 pb-3.5">
-                      <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
-                        <Icon className={`h-3 w-3 ${alert ? 'text-rose-500' : ''}`} />
-                        <span className="text-xs font-medium">{label}</span>
-                      </div>
-                      <p className={`font-semibold tracking-tight ${alert ? 'text-rose-600' : ''} ${'small' in rest && rest.small ? 'text-sm leading-snug' : 'text-xl'}`}>
-                        {value}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
             </div>
           </div>
         )}
