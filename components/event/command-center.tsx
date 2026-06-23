@@ -415,6 +415,47 @@ export function CommandCenter({
     })
   }
 
+  const eventBrief = {
+    headline: (() => {
+      const typeLabel = (event.event_type || 'Event').trim()
+      const cap = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)
+      const idParts = [
+        event.attendee_target ? `for ${event.attendee_target} guests` : null,
+        event.location ? `at ${event.location}` : null,
+      ].filter(Boolean)
+      return `${cap}${idParts.length ? ` ${idParts.join(' ')}` : ''}.`
+    })(),
+    status: (() => {
+      const parts = [
+        nextTimelineItem ? `Next: ${nextTimelineItem.title}${nextTimelineItem.starts_at ? ` (${shortDate(nextTimelineItem.starts_at)})` : ''}` : null,
+        vendors.length > 0 ? `${confirmedVendors.length}/${vendors.length} vendors confirmed` : null,
+        budgetBriefValue ? `budget ${budgetBriefValue}` : null,
+        openRisks.length > 0 ? `${openRisks.length} open risk${openRisks.length !== 1 ? 's' : ''}` : null,
+        openQuestions.length > 0 ? `${openQuestions.length} open question${openQuestions.length !== 1 ? 's' : ''}` : null,
+      ].filter(Boolean)
+      return parts.length > 0
+        ? parts.join(' · ')
+        : 'Tell Glenn what you know and this brief fills in as the plan takes shape.'
+    })(),
+  }
+
+  const countdown = (() => {
+    if (!event.event_date) return null
+    const target = new Date(event.event_date)
+    if (Number.isNaN(target.getTime())) return null
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const day = new Date(target); day.setHours(0, 0, 0, 0)
+    const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000)
+    if (diff > 0) return { value: String(diff), label: diff === 1 ? 'day to go' : 'days to go', soon: diff <= 7, past: false }
+    if (diff === 0) return { value: 'Today', label: 'event day', soon: true, past: false }
+    return { value: String(-diff), label: -diff === 1 ? 'day ago' : 'days ago', soon: false, past: true }
+  })()
+
+  const budgetTarget = event.budget_target
+  const vendorProgress = vendors.length > 0 ? confirmedVendors.length / vendors.length : null
+  const budgetProgress = budgetTarget !== null && budgetTarget > 0 ? Math.min(totalEstimated / budgetTarget, 1) : null
+  const budgetOver = budgetTarget !== null && budgetTarget > 0 && totalEstimated > budgetTarget
+
   function handleDeleteEvent() {
     if (!window.confirm(`Delete "${event.name}"? This cannot be undone — all tasks, vendors, budget, and chat history will be permanently removed.`)) return
     startDelete(async () => {
@@ -556,6 +597,28 @@ export function CommandCenter({
           </div>
         ) : (
           <div className="max-w-5xl mx-auto space-y-5">
+            {/* Event brief — what this event is + how it's tracking */}
+            <div className="rounded-xl border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-5">
+              <div className="flex items-start justify-between gap-5">
+                <div className="min-w-0">
+                  <div className="mb-1.5 flex items-center gap-1.5 text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span className="text-[11px] font-semibold uppercase tracking-widest">Brief</span>
+                  </div>
+                  <p className="text-base font-medium leading-snug tracking-tight text-foreground">{eventBrief.headline}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{eventBrief.status}</p>
+                </div>
+                {countdown && (
+                  <div className="shrink-0 rounded-xl border bg-muted/30 px-4 py-3 text-center">
+                    <p className={`text-2xl font-semibold leading-none tracking-tight tabular-nums ${countdown.past ? 'text-muted-foreground' : countdown.soon ? 'text-amber-600' : 'text-primary'}`}>
+                      {countdown.value}
+                    </p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">{countdown.label}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {readinessStatus.tone === 'review' && (
               <Card className={`border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] ${statusClasses('review')}`}>
                 <CardContent className="py-4">
@@ -589,33 +652,39 @@ export function CommandCenter({
                   icon: CheckCircle2, label: 'Open tasks', sub: null,
                   value: String(openTasks.length),
                   href: `/events/${event.id}/plan?tab=tasks`, alert: false,
+                  progress: null, barTone: null,
                 },
                 {
                   icon: Users, label: 'Vendors', sub: 'confirmed',
                   value: `${confirmedVendors.length}/${vendors.length}`,
                   href: `/events/${event.id}/plan?tab=vendors`, alert: false,
+                  progress: vendorProgress, barTone: 'bg-emerald-500',
                 },
                 {
                   icon: DollarSign, label: 'Est. budget',
                   value: formatCurrency(totalEstimated),
-                  sub: event.budget_target !== null
-                    ? `of ${formatCurrency(event.budget_target)}`
+                  sub: budgetTarget !== null
+                    ? `of ${formatCurrency(budgetTarget)}`
                     : unpricedBudgetCount > 0
                       ? `${unpricedBudgetCount} unpriced`
                       : null,
-                  href: `/events/${event.id}/plan?tab=budget`, alert: false,
+                  href: `/events/${event.id}/plan?tab=budget`, alert: budgetOver,
+                  progress: budgetProgress,
+                  barTone: budgetOver ? 'bg-rose-500' : budgetProgress !== null && budgetProgress >= 0.9 ? 'bg-amber-500' : 'bg-emerald-500',
                 },
                 {
                   icon: AlertTriangle, label: 'Open risks', sub: null,
                   value: String(openRisks.length),
                   href: `/events/${event.id}/plan?tab=open-items`, alert: openRisks.length > 0,
+                  progress: null, barTone: null,
                 },
                 {
                   icon: HelpCircle, label: 'Open questions', sub: null,
                   value: String(openQuestions.length),
                   href: `/events/${event.id}/plan?tab=open-items`, alert: false,
+                  progress: null, barTone: null,
                 },
-              ] as const).map(({ icon: Icon, label, value, sub, href, alert }) => (
+              ] as const).map(({ icon: Icon, label, value, sub, href, alert, progress, barTone }) => (
                 <Link key={label} href={href} className="group">
                   <Card className={`h-full border shadow-[0px_1px_3px_rgba(0,0,0,0.05)] transition-colors group-hover:border-primary/30
                     ${alert ? 'border-rose-200 bg-rose-50/40' : ''}`}>
@@ -630,6 +699,11 @@ export function CommandCenter({
                       <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
                         {label}{sub ? <span className="text-muted-foreground/70"> · {sub}</span> : null}
                       </p>
+                      {progress !== null && (
+                        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div className={`h-full rounded-full ${barTone ?? 'bg-primary'}`} style={{ width: `${Math.round(progress * 100)}%` }} />
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </Link>
