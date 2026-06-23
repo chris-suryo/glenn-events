@@ -40,6 +40,8 @@ export interface Event {
   created_by: string
   created_at: string
   updated_at: string
+  ai_summary: string | null
+  ai_summary_updated_at: string | null
 }
 
 export interface EventMember {
