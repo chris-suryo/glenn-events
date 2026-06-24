@@ -124,9 +124,19 @@ const QUEUED_SUGGESTION_RULES = `
 Queue ids are NOT record ids — never copy a queue_id into target_id and never use operation "update" or "archive" against a queued suggestion. Queued suggestions are NOT in the plan yet; they cannot be corrected or archived, only REPLACED:
 26. If the note adds or changes information about a queued suggestion (answers the question in its "needs" note, changes its price, names its unknown vendor, restates it more completely), re-propose ONE complete merged item with operation "insert" and set replaces_queued_id to that suggestion's queue_id. Carry forward every still-true fact from the queued suggestion (costs, times, contacts, category) merged with the new information.
 27. Set replaces_queued_id ONLY when the note clearly refers to the same real-world item as the queued suggestion. If unsure, leave replaces_queued_id null and keep both. Never re-propose a queued suggestion the note says nothing about.
-28. When one note clarifies a service that has several queued suggestions (for example naming a previously unknown photographer that has a queued vendor, cost, schedule, and follow-up task), re-propose EACH related queued suggestion merged with the new fact, each with its own replaces_queued_id, so the review queue converges to one current set instead of accumulating fragments. This applies even when a related queued suggestion's own facts are unchanged — carrying it forward with replaces_queued_id is replacement, not duplication. If the note answers exactly what a queued follow-up task was chasing, re-propose that task with replaces_queued_id and status "done" so the answered task converges too.`
+28. When one note clarifies a service that has several queued suggestions (for example naming a previously unknown photographer that has a queued vendor, cost, schedule, and follow-up task), re-propose EACH related queued suggestion merged with the new fact, each with its own replaces_queued_id, so the review queue converges to one current set instead of accumulating fragments. This applies even when a related queued suggestion's own facts are unchanged — carrying it forward with replaces_queued_id is replacement, not duplication. If the note answers exactly what a queued follow-up task was chasing, re-propose that task with replaces_queued_id and status "done" so the answered task converges too.
+
+29. GROUPING: every extracted item (any type) MUST set "group" to the short Title-Case name of the ONE real-world thing it is about — the vendor, service, or component. All items about the same real-world thing share the EXACT same group string: a vendor, its budget line, its timeline item, and its follow-up task about the florist "Petal & Stem" all get group "Petal & Stem"; the cake decision, its cost, and its baker question all get "Cake"; the DJ-vs-band decision and any DJ vendor get "DJ". This lets the reviewer see and approve one component at a time. Prefer the proper name when given, otherwise the service ("Catering", "AV", "Photography", "Shuttle"). Use a generic label ("Logistics", "General") only when an item genuinely belongs to no specific component. Keep group consistent with how you grouped the same thing in earlier batches when the event state shows it.`
 
 // ─── Tool schema ──────────────────────────────────────────────────────────────
+
+// Tags every extracted item with the real-world thing it's about, so the Review
+// panel can group related updates (vendor + its budget + its timeline + its task)
+// into one tile the user can scan and approve as a block. Same string = same tile.
+const GROUP_PROPERTY = {
+  type: 'string',
+  description: 'Short Title-Case name of the ONE real-world thing this update is about — the vendor, service, or component it belongs to, e.g. "Petal & Stem", "Cake", "DJ", "Venue", "Photography", "Shuttle". Every update about the SAME real-world thing MUST use the EXACT same group string (a vendor and its budget line, its timeline item, and its follow-up task all share one group) so the review panel shows them as a single tile. Keep it 1-4 words. Prefer the proper name when one is given (the florist "Petal & Stem", not "Florals"); otherwise name the service ("Catering", "AV"). Use a general label like "Logistics" or "General" only when an item truly fits no specific component.',
+} as const
 
 const EXTRACTION_TOOL: Anthropic.Tool = {
   name: 'extract_event_updates',
@@ -182,8 +192,9 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             replaces_queued_id: { type: ['string', 'null'], description: 'queue_id of the queued pending suggestion this item replaces with a merged restatement (rules 26-28). null when not replacing a queued suggestion. Only copy queue_ids listed under "Queued for review".' },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
+            group:       GROUP_PROPERTY,
           },
-          required: ['title', 'description', 'due_date', 'priority', 'status', 'owner_name', 'operation', 'target_id', 'replaces_queued_id', 'confidence', 'rationale'],
+          required: ['title', 'description', 'due_date', 'priority', 'status', 'owner_name', 'operation', 'target_id', 'replaces_queued_id', 'confidence', 'rationale', 'group'],
         },
       },
       vendors: {
@@ -206,8 +217,9 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the vendor is being removed, e.g. "Canceled by vendor". null otherwise.' },
             confidence:     { type: 'number', minimum: 0, maximum: 1 },
             rationale:      { type: 'string' },
+            group:          GROUP_PROPERTY,
           },
-          required: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale'],
+          required: ['name', 'category', 'contact_name', 'email', 'phone', 'status', 'estimated_cost', 'notes', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale', 'group'],
         },
       },
       budget_items: {
@@ -228,8 +240,9 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the cost no longer applies. null otherwise.' },
             confidence:     { type: 'number', minimum: 0, maximum: 1 },
             rationale:      { type: 'string' },
+            group:          GROUP_PROPERTY,
           },
-          required: ['category', 'description', 'estimated_cost', 'actual_cost', 'status', 'vendor_name', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale'],
+          required: ['category', 'description', 'estimated_cost', 'actual_cost', 'status', 'vendor_name', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale', 'group'],
         },
       },
       timeline_items: {
@@ -249,8 +262,9 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             archive_reason: { type: ['string', 'null'], description: 'For archive only: short reason the timing no longer applies. null otherwise.' },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
+            group:       GROUP_PROPERTY,
           },
-          required: ['title', 'description', 'starts_at', 'ends_at', 'type', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale'],
+          required: ['title', 'description', 'starts_at', 'ends_at', 'type', 'operation', 'target_id', 'replaces_queued_id', 'archive_reason', 'confidence', 'rationale', 'group'],
         },
       },
       decisions: {
@@ -265,8 +279,9 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             decision:    { type: ['string', 'null'], description: 'The decision made, if already decided' },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
+            group:       GROUP_PROPERTY,
           },
-          required: ['title', 'description', 'status', 'decision', 'confidence', 'rationale'],
+          required: ['title', 'description', 'status', 'decision', 'confidence', 'rationale', 'group'],
         },
       },
       risks: {
@@ -282,8 +297,9 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             mitigation:  { type: ['string', 'null'] },
             confidence:  { type: 'number', minimum: 0, maximum: 1 },
             rationale:   { type: 'string' },
+            group:       GROUP_PROPERTY,
           },
-          required: ['title', 'description', 'severity', 'status', 'mitigation', 'confidence', 'rationale'],
+          required: ['title', 'description', 'severity', 'status', 'mitigation', 'confidence', 'rationale', 'group'],
         },
       },
       open_questions: {
@@ -296,8 +312,9 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
             owner_name: { type: ['string', 'null'], description: 'Person who should answer this, if mentioned' },
             confidence: { type: 'number', minimum: 0, maximum: 1 },
             rationale:  { type: 'string' },
+            group:      GROUP_PROPERTY,
           },
-          required: ['question', 'owner_name', 'confidence', 'rationale'],
+          required: ['question', 'owner_name', 'confidence', 'rationale', 'group'],
         },
       },
     },
@@ -434,7 +451,7 @@ interface RawTask {
   priority: 'low' | 'medium' | 'high'; status?: 'todo' | 'in_progress' | 'done' | 'blocked'; owner_name: string | null
   operation?: 'insert' | 'update'; target_id?: string | null
   replaces_queued_id?: string | null
-  confidence: number; rationale: string
+  confidence: number; rationale: string; group?: string | null
 }
 interface RawVendor {
   name: string; category: string | null; contact_name: string | null
@@ -443,7 +460,7 @@ interface RawVendor {
   operation?: 'insert' | 'update' | 'archive'; target_id?: string | null
   replaces_queued_id?: string | null
   archive_reason?: string | null
-  confidence: number; rationale: string
+  confidence: number; rationale: string; group?: string | null
 }
 interface RawBudgetItem {
   category: string; description: string; estimated_cost: number | null
@@ -452,7 +469,7 @@ interface RawBudgetItem {
   operation?: 'insert' | 'update' | 'archive'; target_id?: string | null
   replaces_queued_id?: string | null
   archive_reason?: string | null
-  confidence: number; rationale: string
+  confidence: number; rationale: string; group?: string | null
 }
 interface RawTimelineItem {
   title: string; description: string | null; starts_at: string | null
@@ -460,19 +477,19 @@ interface RawTimelineItem {
   operation?: 'insert' | 'archive'; target_id?: string | null
   replaces_queued_id?: string | null
   archive_reason?: string | null
-  confidence: number; rationale: string
+  confidence: number; rationale: string; group?: string | null
 }
 interface RawDecision {
   title: string; description: string | null; status: 'pending' | 'decided'
-  decision: string | null; confidence: number; rationale: string
+  decision: string | null; confidence: number; rationale: string; group?: string | null
 }
 interface RawRisk {
   title: string; description: string | null; severity: 'low' | 'medium' | 'high'
   status: 'open' | 'monitoring' | 'resolved'; mitigation: string | null
-  confidence: number; rationale: string
+  confidence: number; rationale: string; group?: string | null
 }
 interface RawOpenQuestion {
-  question: string; owner_name: string | null; confidence: number; rationale: string
+  question: string; owner_name: string | null; confidence: number; rationale: string; group?: string | null
 }
 
 interface LLMOutput {
@@ -669,6 +686,11 @@ export async function llmExtract(
   ) as LLMOutput
   const items: ExtractedItem[] = []
 
+  const normalizeGroup = (value: string | null | undefined): string | null => {
+    const text = typeof value === 'string' ? value.trim() : ''
+    return text.length > 0 ? text.slice(0, 60) : null
+  }
+
   for (const t of raw.tasks ?? []) {
     const operation = t.operation === 'update' && t.target_id ? 'update' : 'insert'
     items.push({
@@ -680,6 +702,7 @@ export async function llmExtract(
       target_record_type: operation === 'insert' ? null : 'task',
       target_record_id: operation === 'insert' ? null : t.target_id ?? null,
       replaces_queued_id: t.replaces_queued_id ?? null,
+      group: normalizeGroup(t.group),
     })
   }
 
@@ -694,6 +717,7 @@ export async function llmExtract(
       target_record_type: operation === 'insert' ? null : 'vendor',
       target_record_id: operation === 'insert' ? null : v.target_id ?? null,
       replaces_queued_id: v.replaces_queued_id ?? null,
+      group: normalizeGroup(v.group),
     })
   }
 
@@ -708,6 +732,7 @@ export async function llmExtract(
       target_record_type: operation === 'insert' ? null : 'budget_item',
       target_record_id: operation === 'insert' ? null : b.target_id ?? null,
       replaces_queued_id: b.replaces_queued_id ?? null,
+      group: normalizeGroup(b.group),
     })
   }
 
@@ -722,6 +747,7 @@ export async function llmExtract(
       target_record_type: operation === 'insert' ? null : 'timeline_item',
       target_record_id: operation === 'insert' ? null : tl.target_id ?? null,
       replaces_queued_id: tl.replaces_queued_id ?? null,
+      group: normalizeGroup(tl.group),
     })
   }
 
@@ -731,6 +757,7 @@ export async function llmExtract(
       payload: { title: d.title, description: d.description, status: d.status, decision: d.decision },
       confidence: d.confidence,
       rationale: d.rationale,
+      group: normalizeGroup(d.group),
     })
   }
 
@@ -740,6 +767,7 @@ export async function llmExtract(
       payload: { title: r.title, description: r.description, severity: r.severity, status: r.status, mitigation: r.mitigation },
       confidence: r.confidence,
       rationale: r.rationale,
+      group: normalizeGroup(r.group),
     })
   }
 
@@ -749,6 +777,7 @@ export async function llmExtract(
       payload: { question: q.question, status: 'open', owner_name: q.owner_name },
       confidence: q.confidence,
       rationale: q.rationale,
+      group: normalizeGroup(q.group),
     })
   }
 

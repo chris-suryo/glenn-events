@@ -21,6 +21,10 @@ export interface ExtractedItem {
     | OpenQuestionPayload
   confidence: number
   rationale: string
+  // Short real-world component this update belongs to (e.g. "Petal & Stem", "Cake").
+  // Lets the Review panel group related updates into one tile. Optional — untagged
+  // updates fall back to the flat list.
+  group?: string | null
   operation?: 'insert' | 'update' | 'archive'
   target_record_type?: UpdateType | null
   target_record_id?: string | null
