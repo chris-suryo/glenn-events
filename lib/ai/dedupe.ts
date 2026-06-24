@@ -54,6 +54,7 @@ function getKeyLabel(item: ExtractedItem): string {
     case 'open_question': return (p as OpenQuestionPayload).question
     case 'decision':      return (p as DecisionPayload).title
     case 'timeline_item': return (p as TimelineItemPayload).title
+    case 'event_detail':  return 'Event details'
   }
 }
 

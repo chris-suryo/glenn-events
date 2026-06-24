@@ -19,12 +19,12 @@
      ("what's the actual date?") and uses a placeholder (e.g. June 10) only to position day-of
      times; the Lead-up calendar and Day-of grid stay empty until a real date exists. **Event 4
      (timezone test) needs a real date** ~6 weeks out — set it there.
-   - **Known gap — high-level facts are currently set-once:** there is no way *yet* to change an
-     event's date, guest count, budget, or location after creation (neither by editing nor by
-     telling Glenn — extraction only writes the 7 plan tables, never the event row). So you can't
-     yet "slot in" a date you skipped, or move a date that changed. Tracked as **"Appending
-     high-level facts"** below — build/decide before the date-change and headcount-change paths
-     can be tested.
+   - **Appending high-level facts (now supported via Glenn):** you *can* slot in or change the
+     event's date, guest count, budget, or location after creation by telling Glenn in Ask Glenn
+     ("the wedding is June 20, we're up to 110 guests, budget's now $35k"). Glenn proposes an
+     **Event details** card that you approve **individually** in Review (it's marked high-stakes,
+     indigo, never swept into "Apply safe"). On approve it patches the event row. See the
+     **"Appending high-level facts"** test below.
 3. Tell Claude **the `event_id` + event number** (get ids via the list query). Claude runs the
    **verify-by-id** query and reports **PASS/FAIL per expectation**, naming any mismatch.
 
@@ -146,20 +146,25 @@ now that it's chosen); Lola's never becomes a confirmed/archived vendor (it neve
 
 ---
 
-## Appending high-level facts (event date / guest count / budget / location) — gap to close
-These live on the **event row**, not the 7 plan tables, and are **set-once today**: optional at
-creation, then uneditable. Two real-world needs are currently untestable because the capability
-doesn't exist:
-- **Slot in a fact you skipped** — created the event with no date, now you know it's June 20.
-- **Change a fact that moved** — date slips a week; headcount goes 90 → 110; budget bumps to $35k.
+## Appending high-level facts (event date / guest count / budget / location) — built
+These live on the **event row**, not the 7 plan tables. They're optional at creation; to change
+them after, tell Glenn and approve the review-gated **Event details** card (`event_detail`).
 
-Once built, add this sub-step to any event: after Input A, state a high-level change in Ask Glenn
-("the wedding is now June 20, we're up to 110 guests, budget's now $35k") and verify the **event
-row itself** updated (`select event_date, attendee_target, budget_target, location from events
-where id=…`), the countdown/KPIs reflect it, and day-of times re-anchor to the real date.
-**Decision pending:** manual "Edit details" form (owner types it, first-party, no review gate) vs.
-a Glenn-proposed review-gated `event_detail` update vs. both. Until then, mark date/headcount/
-budget-change rows **N/A (not yet supported)** rather than FAIL.
+**Test (add to any event — Event 2 is ideal since it had no date):** after Input A, send a
+high-level change in Ask Glenn, e.g.:
+> "quick update — the wedding is June 20 2026, we're up to 110 guests, and the budget's now $35k."
+
+**Expect:** ONE **Event details** card in Review (indigo, high-stakes section, **not** in "Apply
+safe"), showing a before→after diff (Event date: Not set → Jun 20, 2026 · Guest count: 90 → 110 ·
+Budget target: $30,000 → $35,000). Approve it **individually**. Then verify the **event row
+itself** updated and the Overview countdown/KPIs + day-of grid re-anchor to the real date:
+```sql
+select event_date, attendee_target, budget_target, location from events where id = 'PASTE-EVENT-ID';
+```
+**Audit:** event-level vs plan-item disambiguation (a $3,800 catering line must stay a budget_item,
+NOT the event budget_target; a "final headcount 2 wks out" deadline must stay a timeline_item, NOT
+the event date); only the changed fields update; the card is approved on its own, never in bulk.
+**Must NOT:** turn the overall budget into a vendor/budget line, or the event date into a deadline.
 
 ## Pass bar
 Zero fabricated facts · zero duplicates · corrections update in place · cancellations archive (no

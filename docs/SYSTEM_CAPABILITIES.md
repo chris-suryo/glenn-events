@@ -114,8 +114,11 @@ Key columns & enums:
 guided event create/onboarding; the full extract → review → approve loop (typed notes + file
 upload + image extraction) with provenance; consolidated nav (Plan 5 tabs); the visual
 Overview (Brief + KPI gauges + attention + rail); Run of Show (lead-up + day-of grid + list,
-combined on desktop); **event-timezone-correct** time rendering; AI brief; the seeded demo
-event "Apex Capital Client Dinner".
+combined on desktop); **event-timezone-correct** time rendering; AI brief; **per-component
+review tiles** (Glenn groups related proposed updates into one block per real-world thing);
+**review-gated editing of high-level event facts** (date / guest count / budget / location are
+optional at creation and changed afterward by telling Glenn — an `event_detail` proposal you
+approve individually patches the event row); the seeded demo event "Apex Capital Client Dinner".
 
 **Not built yet (roadmap):** member **invite flow** (multi-user is seed/bootstrap only today —
 the key unblocker for people-assignment); cross-event **Home**; correction-aware

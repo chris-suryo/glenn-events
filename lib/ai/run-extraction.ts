@@ -93,6 +93,7 @@ const EMPTY_COUNTS: CountByType = {
   decision: 0,
   risk: 0,
   open_question: 0,
+  event_detail: 0,
 }
 
 // Mirrors the Review panel's needs-answer rule.
@@ -410,11 +411,25 @@ function resolveCorrectionTargets(
   existingVendors: VendorCorrectionTarget[],
   existingBudgetItems: BudgetCorrectionTarget[],
   existingTimelineItems: TimelineCorrectionTarget[],
+  eventId: string,
+  eventSnapshot: Json,
 ): { kept: ExtractedItemWithOperation[]; droppedCorrections: ExtractedItem[] } {
   const kept: ExtractedItemWithOperation[] = []
   const droppedCorrections: ExtractedItem[] = []
 
   for (const item of items) {
+    // Event-level facts patch the event row itself (no event_id/provenance columns,
+    // so they bypass the child-table matching) — the target is always this event.
+    if (item.update_type === 'event_detail') {
+      kept.push({
+        ...item,
+        operation: 'update',
+        target_record_type: 'event_detail',
+        target_record_id: eventId,
+        target_snapshot_json: eventSnapshot,
+      })
+      continue
+    }
     if (item.update_type === 'task' && item.operation === 'archive') {
       droppedCorrections.push(item)
       continue
@@ -902,6 +917,13 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
       eventStateContext.existing_vendors,
       eventStateContext.existing_budget_items,
       eventStateContext.existing_timeline_items,
+      eventId,
+      {
+        event_date: eventStateContext.event.event_date,
+        attendee_target: eventStateContext.event.attendee_target,
+        budget_target: eventStateContext.event.budget_target,
+        location: eventStateContext.event.location,
+      } as Json,
     )
     if (droppedCorrections.length > 0) {
       console.warn(
