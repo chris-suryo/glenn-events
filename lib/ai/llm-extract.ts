@@ -676,11 +676,12 @@ export async function llmExtract(
 
   const response = await anthropic.messages.create({
     model,
-    // Item schemas are verbose (operation/target/replaces fields on every
-    // item) — long notes hit 4096 and truncate the tool call, which degrades
-    // to a near-empty batch. Haiku supports far larger outputs; 8192 gives
-    // 12-item batches comfortable headroom.
-    max_tokens: 8192,
+    // Item schemas are verbose (operation/target/replaces/group fields on every
+    // item) and the model sometimes emits the data arrays before the prose
+    // fields (response_message / understood_summary). Too small a budget truncates
+    // that prose tail, leaving Glenn with an empty reply. 16000 keeps the whole
+    // tool call — items AND the conversational brief — comfortably in budget.
+    max_tokens: 16000,
     tools: [EXTRACTION_TOOL],
     tool_choice: { type: 'tool', name: 'extract_event_updates' },
     system: systemPrompt,
