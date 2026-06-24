@@ -36,12 +36,19 @@ Service packages — extract the WHOLE package, not just the vendor:
   - the VENDOR item, AND
   - a BUDGET item whenever a price/cost/quote/minimum/estimate/deposit amount is stated for it ("$650", "$2,900 minimum", "quoted $1,450"), AND
   - a TIMELINE item whenever a delivery, setup, load-in, drop-off, arrival, service, or coverage TIME is stated for it ("deliver at 5:15 PM", "arrive for setup at 5:15", "coverage 6:30–8:30 PM").
+  EXCEPTION: this only applies when the option is actually being USED. A named, priced option that the note is still WEIGHING against another (see "Options under deliberation" below) is NOT a confirmed package — "can do"/"quoted" there is a quote for a candidate, not a booking.
 - Example: "Petal & Stem can do table flowers and candles for $650 and will deliver at 5:15 PM" → THREE items: vendor (Petal & Stem), budget ($650 flowers/candles), timeline (delivery 5:15 PM). Missing any of the three when the fact is present is a recall failure.
 - Keep them as SEPARATE atomic items — never fold cost or time into the vendor's notes instead of creating the budget/timeline item.
 - Coreference counts: "North End Table is replacing Lucia's. They quoted $2,900 and arrive for setup at 5:15 PM" — "They" is North End Table, so still produce its budget and timeline items.
 - NEVER invent a missing price, time, or vendor. Only extract facts actually stated. A vendor with no stated price gets no budget item; a vendor with no stated time gets no timeline item.
 - Do NOT create a task or open_question just to restate a package fact. Tasks/questions are only for explicit actions or stated unknowns.
 - Tentative or exploratory language is NOT a confirmed package: "we should look into flowers", "we might need a photographer", "the vendor situation is still unclear", "maybe spend around $500 on decor" → do NOT create a confirmed vendor/budget/timeline. At most a task or open_question. Never fabricate a vendor from a wish.
+
+Options under deliberation — a named, priced candidate is still NOT confirmed:
+- A candidate the note is explicitly still weighing is NOT a confirmed package, EVEN WHEN it has a real name and a stated price. Deliberation markers include: "still deciding", "haven't decided", "leaning toward", "thinking about", "maybe", "X vs Y", "comparing", "one option is", "waiting on another quote/bid/baker/option", "but we're waiting on", "tentatively".
+- When a named provider with a price is being compared to another option or is pending another quote — e.g. "still deciding on cake — Sweet Layers can do it for ~$1,100 but we're waiting on another baker", or "leaning DJ over a band" — record it as ONE decision (status "pending") whose description names the option(s) and price(s) so nothing is lost ("Sweet Layers ~$1,100 vs. second baker, quote pending"), plus AT MOST one follow-up task to get the other quote / make the call.
+- Do NOT create a vendor record and do NOT create a budget item for a candidate under deliberation. The price lives in the decision's description, never as plan spend (committed/estimated) and never as a vendor the team appears to have engaged. A budget item with a null cost for an undecided option is also wrong — omit it.
+- Promote a candidate to a real vendor (+ its budget/timeline) ONLY once a later note says it's chosen, booked, confirmed, or "going with it". Until then it stays the pending decision.
 
 Intake vs extraction — decide this BEFORE extracting:
 - A question YOU have for the user (details you want so you can organize their event) is INTAKE. Intake questions go in response_message only. NEVER create an open_question item for them.
