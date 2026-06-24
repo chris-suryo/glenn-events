@@ -89,9 +89,6 @@ export function ReviewCompanion({ eventId, pendingUpdates, aiRuns, files, childr
                     </span>
                   )}
                 </h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Review what Glenn found before it changes the plan.
-                </p>
               </div>
               <button
                 type="button"

@@ -1092,8 +1092,7 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
       {expanded ? (
         <div className="flex flex-col gap-3 border-t p-3">
           {(canPreviewFile || messageSourceHref) ? (
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] text-muted-foreground">Glenn did the reading. The source stays attached.</p>
+            <div className="flex items-center justify-end gap-2">
               {canPreviewFile ? (
                 <Button size="xs" variant="outline" onClick={() => setPreviewOpen(true)}>
                   <FileText data-icon="inline-start" />
@@ -1148,11 +1147,10 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
                       ) : (
                         <button
                           type="button"
-                          disabled={isPendingBulk}
                           onClick={() => handleBulk('approve', group.updates)}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-[13px] font-semibold text-primary transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-[13px] font-semibold text-primary transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none"
                         >
-                          {isPendingBulk ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                          <Check className="size-3.5" />
                           Apply {group.updates.length}
                         </button>
                       )}

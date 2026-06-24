@@ -491,9 +491,6 @@ export function ChatView({ event, messages, pendingUpdates, aiRuns, files, highl
                 </span>
               )}
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Review what Glenn found before it changes the plan.
-            </p>
           </div>
           <div ref={reviewScrollRef} className="flex-1 overflow-y-auto overscroll-contain min-h-0">
             <ProposedUpdatesQueue
