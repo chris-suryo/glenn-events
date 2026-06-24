@@ -160,7 +160,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
       {/* Tab content */}
       <div className="flex-1 overflow-auto">
         <ScrollToHighlight targetId={highlight ? `record-${highlight}` : null} />
-        <div className="p-6 max-w-3xl mx-auto space-y-5">
+        <div className={`p-6 ${tab === 'timeline' ? 'max-w-6xl' : 'max-w-3xl'} mx-auto space-y-5`}>
 
           {/* ── Tasks ─────────────────────────────────────────────────── */}
           {tab === 'tasks' && (
