@@ -294,6 +294,30 @@ function CountChips({ counts }: { counts: ReviewPackage['counts'] }) {
   )
 }
 
+const OTHER_GROUP_LABEL = 'Other updates'
+
+interface ComponentGroup {
+  label: string
+  updates: ProposedUpdate[]
+}
+
+// Buckets updates by their Glenn-assigned real-world component label, preserving
+// first-seen order. Untagged updates collect under one "Other updates" bucket so
+// nothing is lost when a label is missing.
+function groupByComponent(updates: ProposedUpdate[]): ComponentGroup[] {
+  const order: string[] = []
+  const map = new Map<string, ProposedUpdate[]>()
+  for (const update of updates) {
+    const label = update.group_label?.trim() || OTHER_GROUP_LABEL
+    if (!map.has(label)) {
+      map.set(label, [])
+      order.push(label)
+    }
+    map.get(label)!.push(update)
+  }
+  return order.map((label) => ({ label, updates: map.get(label)! }))
+}
+
 export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onClarify }: ReviewPackageCardProps) {
   const router = useRouter()
   const [expanded, setExpanded] = useState(defaultExpanded)
@@ -308,6 +332,12 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
   const [isPendingBulk, startBulkTransition] = useTransition()
 
   const { source, safe, removals, needsAnswer, summary, counts } = pkg
+
+  // Group safe updates into per-component tiles so the reviewer can scan and apply
+  // one real-world thing at a time. Tiles only appear when Glenn tagged the batch
+  // into 2+ distinct components; otherwise the original flat list is shown.
+  const safeGroups = groupByComponent(safe)
+  const showSafeTiles = safeGroups.length > 1
 
   function toggleSetValue<T>(setter: Dispatch<SetStateAction<Set<T>>>, value: T) {
     setter((current) => {
@@ -985,9 +1015,38 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
                   Apply {safe.length} safe update{safe.length !== 1 ? 's' : ''}
                 </Button>
               </div>
-              <div className="flex flex-col gap-2">
-                {safe.map(renderUpdateRow)}
-              </div>
+              {showSafeTiles ? (
+                <div className="flex flex-col gap-2.5">
+                  {safeGroups.map((group) => (
+                    <div key={group.label} className="rounded-lg border bg-muted/15 p-2.5">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-semibold text-foreground">{group.label}</span>
+                          <span className="inline-flex h-4 items-center rounded bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
+                            {group.updates.length}
+                          </span>
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          disabled={isPendingBulk}
+                          onClick={() => handleBulk('approve', group.updates)}
+                        >
+                          {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                          Apply {group.updates.length}
+                        </Button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {group.updates.map(renderUpdateRow)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {safe.map(renderUpdateRow)}
+                </div>
+              )}
             </section>
           ) : null}
 

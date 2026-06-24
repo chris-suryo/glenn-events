@@ -1079,6 +1079,7 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
         supersedes_proposed_update_id: supersededByIndex.get(index) ?? null,
         status: 'pending',
         rationale: item.rationale,
+        group_label: item.group ?? null,
       }))
       const { error: updatesErr } = await supabase.from('proposed_updates').insert(rows)
       if (updatesErr) {

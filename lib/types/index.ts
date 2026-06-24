@@ -223,6 +223,7 @@ export interface ProposedUpdate {
   target_snapshot_json: Json | null
   supersedes_proposed_update_id: string | null
   rationale: string | null
+  group_label: string | null
   created_at: string
   reviewed_by: string | null
   reviewed_at: string | null
