@@ -85,6 +85,14 @@ type ExtractedItemWithOperation = ExtractedItem & {
   target_snapshot_json?: Json | null
 }
 
+// The canned replies sanitizeResponseMessage falls back to when the model's
+// prose came back empty — treated as "no real reply" so we can rebuild one.
+function isThinReply(text: string): boolean {
+  const trimmed = text.trim()
+  if (trimmed.length < 40) return true
+  return /^Got it — I saved your note\./.test(trimmed)
+}
+
 const EMPTY_COUNTS: CountByType = {
   task: 0,
   vendor: 0,
@@ -874,6 +882,15 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
         const fallbackSummary = summarizeExtracted(summarySource, rawExtracted)
         understoodSummary = result.understoodSummary.length > 0 ? result.understoodSummary : fallbackSummary.understoodSummary
         recommendedSummary = result.recommendedSummary.length > 0 ? result.recommendedSummary : fallbackSummary.recommendedSummary
+        // The model occasionally front-loads the data arrays and runs out of room
+        // for response_message, leaving a canned line. When that happens, speak
+        // from the recommended changes so Glenn still sounds like Glenn.
+        if (isThinReply(assistantContent) && recommendedSummary.length > 0) {
+          const lead = rawExtracted.length > 0
+            ? `Saved — here's what I pulled out of that:`
+            : `Saved your note. Here's what I'd suggest:`
+          assistantContent = `${lead}\n${recommendedSummary.map((line) => `• ${line}`).join('\n')}`
+        }
       } catch (err) {
         console.error('extract: llm failure:', err instanceof Error ? err.message : String(err), err)
         if (isFile) {

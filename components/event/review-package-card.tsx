@@ -704,8 +704,8 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
       <article
         key={update.id}
         className={cn(
-          'rounded-lg border shadow-sm transition-colors',
-          archive ? 'border-rose-200 bg-rose-50/40' : 'bg-card'
+          'rounded-lg border transition-colors',
+          archive ? 'border-rose-200 bg-rose-50/40' : 'border-border/70 bg-card'
         )}
       >
         <div className="flex items-start gap-2 p-2.5">
@@ -729,18 +729,11 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
               )}
               aria-hidden="true"
             />
-            <span
-              className={cn(
-                'mt-1.5 flex size-2 shrink-0 rounded-full',
-                archive ? 'bg-rose-500' : correction ? 'bg-blue-500' : 'bg-emerald-500'
-              )}
-            >
-              <span className="sr-only">{operationLabel}</span>
-            </span>
             <Badge
               variant="outline"
               className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS[update.update_type])}
             >
+              <span className="sr-only">{operationLabel} </span>
               {TYPE_PILL_LABEL[update.update_type]}
             </Badge>
             <span className="min-w-0 flex-1">
@@ -1019,53 +1012,49 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
           ) : null}
 
           {safe.length > 0 ? (
-            <section className="flex flex-col gap-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-foreground">Ready to apply</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {safe.length} safe change{safe.length !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  disabled={isPendingBulk}
-                  onClick={() => handleBulk('approve', safe)}
-                  className="w-full sm:w-auto"
-                >
-                  {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                  Apply {safe.length} safe update{safe.length !== 1 ? 's' : ''}
-                </Button>
+            <section className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Ready to apply
+                </p>
+                {!showSafeTiles ? (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={isPendingBulk}
+                    onClick={() => handleBulk('approve', safe)}
+                  >
+                    {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                    Apply {safe.length}
+                  </Button>
+                ) : null}
               </div>
               {showSafeTiles ? (
-                <div className="flex flex-col gap-2.5">
-                  {safeGroups.map((group) => (
-                    <div key={group.label} className="rounded-lg border bg-muted/15 p-2.5">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-semibold text-foreground">{group.label}</span>
-                          <span className="inline-flex h-4 items-center rounded bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
-                            {group.updates.length}
-                          </span>
-                        </div>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          disabled={isPendingBulk}
-                          onClick={() => handleBulk('approve', group.updates)}
-                        >
-                          {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                          Apply {group.updates.length}
-                        </Button>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {group.updates.map(renderUpdateRow)}
-                      </div>
+                safeGroups.map((group) => (
+                  <div key={group.label} className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2 px-0.5">
+                      <span className="flex items-baseline gap-1.5">
+                        <span className="text-xs font-semibold text-foreground">{group.label}</span>
+                        <span className="text-[11px] font-normal text-muted-foreground">{group.updates.length}</span>
+                      </span>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="h-6 text-primary hover:text-primary"
+                        disabled={isPendingBulk}
+                        onClick={() => handleBulk('approve', group.updates)}
+                      >
+                        {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
+                        Apply {group.updates.length}
+                      </Button>
                     </div>
-                  ))}
-                </div>
+                    <div className="flex flex-col gap-1.5">
+                      {group.updates.map(renderUpdateRow)}
+                    </div>
+                  </div>
+                ))
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1.5">
                   {safe.map(renderUpdateRow)}
                 </div>
               )}
