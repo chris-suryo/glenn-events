@@ -1,127 +1,142 @@
-# Glenn Events — AI-Verified Scenario Tests
+# Glenn Events — Test Suite (5 varied events, audited via Supabase)
 
-> **How this works.** The owner drives the real app (real Glenn, real LLM); Claude verifies by
-> reading the database through the **Supabase MCP** (project `foscibergjhdwqkpsxip`) and diffing
-> the actual records against the **expected ground truth** below — *semantically*. This catches
-> the accuracy misses a human would have to hunt for. (To enable Claude's read access, see
-> "How to approve the Supabase access" in chat / add `mcp__Supabase__execute_sql` to
-> `.claude/settings.json` `permissions.allow`.)
+> **Method.** Owner drives the real app (real Glenn, real LLM); Claude audits each event by its
+> **`event_id`** through Supabase (SQL Editor or MCP) and diffs the actual records against the
+> **Expected** ground truth below — semantically. Five deliberately different events cover the
+> system end-to-end; bugs found get logged and fixed iteratively.
 >
-> **Inputs are deliberately messy** — real texts, forwarded emails, voice-to-text — because
-> that's what the product must handle. Each scenario lists what **must** appear, what must be
-> **updated not duplicated**, and what must **NOT** be fabricated.
+> Each event lists **Setup**, the verbatim **Input(s)** to paste into Ask Glenn, **Expected**
+> (must-have / update-not-duplicate / must-NOT-fabricate), and the **Audit focus**.
 
-## The loop
-1. Owner runs the input(s) in Ask Glenn on the named event, reviews, **approves**, sends a
-   screenshot for any time/visual check, and says *"done — event &lt;name&gt;, step N."*
-2. Claude reads `proposed_updates` + destination tables for that `event_id` and reports
-   **PASS/FAIL per expectation** with the exact mismatch. Always checked: nothing fabricated,
-   nothing duplicated, times in the event's local zone, source attached.
+## Run + audit loop
+1. **Reset** (optional, clean slate): in the Supabase SQL Editor — `delete from events;`
+   (cascades to all child records; irreversible). Or keep the demo: add `where id <> 'c9633e80-…'`.
+2. For each event below: **create it** in the app (name, type, date ~6 weeks out, budget target),
+   paste **Input A**, review + **approve**; then any later inputs (B/C). Screenshot the Run of
+   Show for time checks.
+3. Tell Claude **the `event_id` + event number** (get ids via the list query). Claude runs the
+   **verify-by-id** query and reports **PASS/FAIL per expectation**, naming any mismatch.
 
----
-
-## ⭐ Arc A — "The Foundry Dinner" (run these 6 in order, on ONE fresh event)
-
-This is the primary test: a realistic planning thread where later messages must correct,
-cancel, and de-duplicate against the state earlier messages created. Create one fresh event
-(any name, event_date ~6 weeks out, set a budget target like $12,000), then paste each step.
-
-**A1 — post-walkthrough brain dump (recall breadth + package split)**
-> "just left the walkthrough. room holds 60, we're at 48 — they need final headcount 10 days
-> out. catering's in-house, chef quoted $85/head so ~$4,080, includes dessert but NOT service
-> staff ($35/hr per server, need 4 for 5 hours). AV is bring-your-own so I have to call
-> Crescendo about mics + a screen. parking is street-only, might need valet. and they hold the
-> date with a 50% deposit — $1,500 — due by the 15th or we lose it."
-
-Expect: venue vendor (in-house catering noted); **budget catering ≈ $4,080**; a **service-staff**
-cost or task (**$700** = 35×4×5) — *separate*, not folded into catering; **task** call Crescendo
-(AV: mics + screen); **task/open-question** valet quote; **deadline** final headcount (~10 days
-out); **deadline/task** deposit **$1,500** due the 15th; **risk** street-only parking. No invented
-prices.
-
-**A2 — forwarded vendor email (coreference + package → 3+ atomic records)**
-> "fwd: 'Confirming Lumen Photo — 6 hours, 2 shooters, online gallery in 3 weeks, $2,400.
-> We'll arrive an hour before for setup. 50% retainer holds the date, balance day-of. Let us
-> know on the engagement-session add-on (+$600).'"
-
-Expect: **vendor** Lumen Photo (photography); **budget** photography **$2,400**; **timeline**
-arrive **1 hr before** (setup); **task/budget** 50% retainer (**$1,200**); **decision/open-question**
-engagement add-on **+$600** (pending). "We" = Lumen Photo.
-
-**A3 — correction (update in place, NOT a duplicate)**
-> "good news, catering came down — chef will do $75/head, and service staff is now included."
-
-Expect: the **existing catering budget updates to ≈ $3,600** (75×48) — *one* row, value changed;
-the separate **service-staff cost is removed/zeroed or archived** (now included). **No** second
-catering line. `activity_log` shows a correction.
-
-**A4 — cancellation + replacement (cascade, no silent stale spend)**
-> "venue fell through — they double-booked us. moving to The Foundry, same date. our deposit's
-> refundable thank god, and Lumen + Crescendo still work for the new room."
-
-Expect: original venue **archived** (`archived_at` set); **new vendor** The Foundry; the venue
-**deposit/budget** archived or flagged (not left as live committed spend); Lumen/Crescendo
-untouched. Optionally a **risk/task** about the move. Nothing fabricated about The Foundry beyond
-"new venue, same date."
-
-**A5 — re-paste the A1 dump verbatim (dedup — the #1 risk)**
-> *(paste A1 again, approve)*
-
-Expect: **zero** new duplicate records — same-title **and** same-time/value items already exist
-and must be dropped. (A same title with a *different* value would be a correction, not a dup.)
-
-**A6 — tentative language (must NOT fabricate)**
-> "might add a photo booth, maybe ~$500 on decor, still need to look into transport for the
-> out-of-town folks."
-
-Expect: **NO** confirmed vendor or committed budget. At most **tasks/open-questions** (look into
-photo booth; decor ~$500 as a *target/question*; transport task). **FAIL** if a "Photo Booth"
-vendor or a committed $500 budget line appears.
+**List events (to grab ids):**
+```sql
+select e.id, e.name, to_char(e.created_at,'MM-DD HH24:MI') as created,
+  (select count(*) from vendors v where v.event_id=e.id) as vendors,
+  (select count(*) from timeline_items t where t.event_id=e.id) as timeline
+from events e order by e.created_at desc;
+```
+**Verify one event (paste its id):**
+```sql
+with ev as (select id from events where id = 'PASTE-EVENT-ID')
+select
+  (select json_agg(json_build_object('type',update_type,'status',status,'payload',payload_json) order by created_at) from proposed_updates where event_id=(select id from ev)) as proposed_updates,
+  (select json_agg(json_build_object('name',name,'status',status,'cost',estimated_cost,'archived',archived_at is not null) order by created_at) from vendors where event_id=(select id from ev)) as vendors,
+  (select json_agg(json_build_object('cat',category,'desc',description,'cost',estimated_cost,'status',status,'archived',archived_at is not null) order by created_at) from budget_items where event_id=(select id from ev)) as budget,
+  (select json_agg(json_build_object('title',title,'starts',starts_at,'ends',ends_at,'type',type) order by starts_at) from timeline_items where event_id=(select id from ev)) as timeline,
+  (select json_agg(json_build_object('title',title,'status',status,'priority',priority,'due',due_date) order by created_at) from tasks where event_id=(select id from ev)) as tasks,
+  (select json_agg(json_build_object('title',title,'severity',severity,'status',status) order by created_at) from risks where event_id=(select id from ev)) as risks,
+  (select json_agg(json_build_object('title',title,'status',status) order by created_at) from decisions where event_id=(select id from ev)) as decisions,
+  (select json_agg(json_build_object('q',question,'status',status) order by created_at) from open_questions where event_id=(select id from ev)) as open_questions;
+```
 
 ---
 
-## Standalone behavioral scenarios (each on its own fresh event)
+## Event 1 — Corporate dinner · "Northwind Capital — Partner Dinner"
+*Style: messy planner brain-dump + a forwarded vendor email. Tests breadth + package split.*
+**Setup:** corporate dinner · ~40 guests · budget target $12,000.
 
-**B1 — voice-to-text run-on (separate decisions / tentative / hard constraint)**
-> "um so we picked gold and white, linens are through the venue, still figuring out the cake —
-> Sweet Layers can do it for like 900 but the other baker hasn't replied, thinking DJ over a
-> band, and the toast is 8 sharp bc the GM leaves at 830"
+**Input A (paste):**
+> "just wrapped the site visit at The Gilded Fork. private room fits 45, we're at 40. they need
+> final headcount 2 weeks out. catering's a prix fixe $95/head incl dessert, but bar is separate —
+> figure ~$1,800 for a 3-hour open bar. they want a 50% deposit ($3,000) by the 20th to hold the
+> date. valet's a $350 flat fee. we need AV for a short partner toast (mic + small speaker) — call
+> ProSound. and the GM mentioned street closures that weekend that could slow guest arrival."
 
-Expect: **decision** colors gold/white (decided); **open-question/decision** cake (Sweet Layers
-~$900 vs pending other) — not a confirmed vendor yet; **task/decision** music DJ-vs-band
-(leaning DJ, not a confirmed vendor); **timeline** toast **8:00 PM**; **risk/constraint** GM
-departs **8:30** (remarks must end before). Linens = a note, not a vendor.
+**Input B (paste — forwarded email):**
+> "fwd from photographer: 'Confirming Vance Studio — 3 hours coverage, edited gallery in 2 weeks,
+> $1,650. We arrive 30 min early to set up. 50% to book, balance on delivery.'"
 
-**B2 — mixed signal: real fact vs. gossip (separation)**
-> "great news — the band confirmed, $3,200! weather looks iffy that weekend. Sarah said her
-> cousin does calligraphy. parking's still a question mark."
+**Expect:** venue *Gilded Fork*; **budget** catering **$3,800** ($95×40), open bar **$1,800**,
+valet **$350**, deposit **$3,000** (+ a deadline "by the 20th"); **deadline** final headcount
+(2 wks out); **task/vendor** ProSound (AV mic+speaker); **risk** street closures / guest arrival.
+From B (package → 3 atomic): **vendor** Vance Studio, **budget** photography **$1,650**, **timeline**
+arrive 30 min early (setup), + retainer task/budget $825. **No** invented prices.
+**Audit:** recall breadth; package split; deadlines; forwarded-email parse.
 
-Expect: **vendor** band (confirmed) + **budget $3,200**; **risk** weather; **task/open-question**
-calligraphy (tentative — *not* a confirmed vendor); **open-question** parking. The confirmed
-fact and the hearsay must be classified differently.
+## Event 2 — Wedding · "Ava & Sam — Garden Wedding"
+*Style: voice-to-text run-on, then a correction. Tests decisions, tentative-restraint, correction-in-place, hard constraint.*
+**Setup:** wedding · ~90 guests · budget target $30,000.
 
-**B3 — intake only (zero fabrication)**
-> "hey can you help me get organized? not really sure where to start."
+**Input A (paste):**
+> "ok for ava and sam — we locked gold and white. florist is Petal & Stem, they quoted 2400 for
+> ceremony + reception arrangements. still deciding on cake — Sweet Layers can do it for like 1100
+> but we're waiting on another baker. leaning DJ over a band. ceremony's at 4 and the first toast is
+> 7 sharp because grandma leaves by 730. oh and we need a shuttle for guests from the hotel."
 
-Expect: **no records created at all** — an intake/checklist reply only. Any vendor/task invented
-= FAIL.
+**Input B (paste — later):**
+> "update: Petal & Stem came down to 2000, and they'll throw in the arch install too."
 
-**B4 — time / timezone correctness (verify stored instant + rendered local time)**
-> "AV crew load-in 3:30 PM, sound check 4:00–4:30, doors 6."
+**Expect (A):** **decision** colors gold/white (decided); **vendor** Petal & Stem (florals) +
+**budget $2,400**; **open-question/decision** cake (Sweet Layers ~$1,100 vs pending — **NOT** a
+confirmed vendor/budget yet); **decision/task** DJ-vs-band (leaning DJ — not a confirmed vendor);
+**timeline** ceremony **4:00 PM**, toast **7:00 PM**; **risk/constraint** grandma departs **7:30**;
+**task** guest shuttle.
+**Expect (B):** Petal & Stem **budget updated to $2,000** — *one* row, **no duplicate** florist;
+optional task/note re: arch install.
+**Audit:** decision vs tentative classification; correction updates in place; times; hard constraint.
 
-Expect: timeline items whose stored `starts_at` instants map to **3:30**, **4:00–4:30**, **6:00
-PM** in the event's timezone; the Day-of grid + List render those exact local times (screenshot).
-FAIL if shown in UTC.
+## Event 3 — Nonprofit fundraiser · "Hope Lodge — Benefit Auction"
+*Style: forwarded catering quote + sponsor/logistics note. Tests email parse + a data-model edge (sponsor income).*
+**Setup:** benefit auction · ~120 guests · budget target $15,000.
+
+**Input A (paste):**
+> "fwd: 'Crave Catering for the auction — passed apps + plated dinner for 120 at $68/head =
+> $8,160. Bar package +$2,400. We need final count 10 days out and a 25% deposit to confirm.' —
+> also we locked Acme Corp as presenting sponsor for $5,000; I need to send their logo to the
+> printer by Thursday. and the auctioneer, Jim Dale, wants his $500 fee upfront."
+
+**Expect:** **vendor** Crave Catering; **budget** catering **$8,160** + bar **$2,400** + deposit
+25% (**$2,040**); **deadline** final count (10 days out); **task** send Acme logo to printer (by
+Thursday); auctioneer Jim Dale ($500 fee) as **vendor + budget/task**. **Sponsor Acme $5,000 is
+income** — the data model has no income concept, so the *right* behavior is a task/open-question
+(track the sponsorship), **not** a fabricated negative budget or a vendor. **Audit:** does Glenn
+handle the unrepresentable "income" gracefully without inventing structure?
+
+## Event 4 — Conference / workshop · "DevSummit — Engineering Offsite"
+*Style: a dense schedule dump. Tests timeline breadth + correct local times (the timezone fix) + a hard constraint.*
+**Setup:** workshop · ~60 attendees · budget target $8,000.
+
+**Input A (paste):**
+> "agenda for the offsite: 9:00 registration + coffee, 9:30 keynote, 10:45 breakouts in 3 rooms,
+> 12:00 lunch, 1:30 hands-on workshops, 3:00 break, 3:15 panel, 4:30 closing remarks. we need AV +
+> screens in all 3 breakout rooms — call MediaWorks. the keynote speaker has a hard stop at 10:30
+> to catch a flight. catering's $45/head for lunch + breaks."
+
+**Expect:** ~**8 timeline items** at the stated times, rendered in the event's **local zone** (9:00
+AM … 4:30 PM — **not** shifted to UTC); **task/vendor** MediaWorks (AV, 3 rooms); **risk/constraint**
+keynote hard stop **10:30**; **budget** catering **$2,700** ($45×60) or a per-head line. **Audit:**
+timeline recall at scale + **timezone correctness** (open the Day-of grid — times must match).
+
+## Event 5 — Casual social · "Leo's 30th — Birthday Dinner"
+*Style: casual texts, very tentative, then a cancellation. Tests restraint (no fabrication) + replacement.*
+**Setup:** birthday · ~20 guests · (budget target optional).
+
+**Input A (paste):**
+> "planning leo's 30th! thinking ~20 people, want a nice dinner out. maybe Lola's or that new spot
+> Marrow downtown, haven't decided. might do a slideshow of old photos. still need to sort a cake."
+
+**Input B (paste — later):**
+> "Lola's is booked solid that night, so we're going with Marrow."
+
+**Expect (A):** **NO** confirmed venue vendor (Lola's/Marrow are tentative → an **open-question/
+decision** "venue: Lola's vs Marrow"); slideshow + cake → **tasks/open-questions**; **no**
+fabricated budget. **Expect (B):** venue resolves to **Marrow** (decision decided, or Marrow added
+now that it's chosen); Lola's never becomes a confirmed/archived vendor (it never was one).
+**Audit:** restraint under tentative language; clean resolution on the follow-up.
 
 ---
 
-## What "pass" means (per the pilot audit)
-Zero fabricated facts · zero duplicates on re-paste · corrections update in place · cancellations
-archive (no stale committed spend) · correct local times · packages split into atomic
-vendor+budget+timeline · tentative language never becomes a confirmed record. Log results
-(proposals · accepted · accuracy · $/run) in `docs/AI_COST_AUDIT.md`.
-
-## Optional automation (later)
-- `scripts/verify-scenario.ts` — `event_id` + expected-outcome JSON → DB diff the owner/CI runs
-  unattended (also the path if MCP access stays closed).
-- `scripts/test-extraction.ts` (exists) — extraction property checks without the UI.
+## Pass bar
+Zero fabricated facts · zero duplicates · corrections update in place · cancellations archive (no
+stale committed spend) · packages split into atomic vendor+budget+timeline · tentative language
+never becomes a confirmed record · times render in the event's local zone. Bugs found → logged
+here / fixed iteratively. (Optional later: `scripts/verify-scenario.ts` for unattended re-runs.)
