@@ -377,42 +377,27 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                   timeZone={ev.timezone ?? undefined}
                   defaultView={highlight ? 'list' : 'lead-up'}
                 >
-                  <div className="relative space-y-2.5 pl-6">
+                  <div className="relative space-y-1.5 pl-6">
                   <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
                   {timelineItems.map((item) => {
-                    const timelineWhen = formatTimelineDateTime(item.starts_at, item.ends_at, ev.location, ev.timezone ?? undefined)
+                    const timelineWhen = formatTimelineDateTime(item.starts_at, item.ends_at, null, ev.timezone ?? undefined)
                     return (
                       <div key={item.id} id={`record-${item.id}`} className="relative">
-                        <div className="absolute -left-4 mt-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
-                        <div className={`rounded-lg border bg-card p-3.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightClasses(item.id)}`}>
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1">
-                              <p className="text-sm font-medium tracking-tight">{item.title}</p>
-                              {timelineWhen && (
-                                <div className="flex items-center gap-1.5 mt-1 text-xs font-medium text-muted-foreground">
-                                  <Calendar className="h-3 w-3" />
-                                  {timelineWhen}
-                                </div>
-                              )}
-                              {item.description && <p className="text-xs text-muted-foreground mt-1">{item.description}</p>}
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${TYPE_COLORS[item.type]}`}>
-                                {item.type}
-                              </span>
-                              <RecordEditButton
-                                eventId={eventId}
-                                recordType="timeline_item"
-                                recordId={item.id}
-                                initial={{ title: item.title, description: item.description, starts_at: item.starts_at, ends_at: item.ends_at, type: item.type }}
-                              />
-                            </div>
-                          </div>
-                          {item.ai_generated && (
-                            <div className="mt-1.5">
-                              <AiSourceBadge eventId={eventId} recordType="timeline_item" recordId={item.id} />
-                            </div>
+                        <div className="absolute -left-4 mt-2.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
+                        <div className={`flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5 shadow-[0px_1px_2px_rgba(0,0,0,0.04)] ${highlightClasses(item.id)}`}>
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium tracking-tight">{item.title}</span>
+                          {timelineWhen && (
+                            <span className="shrink-0 text-xs font-medium text-muted-foreground" style={{ fontVariantNumeric: 'tabular-nums' }}>{timelineWhen}</span>
                           )}
+                          <span className={`shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize ${TYPE_COLORS[item.type]}`}>
+                            {item.type}
+                          </span>
+                          <RecordEditButton
+                            eventId={eventId}
+                            recordType="timeline_item"
+                            recordId={item.id}
+                            initial={{ title: item.title, description: item.description, starts_at: item.starts_at, ends_at: item.ends_at, type: item.type }}
+                          />
                         </div>
                       </div>
                     )

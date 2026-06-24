@@ -117,7 +117,9 @@ export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultV
         </button>
       </div>
 
-      <div className="lg:space-y-6">
+      <div className="lg:space-y-5">
+        {/* Lead-up + Day-of sit side by side on desktop; List spans below. */}
+        <div className="lg:grid lg:grid-cols-2 lg:gap-5 lg:items-start">
         {/* Lead-up */}
         <section className={`${view === 'lead-up' ? '' : 'hidden'} space-y-2 lg:block`}>
           <ViewLabel icon={CalendarDays}>Lead-up</ViewLabel>
@@ -231,6 +233,7 @@ export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultV
           <ViewLabel icon={CalendarClock}>Day of</ViewLabel>
           <DayOfGrid items={items} eventDate={eventDate} timeZone={timeZone} onPick={setPicked} />
         </section>
+        </div>
 
         {/* List */}
         <section className={`${view === 'list' ? '' : 'hidden'} space-y-2 lg:block`}>
