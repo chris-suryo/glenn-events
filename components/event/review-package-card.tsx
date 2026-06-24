@@ -23,6 +23,7 @@ import {
   getActionLabel,
   getArchiveReason,
   getClarificationPrompt,
+  getEventDetailChanges,
   getPlanHref,
   getReadableTitle,
   getStructuredFields,
@@ -52,8 +53,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { SourcePreviewDrawer } from './source-preview-drawer'
 import {
-  AlertTriangle,
   ArrowRight,
+  Check,
   CheckCircle2,
   ChevronDown,
   FileText,
@@ -61,7 +62,9 @@ import {
   Loader2,
   MessageSquareText,
   Pencil,
+  Send,
   Trash2,
+  X,
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -296,7 +299,7 @@ function CountChips({ counts }: { counts: ReviewPackage['counts'] }) {
   )
 }
 
-const OTHER_GROUP_LABEL = 'Other updates'
+const OTHER_GROUP_LABEL = 'General'
 
 interface ComponentGroup {
   label: string
@@ -332,6 +335,25 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
   const [confirmingRemovalId, setConfirmingRemovalId] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [isPendingBulk, startBulkTransition] = useTransition()
+  // Optimistic action state: an approved row stays visible (dimmed + "Approved")
+  // and a dismissed row is hidden immediately; router.refresh() reconciles. Rolled
+  // back on error so a failed mutation restores the row.
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set())
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+
+  const addToSet = (setter: Dispatch<SetStateAction<Set<string>>>, ids: string | string[]) =>
+    setter((current) => {
+      const next = new Set(current)
+      for (const id of Array.isArray(ids) ? ids : [ids]) next.add(id)
+      return next
+    })
+  const removeFromSet = (setter: Dispatch<SetStateAction<Set<string>>>, id: string) =>
+    setter((current) => {
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+  const isActioned = (id: string) => appliedIds.has(id) || dismissedIds.has(id)
 
   const { source, safe, removals, needsAnswer, eventDetails, summary, counts } = pkg
 
@@ -339,7 +361,6 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
   // one real-world thing at a time. Tiles only appear when Glenn tagged the batch
   // into 2+ distinct components; otherwise the original flat list is shown.
   const safeGroups = groupByComponent(safe)
-  const showSafeTiles = safeGroups.length > 1
 
   function toggleSetValue<T>(setter: Dispatch<SetStateAction<Set<T>>>, value: T) {
     setter((current) => {
@@ -374,6 +395,7 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
 
   async function handleSingle(update: ProposedUpdate, action: ReviewAction, payload?: UpdatePayload) {
     setProcessingIds((current) => new Set(current).add(update.id))
+    addToSet(action === 'approve' ? setAppliedIds : setDismissedIds, update.id)
     const name = getUpdateName(update, payload)
     const dest = TYPE_DESTINATION[update.update_type]
     try {
@@ -406,6 +428,8 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
         cancelEdit(update.id)
         router.refresh()
       } else {
+        removeFromSet(setAppliedIds, update.id)
+        removeFromSet(setDismissedIds, update.id)
         toast.error(err instanceof Error ? err.message : 'Something went wrong.')
       }
     } finally {
@@ -419,6 +443,7 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
 
   async function handleBulk(action: ReviewAction, scopedUpdates: ProposedUpdate[]) {
     startBulkTransition(async () => {
+      addToSet(action === 'approve' ? setAppliedIds : setDismissedIds, scopedUpdates.map((u) => u.id))
       const results = await Promise.allSettled(
         scopedUpdates.map((update) => reviewUpdate(update.id, action))
       )
@@ -428,6 +453,10 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
         return result.status === 'rejected' && isStaleReviewError(result.reason)
       })
       const hardFailed = failed.filter((update) => !stale.includes(update))
+      hardFailed.forEach((update) => {
+        removeFromSet(setAppliedIds, update.id)
+        removeFromSet(setDismissedIds, update.id)
+      })
       const appliedCount = scopedUpdates.length - failed.length
       const verb = action === 'approve' ? 'Applied' : 'Dismissed'
       const firstAppliedHref = action === 'approve'
@@ -517,9 +546,9 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
     return (
       <article
         key={update.id}
-        className="border-t border-amber-200/70 first:border-t-0"
+        className="rounded-xl border border-border border-l-[3px] border-l-warning bg-card px-3.5 py-3"
       >
-        <div className="flex flex-col gap-2 py-3">
+        <div className="flex flex-col gap-2">
           <div className="flex min-w-0 items-start gap-2">
             <button
               type="button"
@@ -584,7 +613,7 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
                 {clarifyingState === 'answering' ? (
                   <Loader2 className="animate-spin" />
                 ) : (
-                  <ArrowRight />
+                  <Send />
                 )}
               </Button>
             </form>
@@ -600,7 +629,7 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
         </div>
 
         {isExpanded ? (
-          <div className="flex flex-col gap-3 border-t border-amber-200/70 pb-3 pt-3">
+          <div className="flex flex-col gap-3 border-t border-border pb-1 pt-3">
             {isEditing ? (
               <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
                 <EditFields
@@ -666,6 +695,8 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
     const archive = isArchive(update)
     const correction = isCorrection(update)
     const isConfirmingRemoval = confirmingRemovalId === update.id
+    if (dismissedIds.has(update.id)) return null
+    const done = appliedIds.has(update.id)
 
     let name: string
     let detail: string | null
@@ -704,8 +735,11 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
       <article
         key={update.id}
         className={cn(
-          'rounded-lg border transition-colors',
-          archive ? 'border-rose-200 bg-rose-50/40' : 'border-border/70 bg-card'
+          'transition-colors motion-reduce:transition-none',
+          archive
+            ? 'rounded-lg border border-rose-200 bg-rose-50/40'
+            : 'group/row border-t border-border/60 bg-card first:border-t-0 hover:bg-muted/40',
+          done && 'opacity-60'
         )}
       >
         <div className="flex items-start gap-2 p-2.5">
@@ -724,8 +758,8 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
           >
             <ChevronDown
               className={cn(
-                'mt-1 size-3.5 shrink-0 text-muted-foreground transition-transform',
-                isExpanded && 'rotate-180'
+                'mt-1 size-3.5 shrink-0 text-muted-foreground transition-all motion-reduce:transition-none',
+                isExpanded ? 'rotate-180 opacity-60' : archive ? 'opacity-60' : 'opacity-0 group-hover/row:opacity-50'
               )}
               aria-hidden="true"
             />
@@ -745,36 +779,54 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
               ) : null}
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {archive && !isConfirmingRemoval ? (
-              <Button
-                size="xs"
-                variant="destructive"
-                disabled={isBusy}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setConfirmingRemovalId(update.id)
-                }}
-              >
-                <Trash2 data-icon="inline-start" />
-                {getActionLabel(update)}
-              </Button>
-            ) : null}
-            {!archive ? (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                className="shrink-0 text-muted-foreground"
-                aria-label="Dismiss"
-                disabled={isProcessing}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  handleSingle(update, 'reject')
-                }}
-              >
-                <XCircle />
-              </Button>
-            ) : null}
+          <div className="flex shrink-0 items-center gap-1.5 self-center">
+            {done ? (
+              <span className="inline-flex items-center gap-1 whitespace-nowrap text-[13px] font-medium text-success">
+                <Check className="size-4" /> {archive ? 'Removed' : 'Approved'}
+              </span>
+            ) : archive ? (
+              !isConfirmingRemoval ? (
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  disabled={isBusy}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setConfirmingRemovalId(update.id)
+                  }}
+                >
+                  <Trash2 data-icon="inline-start" />
+                  {getActionLabel(update)}
+                </Button>
+              ) : null
+            ) : (
+              <>
+                <button
+                  type="button"
+                  aria-label={`Dismiss ${name}`}
+                  disabled={isProcessing}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleSingle(update, 'reject')
+                  }}
+                  className="flex size-8 items-center justify-center rounded-md border border-border bg-card text-danger transition-colors hover:bg-danger-surface focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none disabled:opacity-50"
+                >
+                  <X className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Approve ${name}`}
+                  disabled={isProcessing}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleSingle(update, 'approve')
+                  }}
+                  className="flex size-8 items-center justify-center rounded-md border border-border bg-card text-success transition-colors hover:bg-success-surface focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none disabled:opacity-50"
+                >
+                  {isProcessing ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -893,7 +945,20 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
               </div>
             ) : (
               <div className="flex flex-wrap justify-end gap-2">
-                {!archive ? (
+                {archive ? (
+                  <Button
+                    size="xs"
+                    variant="destructive"
+                    disabled={isProcessing}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setConfirmingRemovalId(update.id)
+                    }}
+                  >
+                    {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Trash2 data-icon="inline-start" />}
+                    {getActionLabel(update)}
+                  </Button>
+                ) : (
                   <Button
                     size="xs"
                     variant="ghost"
@@ -906,28 +971,78 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
                     <Pencil data-icon="inline-start" />
                     Edit
                   </Button>
-                ) : null}
-                <Button
-                  size="xs"
-                  variant={archive ? 'destructive' : 'outline'}
-                  disabled={isProcessing}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    if (archive) {
-                      setConfirmingRemovalId(update.id)
-                    } else {
-                      handleSingle(update, 'approve')
-                    }
-                  }}
-                >
-                  {isProcessing ? <Loader2 data-icon="inline-start" className="animate-spin" /> : archive ? <Trash2 data-icon="inline-start" /> : <CheckCircle2 data-icon="inline-start" />}
-                  {getActionLabel(update)}
-                </Button>
+                )}
               </div>
             )}
           </div>
         ) : null}
       </article>
+    )
+  }
+
+  function renderEventDetailCard(update: ProposedUpdate) {
+    if (dismissedIds.has(update.id)) return null
+    const done = appliedIds.has(update.id)
+    const isProcessing = processingIds.has(update.id)
+    const changes = getEventDetailChanges(update)
+    return (
+      <div
+        key={update.id}
+        className={cn(
+          'rounded-lg border border-accent bg-card px-3.5 py-3 transition-opacity motion-reduce:transition-none',
+          done && 'opacity-60'
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <Badge
+            variant="outline"
+            className={cn('mt-0.5 h-5 shrink-0 rounded-md px-1.5 text-[11px]', TYPE_PILL_CLASS.event_detail)}
+          >
+            {TYPE_PILL_LABEL.event_detail}
+          </Badge>
+          <div className="min-w-0 flex-1 space-y-1">
+            {changes.length > 0 ? (
+              changes.map((change) => (
+                <div key={change.field} className="text-[13px] leading-5">
+                  <span className="font-semibold text-foreground">{change.label}: </span>
+                  <span className="text-muted-foreground line-through" style={{ fontVariantNumeric: 'tabular-nums' }}>{change.before}</span>
+                  <ArrowRight className="mx-1 inline size-3 text-primary align-middle" aria-hidden="true" />
+                  <span className="font-semibold text-foreground" style={{ fontVariantNumeric: 'tabular-nums' }}>{change.after}</span>
+                </div>
+              ))
+            ) : (
+              <span className="text-sm font-medium text-foreground">Event details</span>
+            )}
+          </div>
+          {done ? (
+            <span className="inline-flex shrink-0 items-center gap-1 self-center whitespace-nowrap text-[13px] font-medium text-success">
+              <Check className="size-4" /> Approved
+            </span>
+          ) : (
+            <div className="flex shrink-0 items-center gap-1.5 self-center">
+              <button
+                type="button"
+                aria-label="Dismiss event details change"
+                disabled={isProcessing}
+                onClick={() => handleSingle(update, 'reject')}
+                className="flex size-8 items-center justify-center rounded-md border border-border bg-card text-danger transition-colors hover:bg-danger-surface focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none disabled:opacity-50"
+              >
+                <X className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Approve event details change"
+                disabled={isProcessing}
+                onClick={() => handleSingle(update, 'approve')}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none disabled:opacity-50"
+              >
+                {isProcessing ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                Approve
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     )
   }
 
@@ -994,82 +1109,69 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
           ) : null}
 
           {eventDetails.length > 0 ? (
-            <section className="flex flex-col gap-2 rounded-lg border border-indigo-200 bg-indigo-50/40 p-2.5">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-indigo-600" aria-hidden="true" />
-                <div>
-                  <p className="text-xs font-semibold text-indigo-950">Event details — your explicit OK needed</p>
-                  <p className="text-[11px] text-indigo-900/80">
-                    These change the whole event (date, guests, budget, location) and ripple into the
-                    schedule, KPIs, and countdown. Approve each one on its own — they’re never applied in bulk.
-                  </p>
-                </div>
+            <section className="rounded-xl border border-accent bg-accent/40 p-3">
+              <div className="mb-2.5 flex items-center gap-2 px-0.5">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                <span className="text-[11px] font-bold uppercase tracking-wide text-primary">
+                  Event details · approve one at a time
+                </span>
               </div>
               <div className="flex flex-col gap-2">
-                {eventDetails.map(renderUpdateRow)}
+                {eventDetails.map(renderEventDetailCard)}
               </div>
             </section>
           ) : null}
 
           {safe.length > 0 ? (
-            <section className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Ready to apply
-                </p>
-                {!showSafeTiles ? (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={isPendingBulk}
-                    onClick={() => handleBulk('approve', safe)}
-                  >
-                    {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                    Apply {safe.length}
-                  </Button>
-                ) : null}
+            <section className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 px-0.5">
+                <span className="size-1.5 shrink-0 rounded-full bg-success" aria-hidden="true" />
+                <span className="text-[13px] font-bold text-foreground">Ready to apply</span>
+                <span className="text-xs text-muted-foreground">{safe.length}</span>
               </div>
-              {showSafeTiles ? (
-                safeGroups.map((group) => (
-                  <div key={group.label} className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between gap-2 px-0.5">
+              {safeGroups.map((group) => {
+                const allDone = group.updates.every((u) => isActioned(u.id))
+                return (
+                  <div
+                    key={group.label}
+                    className="overflow-hidden rounded-xl border border-border bg-card shadow-[0px_1px_2px_rgba(0,0,0,0.04)]"
+                  >
+                    <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-3.5 py-2.5">
                       <span className="flex items-baseline gap-1.5">
-                        <span className="text-xs font-semibold text-foreground">{group.label}</span>
-                        <span className="text-[11px] font-normal text-muted-foreground">{group.updates.length}</span>
+                        <span className="text-sm font-bold text-foreground">{group.label}</span>
+                        <span className="text-xs text-muted-foreground">{group.updates.length}</span>
                       </span>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        className="h-6 text-primary hover:text-primary"
-                        disabled={isPendingBulk}
-                        onClick={() => handleBulk('approve', group.updates)}
-                      >
-                        {isPendingBulk ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                        Apply {group.updates.length}
-                      </Button>
+                      {allDone ? (
+                        <span className="inline-flex items-center gap-1 text-[13px] font-medium text-success">
+                          <Check className="size-4" /> Applied
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isPendingBulk}
+                          onClick={() => handleBulk('approve', group.updates)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1 text-[13px] font-semibold text-primary transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none disabled:opacity-50"
+                        >
+                          {isPendingBulk ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                          Apply {group.updates.length}
+                        </button>
+                      )}
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      {group.updates.map(renderUpdateRow)}
-                    </div>
+                    <div>{group.updates.map(renderUpdateRow)}</div>
                   </div>
-                ))
-              ) : (
-                <div className="flex flex-col gap-1.5">
-                  {safe.map(renderUpdateRow)}
-                </div>
-              )}
+                )
+              })}
             </section>
           ) : null}
 
           {needsAnswer.length > 0 ? (
-            <section className="rounded-lg border border-amber-200 bg-amber-50/35 px-3">
-              <div className="border-b border-amber-200/70 py-2">
-                <p className="text-xs font-semibold text-amber-950">Needs your answer</p>
-                <p className="text-[11px] text-amber-900/80">
-                  Answer these so Glenn can update the plan.
-                </p>
+            <section className="flex flex-col gap-2.5">
+              <div className="flex items-center gap-2 px-0.5">
+                <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true" />
+                <span className="text-[13px] font-bold text-foreground">Needs your answer</span>
+                <span className="text-xs text-muted-foreground">{needsAnswer.length}</span>
               </div>
-              <div>
+              <div className="flex flex-col gap-2.5">
                 {needsAnswer.map(renderNeedsCheckRow)}
               </div>
             </section>
@@ -1089,16 +1191,19 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
             </section>
           ) : null}
 
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isPendingBulk}
-            onClick={() => handleBulk('reject', pkg.updates)}
-            className="w-full"
-          >
-            <XCircle data-icon="inline-start" />
-            Dismiss all
-          </Button>
+          {(() => {
+            const remaining = pkg.updates.filter((u) => !isActioned(u.id))
+            return remaining.length > 0 ? (
+              <button
+                type="button"
+                disabled={isPendingBulk}
+                onClick={() => handleBulk('reject', remaining)}
+                className="w-full rounded-lg border border-dashed border-border py-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none disabled:opacity-50"
+              >
+                Dismiss all remaining
+              </button>
+            ) : null
+          })()}
         </div>
       ) : null}
 
