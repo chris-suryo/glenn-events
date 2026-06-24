@@ -136,6 +136,11 @@ export function buildDestinationRow(update: ProposedUpdate): ApplyResult {
       }
     }
 
+    case 'event_detail':
+      // Event-level facts patch the events row directly (handled in the approve
+      // route's dedicated branch) — they are never inserted into a destination table.
+      throw new Error('event_detail updates are applied to the event row, not a destination table')
+
     default: {
       // Exhaustiveness guard — update_type is a typed union so this should never run
       const exhausted: never = update.update_type

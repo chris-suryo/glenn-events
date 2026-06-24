@@ -70,6 +70,13 @@ const OpenQuestionPayloadSchema = z.object({
   owner_name: z.string().trim().nullable(),
 })
 
+const EventDetailPayloadSchema = z.object({
+  event_date: z.string().trim().nullable(),
+  attendee_target: z.number().int().nonnegative().nullable(),
+  budget_target: z.number().nonnegative().nullable(),
+  location: z.string().trim().nullable(),
+})
+
 function recordLabel(payload: UpdatePayload): string {
   const p = payload as unknown as Record<string, unknown>
   const raw = p.title ?? p.name ?? p.question ?? p.description ?? null
@@ -159,6 +166,10 @@ function validatePayloadForType(updateType: UpdateType, payload: unknown): Updat
       const parsed = OpenQuestionPayloadSchema.safeParse(payload)
       return parsed.success ? parsed.data : null
     }
+    case 'event_detail': {
+      const parsed = EventDetailPayloadSchema.safeParse(payload)
+      return parsed.success ? parsed.data : null
+    }
   }
 }
 
@@ -218,6 +229,93 @@ export async function POST(
 
   if (updateForApply.update_type === 'task' && updateForApply.operation === 'archive') {
     return NextResponse.json({ error: 'Task cleanup must be applied as a status update' }, { status: 400 })
+  }
+
+  // Event-level facts patch the event row itself (date / guest count / budget /
+  // location). The events table has no event_id or provenance columns, so this
+  // cannot reuse the child-table correction path — it has a dedicated handler.
+  if (updateForApply.update_type === 'event_detail') {
+    const p = updateForApply.payload_json as unknown as Record<string, unknown>
+    const patch: Record<string, unknown> = {}
+    for (const field of ['event_date', 'attendee_target', 'budget_target', 'location'] as const) {
+      if (p[field] !== null && p[field] !== undefined) patch[field] = p[field]
+    }
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: 'No event details to update' }, { status: 400 })
+    }
+
+    const { data: beforeEvent, error: beforeErr } = await supabase
+      .from('events')
+      .select('event_date, attendee_target, budget_target, location')
+      .eq('id', updateForApply.event_id)
+      .single()
+
+    if (beforeErr || !beforeEvent) {
+      if (beforeErr) console.error('approve event_detail: event fetch error:', beforeErr)
+      return NextResponse.json({ error: 'Event not found or access denied' }, { status: 404 })
+    }
+
+    const { error: eventUpdateErr } = await supabase
+      .from('events')
+      .update(patch)
+      .eq('id', updateForApply.event_id)
+      .select('id')
+      .single()
+
+    if (eventUpdateErr) {
+      console.error('approve event_detail: event update error:', eventUpdateErr)
+      return NextResponse.json({ error: 'Failed to update event details' }, { status: 500 })
+    }
+
+    const proposalUpdate: Record<string, unknown> = {
+      status:      'applied',
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString(),
+    }
+    if (editedPayload) proposalUpdate.payload_json = editedPayload
+
+    const { error: statusErr } = await supabase
+      .from('proposed_updates')
+      .update(proposalUpdate)
+      .eq('id', id)
+      .eq('status', 'pending')
+    if (statusErr) console.error('approve event_detail: status update error:', statusErr)
+
+    await supabase.from('activity_log').insert({
+      event_id:      updateForApply.event_id,
+      actor_user_id: user.id,
+      action:        'event_details_updated',
+      entity_type:   'event_detail',
+      entity_id:     updateForApply.event_id,
+      metadata_json: {
+        proposed_update_id: id,
+        changed_fields:     Object.keys(patch),
+        before:             beforeEvent,
+        after:              patch,
+        ai_run_id:          updateForApply.ai_run_id,
+      },
+    })
+
+    const { count: pendingCount } = await supabase
+      .from('proposed_updates')
+      .select('id', { count: 'exact', head: true })
+      .eq('ai_run_id', typedUpdate.ai_run_id)
+      .eq('status', 'pending')
+
+    if (pendingCount === 0) {
+      await supabase
+        .from('ai_runs')
+        .update({ status: 'completed' })
+        .eq('id', typedUpdate.ai_run_id)
+    }
+
+    return NextResponse.json({
+      ok:          true,
+      status:      'applied',
+      operation:   'update',
+      entity_type: 'event_detail',
+      entity_id:   updateForApply.event_id,
+    })
   }
 
   if (updateForApply.operation === 'update' || updateForApply.operation === 'archive') {

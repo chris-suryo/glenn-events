@@ -7,6 +7,7 @@ import type {
   DecisionPayload,
   RiskPayload,
   OpenQuestionPayload,
+  EventDetailPayload,
 } from '@/lib/types'
 
 export interface ExtractedItem {
@@ -19,6 +20,7 @@ export interface ExtractedItem {
     | DecisionPayload
     | RiskPayload
     | OpenQuestionPayload
+    | EventDetailPayload
   confidence: number
   rationale: string
   // Short real-world component this update belongs to (e.g. "Petal & Stem", "Cake").
@@ -471,6 +473,8 @@ function itemTitle(item: ExtractedItem): string {
       const payload = item.payload as OpenQuestionPayload
       return payload.question
     }
+    case 'event_detail':
+      return 'Event details'
   }
 }
 
@@ -508,6 +512,8 @@ function itemRecommendation(item: ExtractedItem): string {
       const payload = item.payload as OpenQuestionPayload
       return `Ask: ${payload.question}`
     }
+    case 'event_detail':
+      return 'Update event details'
   }
 }
 

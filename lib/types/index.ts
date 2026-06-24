@@ -123,6 +123,7 @@ export type UpdateType =
   | 'decision'
   | 'risk'
   | 'open_question'
+  | 'event_detail'
 
 export interface TaskPayload {
   title: string
@@ -186,6 +187,16 @@ export interface OpenQuestionPayload {
   owner_name: string | null
 }
 
+// High-level facts that live on the event row itself (not a plan table). Only the
+// fields Glenn is proposing to change are non-null; the rest stay null and are left
+// untouched on approve. Applied as an operation:'update' against `events`.
+export interface EventDetailPayload {
+  event_date: string | null
+  attendee_target: number | null
+  budget_target: number | null
+  location: string | null
+}
+
 export type UpdatePayload =
   | TaskPayload
   | VendorPayload
@@ -194,6 +205,7 @@ export type UpdatePayload =
   | DecisionPayload
   | RiskPayload
   | OpenQuestionPayload
+  | EventDetailPayload
 
 export interface AiRunReviewOutput {
   understood_summary?: string[]

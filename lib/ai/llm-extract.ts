@@ -50,6 +50,13 @@ Options under deliberation — a named, priced candidate is still NOT confirmed:
 - Do NOT create a vendor record and do NOT create a budget item for a candidate under deliberation. The price lives in the decision's description, never as plan spend (committed/estimated) and never as a vendor the team appears to have engaged. A budget item with a null cost for an undecided option is also wrong — omit it.
 - Promote a candidate to a real vendor (+ its budget/timeline) ONLY once a later note says it's chosen, booked, confirmed, or "going with it". Until then it stays the pending decision.
 
+Event-level facts — the event's OWN date, guest count, budget, location (event_details):
+- The event has high-level facts that live on the event itself, separate from the plan: its DATE (the day it happens), its total GUEST/ATTENDEE COUNT, its overall BUDGET cap/target, and its LOCATION/venue city. When a note STATES or CHANGES one of these about the whole event, propose ONE event_details item with only the changed field(s) set and the rest null.
+- Examples: "the wedding is June 20" or "we moved the date to the 14th" → event_details.event_date. "we're now at 110 guests" / "headcount is up to 60" → event_details.attendee_target. "our total budget is $35k" / "bumped the budget to 40000" → event_details.budget_target. "it's now downtown at the Riverside loft" (as the event's location) → event_details.location.
+- Do NOT confuse these with plan items: a single cost like "catering is $3,800" is a budget_item, NOT the event's budget_target. A deadline like "final headcount due 2 weeks out" is a timeline_item, NOT the event date. The event date is the day the event itself happens.
+- At most ONE event_details item per message; combine multiple high-level changes from the same note into that one item. If the note changes nothing about these facts, leave event_details empty.
+- These are high-stakes (they ripple into the countdown, day-of schedule, KPIs and budget math), so they always get the user's explicit review — never fold them into a plan item to avoid proposing one.
+
 Intake vs extraction — decide this BEFORE extracting:
 - A question YOU have for the user (details you want so you can organize their event) is INTAKE. Intake questions go in response_message only. NEVER create an open_question item for them.
 - A question someone on the TEAM must chase in the real world — an unresolved fact stated or implied by the note (unconfirmed vendor, quote that may not include staffing, undecided dessert, unknown room equipment) — is OPERATIONAL and may become an open_question item under the usual rules.
@@ -324,8 +331,25 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
           required: ['question', 'owner_name', 'confidence', 'rationale', 'group'],
         },
       },
+      event_details: {
+        type: 'array',
+        description: 'Changes to the event\'s OWN high-level facts — its overall date, total guest count, overall budget cap/target, or location/venue city. ONLY when the note states or changes one of these about the whole event (not a per-vendor cost or a single deadline). Usually 0 items; at most 1.',
+        items: {
+          type: 'object',
+          properties: {
+            event_date:      { type: ['string', 'null'], description: 'The event\'s actual date as ISO 8601 (YYYY-MM-DD), when the note gives or changes the day the event happens ("the wedding is June 20", "we moved it to the 14th"). null if unchanged.' },
+            attendee_target: { type: ['number', 'null'], description: 'Total expected guest/attendee count for the whole event, when stated or changed ("we\'re now at 110 guests", "headcount is up to 60"). null if unchanged.' },
+            budget_target:   { type: ['number', 'null'], description: 'Overall event budget cap/target, when stated or changed ("our total budget is $35k", "bumped the budget to 40000"). This is the EVENT-WIDE number, not a single line-item cost. null if unchanged.' },
+            location:        { type: ['string', 'null'], description: 'The event\'s location/venue city or address, when stated or changed at the event level. null if unchanged.' },
+            confidence:      { type: 'number', minimum: 0, maximum: 1 },
+            rationale:       { type: 'string' },
+            group:           GROUP_PROPERTY,
+          },
+          required: ['event_date', 'attendee_target', 'budget_target', 'location', 'confidence', 'rationale', 'group'],
+        },
+      },
     },
-    required: ['response_message', 'understood_summary', 'recommended_summary', 'tasks', 'vendors', 'budget_items', 'timeline_items', 'decisions', 'risks', 'open_questions'],
+    required: ['response_message', 'understood_summary', 'recommended_summary', 'tasks', 'vendors', 'budget_items', 'timeline_items', 'decisions', 'risks', 'open_questions', 'event_details'],
   },
 }
 
@@ -498,6 +522,10 @@ interface RawRisk {
 interface RawOpenQuestion {
   question: string; owner_name: string | null; confidence: number; rationale: string; group?: string | null
 }
+interface RawEventDetail {
+  event_date: string | null; attendee_target: number | null; budget_target: number | null
+  location: string | null; confidence: number; rationale: string; group?: string | null
+}
 
 interface LLMOutput {
   response_message: string
@@ -514,6 +542,7 @@ interface LLMOutput {
   decisions: RawDecision[]
   risks: RawRisk[]
   open_questions: RawOpenQuestion[]
+  event_details: RawEventDetail[]
 }
 
 // Optional AI-derived file metadata + transcription, populated only when an
@@ -785,6 +814,25 @@ export async function llmExtract(
       confidence: q.confidence,
       rationale: q.rationale,
       group: normalizeGroup(q.group),
+    })
+  }
+
+  for (const e of raw.event_details ?? []) {
+    const hasChange =
+      e.event_date != null || e.attendee_target != null || e.budget_target != null || e.location != null
+    if (!hasChange) continue
+    items.push({
+      update_type: 'event_detail',
+      payload: {
+        event_date: e.event_date,
+        attendee_target: e.attendee_target,
+        budget_target: e.budget_target,
+        location: e.location,
+      },
+      confidence: e.confidence,
+      rationale: e.rationale,
+      operation: 'update',
+      group: normalizeGroup(e.group),
     })
   }
 

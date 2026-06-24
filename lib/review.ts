@@ -27,6 +27,7 @@ export interface ReviewPackageCounts {
   ready: number
   questions: number
   removals: number
+  eventDetails: number
   total: number
 }
 
@@ -41,6 +42,9 @@ export interface ReviewPackage {
   removals: ProposedUpdate[]
   // Low-confidence items that need a human answer before they can be applied.
   needsAnswer: ProposedUpdate[]
+  // High-stakes event-level facts (date/guests/budget/location) — always reviewed
+  // and approved one at a time, never swept into the bulk "Apply safe" action.
+  eventDetails: ProposedUpdate[]
   summary: string | null
   counts: ReviewPackageCounts
   createdAt: string
@@ -61,6 +65,7 @@ export const UPDATE_GROUPS: UpdateGroup[] = [
   { type: 'decision', title: 'Decisions' },
   { type: 'risk', title: 'Risks' },
   { type: 'open_question', title: 'Open Questions' },
+  { type: 'event_detail', title: 'Event details' },
 ]
 
 export const TYPE_PILL_LABEL: Record<UpdateType, string> = {
@@ -71,6 +76,7 @@ export const TYPE_PILL_LABEL: Record<UpdateType, string> = {
   decision:      'Decision',
   risk:          'Risk',
   open_question: 'Question',
+  event_detail:  'Event detail',
 }
 
 export const TYPE_DESTINATION: Record<UpdateType, string> = {
@@ -81,6 +87,7 @@ export const TYPE_DESTINATION: Record<UpdateType, string> = {
   decision:      'Decisions',
   risk:          'Risks',
   open_question: 'Open Questions',
+  event_detail:  'Event details',
 }
 
 export const TYPE_PLAN_TAB: Record<UpdateType, string> = {
@@ -91,6 +98,7 @@ export const TYPE_PLAN_TAB: Record<UpdateType, string> = {
   decision:      'decisions',
   risk:          'risks',
   open_question: 'questions',
+  event_detail:  'overview',
 }
 
 export const TYPE_ACTION_LABEL: Record<UpdateType, string> = {
@@ -101,6 +109,7 @@ export const TYPE_ACTION_LABEL: Record<UpdateType, string> = {
   decision:      'Add decision',
   risk:          'Track risk',
   open_question: 'Add question',
+  event_detail:  'Update event details',
 }
 
 export const TYPE_COUNT_LABEL: Record<UpdateType, string> = {
@@ -111,6 +120,7 @@ export const TYPE_COUNT_LABEL: Record<UpdateType, string> = {
   decision:      'decision',
   risk:          'risk',
   open_question: 'question',
+  event_detail:  'event detail',
 }
 
 export const TYPE_PILL_CLASS: Record<UpdateType, string> = {
@@ -121,6 +131,7 @@ export const TYPE_PILL_CLASS: Record<UpdateType, string> = {
   decision:      'border-yellow-200 bg-yellow-50 text-yellow-800',
   risk:          'border-rose-200 bg-rose-50 text-rose-700',
   open_question: 'border-slate-200 bg-slate-50 text-slate-700',
+  event_detail:  'border-indigo-200 bg-indigo-50 text-indigo-700',
 }
 
 const CORRECTION_TYPES: UpdateType[] = ['task', 'vendor', 'budget_item', 'timeline_item']
@@ -180,6 +191,7 @@ function stringArray(value: unknown): string[] {
 }
 
 export function getUpdateName(update: ProposedUpdate, payload: UpdatePayload = update.payload_json): string {
+  if (update.update_type === 'event_detail') return 'Event details'
   const p = payloadRecord(payload)
   return (
     (typeof p.title === 'string' && p.title) ||
@@ -221,6 +233,10 @@ export function getUpdateDetail(update: ProposedUpdate, payload: UpdatePayload =
       return typeof p.severity === 'string' ? `${p.severity} risk` : null
     case 'open_question':
       return typeof p.owner_name === 'string' && p.owner_name ? `For ${p.owner_name}` : null
+    case 'event_detail': {
+      const changes = getEventDetailChanges(update, payload).map((c) => `${c.label} → ${c.after}`)
+      return changes.length > 0 ? changes.join(' · ') : null
+    }
   }
 }
 
@@ -355,6 +371,11 @@ export function getStructuredFields(
     case 'open_question':
       push('Owner', p.owner_name)
       break
+    case 'event_detail':
+      for (const change of getEventDetailChanges(update, payload)) {
+        push(change.label, `${change.before} → ${change.after}`)
+      }
+      break
   }
   return fields
 }
@@ -410,6 +431,59 @@ export function isCorrection(update: ProposedUpdate): boolean {
 
 export function isArchive(update: ProposedUpdate): boolean {
   return update.operation === 'archive'
+}
+
+export function isEventDetail(update: ProposedUpdate): boolean {
+  return update.update_type === 'event_detail'
+}
+
+const EVENT_DETAIL_FIELD_LABELS: Record<string, string> = {
+  event_date:      'Event date',
+  attendee_target: 'Guest count',
+  budget_target:   'Budget target',
+  location:        'Location',
+}
+
+const EVENT_DETAIL_FIELDS = ['event_date', 'attendee_target', 'budget_target', 'location'] as const
+
+function formatEventDetailValue(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'Not set'
+  if (field === 'budget_target') {
+    const n = typeof value === 'string' ? Number(value) : value
+    return formatMoney(n) ?? String(value)
+  }
+  if (field === 'attendee_target') return `${value} guests`
+  if (field === 'event_date') return formatDate(String(value)) ?? String(value)
+  return String(value)
+}
+
+export interface EventDetailChange {
+  field: string
+  label: string
+  before: string
+  after: string
+}
+
+// The before/after diff for an event-facts proposal: snapshot (captured at
+// extraction time) vs. the proposed new values, for only the changed fields.
+export function getEventDetailChanges(
+  update: ProposedUpdate,
+  payload: UpdatePayload = update.payload_json,
+): EventDetailChange[] {
+  const after = payloadRecord(payload)
+  const before = getTargetSnapshot(update) ?? {}
+  const changes: EventDetailChange[] = []
+  for (const field of EVENT_DETAIL_FIELDS) {
+    const value = after[field]
+    if (value === null || value === undefined) continue
+    changes.push({
+      field,
+      label:  EVENT_DETAIL_FIELD_LABELS[field],
+      before: formatEventDetailValue(field, before[field]),
+      after:  formatEventDetailValue(field, value),
+    })
+  }
+  return changes
 }
 
 export function needsCheck(update: ProposedUpdate): boolean {
@@ -513,6 +587,8 @@ export function getActionLabel(update: ProposedUpdate): string {
 
 export function getPlanHref(eventId: string, updateType: UpdateType, entityId: string | null | undefined): string | null {
   if (!entityId) return null
+  // Event-level facts surface on the Overview (countdown, KPIs), not a Plan tab.
+  if (updateType === 'event_detail') return `/events/${eventId}`
   return `/events/${eventId}/plan?tab=${TYPE_PLAN_TAB[updateType]}&highlight=${entityId}`
 }
 
@@ -605,10 +681,14 @@ export function buildReviewPackages(
     .map(([aiRunId, runUpdates]) => {
       const aiRun = runMap.get(aiRunId) ?? null
       const file = fileByRun.get(aiRunId) ?? null
-      const ready = runUpdates.filter((update) => !needsCheck(update))
+      // Event-level facts are always pulled into their own high-stakes bucket,
+      // regardless of confidence, so they never land in safe/removals/needs-answer.
+      const eventDetails = orderByType(runUpdates.filter(isEventDetail))
+      const planUpdates = runUpdates.filter((update) => !isEventDetail(update))
+      const ready = planUpdates.filter((update) => !needsCheck(update))
       const safe = orderByType(ready.filter((update) => !isArchive(update)))
       const removals = orderByType(ready.filter(isArchive))
-      const needsAnswer = orderByType(runUpdates.filter(needsCheck))
+      const needsAnswer = orderByType(planUpdates.filter(needsCheck))
       return {
         aiRunId,
         aiRun,
@@ -617,11 +697,13 @@ export function buildReviewPackages(
         safe,
         removals,
         needsAnswer,
+        eventDetails,
         summary: buildPackageSummary(aiRun, file, runUpdates),
         counts: {
           ready: safe.length,
           questions: needsAnswer.length,
           removals: removals.length,
+          eventDetails: eventDetails.length,
           total: runUpdates.length,
         },
         createdAt: aiRun?.created_at ?? runUpdates[0]?.created_at ?? '',

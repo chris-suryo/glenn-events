@@ -52,6 +52,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { SourcePreviewDrawer } from './source-preview-drawer'
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   ChevronDown,
@@ -280,6 +281,7 @@ function SourceBadge({ source }: { source: ReviewPackage['source'] }) {
 function CountChips({ counts }: { counts: ReviewPackage['counts'] }) {
   const chips: { key: string; label: string; className: string }[] = []
   if (counts.ready > 0) chips.push({ key: 'ready', label: `${counts.ready} ready`, className: 'bg-emerald-50 text-emerald-700 border-emerald-200' })
+  if (counts.eventDetails > 0) chips.push({ key: 'eventDetails', label: `${counts.eventDetails} event detail${counts.eventDetails !== 1 ? 's' : ''}`, className: 'bg-indigo-50 text-indigo-700 border-indigo-200' })
   if (counts.questions > 0) chips.push({ key: 'questions', label: `${counts.questions} question${counts.questions !== 1 ? 's' : ''}`, className: 'bg-amber-50 text-amber-800 border-amber-200' })
   if (counts.removals > 0) chips.push({ key: 'removals', label: `${counts.removals} removal${counts.removals !== 1 ? 's' : ''}`, className: 'bg-rose-50 text-rose-700 border-rose-200' })
   if (chips.length === 0) return null
@@ -331,7 +333,7 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
   const [previewOpen, setPreviewOpen] = useState(false)
   const [isPendingBulk, startBulkTransition] = useTransition()
 
-  const { source, safe, removals, needsAnswer, summary, counts } = pkg
+  const { source, safe, removals, needsAnswer, eventDetails, summary, counts } = pkg
 
   // Group safe updates into per-component tiles so the reviewer can scan and apply
   // one real-world thing at a time. Tiles only appear when Glenn tagged the batch
@@ -382,9 +384,11 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
         const singular = TYPE_COUNT_LABEL[update.update_type]
         const message = isArchive(update)
           ? `Removed ${singular}: ${getTargetDisplayName(update, payload ?? update.payload_json)}`
-          : isCorrection(update)
-            ? `Updated ${singular}: ${name}`
-            : `Added to ${dest}: ${name}`
+          : update.update_type === 'event_detail'
+            ? 'Updated event details. The Overview reflects the change.'
+            : isCorrection(update)
+              ? `Updated ${singular}: ${name}`
+              : `Added to ${dest}: ${name}`
         toast.success(message, planHref ? {
           action: {
             label: 'View',
@@ -994,6 +998,24 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
                 </Link>
               ) : null}
             </div>
+          ) : null}
+
+          {eventDetails.length > 0 ? (
+            <section className="flex flex-col gap-2 rounded-lg border border-indigo-200 bg-indigo-50/40 p-2.5">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-indigo-600" aria-hidden="true" />
+                <div>
+                  <p className="text-xs font-semibold text-indigo-950">Event details — your explicit OK needed</p>
+                  <p className="text-[11px] text-indigo-900/80">
+                    These change the whole event (date, guests, budget, location) and ripple into the
+                    schedule, KPIs, and countdown. Approve each one on its own — they’re never applied in bulk.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                {eventDetails.map(renderUpdateRow)}
+              </div>
+            </section>
           ) : null}
 
           {safe.length > 0 ? (

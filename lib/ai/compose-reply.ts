@@ -21,6 +21,7 @@ const TYPE_LABEL: Record<UpdateType, string> = {
   decision: 'Decision',
   risk: 'Risk',
   open_question: 'Question',
+  event_detail: 'Event detail',
 }
 
 export type FileReplyScenario =
