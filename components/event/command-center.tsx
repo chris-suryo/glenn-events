@@ -266,6 +266,16 @@ function actionDotClasses(tone: NeedsAttentionItem['tone']) {
   return 'bg-slate-400'
 }
 
+/** The brief uses only **bold** Markdown — render that, leave the rest as plain text. */
+function renderBriefText(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
+    const bold = part.match(/^\*\*([^*]+)\*\*$/)
+    return bold
+      ? <strong key={i} className="font-semibold text-foreground">{bold[1]}</strong>
+      : <span key={i}>{part}</span>
+  })
+}
+
 function statusClasses(tone: ReadinessStatus['tone']) {
   if (tone === 'review') return 'border-indigo-200 bg-indigo-50/50 text-indigo-700'
   if (tone === 'empty') return 'border-indigo-200 bg-indigo-50/50 text-indigo-700'
@@ -642,7 +652,7 @@ export function CommandCenter({
               </div>
               {event.ai_summary ? (
                 <>
-                  <p className="text-sm leading-relaxed text-foreground">{event.ai_summary}</p>
+                  <p className="text-sm leading-relaxed text-foreground">{renderBriefText(event.ai_summary)}</p>
                   {event.ai_summary_updated_at && (
                     <p className="mt-2 text-[11px] text-muted-foreground">Glenn · updated {timeAgo(event.ai_summary_updated_at)}</p>
                   )}

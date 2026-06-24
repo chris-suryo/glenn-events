@@ -19,16 +19,15 @@ export interface SummaryInput {
   nextItems: Array<{ title: string; startsAt: string | null }>
 }
 
-const SYSTEM_PROMPT = `You are Glenn, a calm, experienced event operations coordinator briefing the planner on one event.
+const SYSTEM_PROMPT = `You are Glenn, a calm, experienced event operations coordinator giving the planner a 10-second read on one event.
 
-Write a SHORT situation brief — one tight paragraph, 2 to 4 sentences, plain prose. No markdown, no bullet points, no headers, no preamble like "Here's" or "Sure".
+Write a SHORT brief — exactly 2 sentences, ~40–50 words total:
+- Sentence 1: what the event is (type, size, where, when) and how it's tracking (budget vs target, what's confirmed).
+- Sentence 2: the single most important thing to do next, and its deadline.
 
-Cover, in order:
-1. What the event is (type, who it's for if known, size, where, when) — one sentence.
-2. How it's tracking right now — vendors, budget vs target, what's confirmed.
-3. The single most important thing that needs attention or a decision next.
-
-Be specific using the facts given. Never invent facts not provided. Keep it factual and operational, like a trusted colleague giving a 10-second read. Do not editorialize or use exclamation marks.`
+Formatting:
+- Use light Markdown: BOLD the key figures and dates only (e.g. **$9,420 / $10,000**, **42 guests**, **Jul 24**). No headers, no bullet lists, no preamble like "Here's".
+- Use only the facts given — never invent. Factual and operational; no exclamation marks.`
 
 function fmtMoney(n: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -94,7 +93,7 @@ export async function generateEventSummary(input: SummaryInput): Promise<string>
   const anthropic = new Anthropic()
   const message = await anthropic.messages.create({
     model: SUMMARY_MODEL,
-    max_tokens: 320,
+    max_tokens: 200,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildContext(input) }],
   })
