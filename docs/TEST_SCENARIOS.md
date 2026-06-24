@@ -11,9 +11,20 @@
 ## Run + audit loop
 1. **Reset** (optional, clean slate): in the Supabase SQL Editor — `delete from events;`
    (cascades to all child records; irreversible). Or keep the demo: add `where id <> 'c9633e80-…'`.
-2. For each event below: **create it** in the app (name, type, date ~6 weeks out, budget target),
-   paste **Input A**, review + **approve**; then any later inputs (B/C). Screenshot the Run of
-   Show for time checks.
+2. For each event below: **create it** in the app. Only **name** and **type** are required —
+   **date, guest count, and budget target are optional** at creation (the wizard saves only what
+   you fill in), so skip them freely. Paste **Input A**, review + **approve**; then any later
+   inputs (B/C). Screenshot the Run of Show for time checks.
+   - **If you skip the date:** Glenn does *not* fabricate one — it raises an open-question
+     ("what's the actual date?") and uses a placeholder (e.g. June 10) only to position day-of
+     times; the Lead-up calendar and Day-of grid stay empty until a real date exists. **Event 4
+     (timezone test) needs a real date** ~6 weeks out — set it there.
+   - **Known gap — high-level facts are currently set-once:** there is no way *yet* to change an
+     event's date, guest count, budget, or location after creation (neither by editing nor by
+     telling Glenn — extraction only writes the 7 plan tables, never the event row). So you can't
+     yet "slot in" a date you skipped, or move a date that changed. Tracked as **"Appending
+     high-level facts"** below — build/decide before the date-change and headcount-change paths
+     can be tested.
 3. Tell Claude **the `event_id` + event number** (get ids via the list query). Claude runs the
    **verify-by-id** query and reports **PASS/FAIL per expectation**, naming any mismatch.
 
@@ -134,6 +145,21 @@ now that it's chosen); Lola's never becomes a confirmed/archived vendor (it neve
 **Audit:** restraint under tentative language; clean resolution on the follow-up.
 
 ---
+
+## Appending high-level facts (event date / guest count / budget / location) — gap to close
+These live on the **event row**, not the 7 plan tables, and are **set-once today**: optional at
+creation, then uneditable. Two real-world needs are currently untestable because the capability
+doesn't exist:
+- **Slot in a fact you skipped** — created the event with no date, now you know it's June 20.
+- **Change a fact that moved** — date slips a week; headcount goes 90 → 110; budget bumps to $35k.
+
+Once built, add this sub-step to any event: after Input A, state a high-level change in Ask Glenn
+("the wedding is now June 20, we're up to 110 guests, budget's now $35k") and verify the **event
+row itself** updated (`select event_date, attendee_target, budget_target, location from events
+where id=…`), the countdown/KPIs reflect it, and day-of times re-anchor to the real date.
+**Decision pending:** manual "Edit details" form (owner types it, first-party, no review gate) vs.
+a Glenn-proposed review-gated `event_detail` update vs. both. Until then, mark date/headcount/
+budget-change rows **N/A (not yet supported)** rather than FAIL.
 
 ## Pass bar
 Zero fabricated facts · zero duplicates · corrections update in place · cancellations archive (no
