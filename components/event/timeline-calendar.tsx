@@ -95,8 +95,8 @@ export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultV
 
   return (
     <div className="space-y-4">
-      {/* View toggle */}
-      <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1 text-xs w-fit">
+      {/* Mobile: toggle between views. Desktop: all three stack below (no toggle). */}
+      <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1 text-xs w-fit lg:hidden">
         <button
           onClick={() => setView('lead-up')}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors ${view === 'lead-up' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
@@ -117,10 +117,10 @@ export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultV
         </button>
       </div>
 
-      {view === 'list' && children}
-      {view === 'day-of' && <DayOfGrid items={items} eventDate={eventDate} timeZone={timeZone} onPick={setPicked} />}
-      {view === 'lead-up' && (
-        <>
+      <div className="lg:space-y-6">
+        {/* Lead-up */}
+        <section className={`${view === 'lead-up' ? '' : 'hidden'} space-y-2 lg:block`}>
+          <ViewLabel icon={CalendarDays}>Lead-up</ViewLabel>
           <div className="rounded-lg border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
             {/* Month navigation */}
             <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -224,12 +224,33 @@ export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultV
               {undatedCount} item{undatedCount !== 1 ? 's' : ''} without a date — shown in the List view.
             </p>
           )}
-        </>
-      )}
+        </section>
+
+        {/* Day of */}
+        <section className={`${view === 'day-of' ? '' : 'hidden'} space-y-2 lg:block`}>
+          <ViewLabel icon={CalendarClock}>Day of</ViewLabel>
+          <DayOfGrid items={items} eventDate={eventDate} timeZone={timeZone} onPick={setPicked} />
+        </section>
+
+        {/* List */}
+        <section className={`${view === 'list' ? '' : 'hidden'} space-y-2 lg:block`}>
+          <ViewLabel icon={List}>List</ViewLabel>
+          {children}
+        </section>
+      </div>
 
       {picked && (
         <RecordDetailDrawer eventId={eventId} item={picked} onClose={() => setPicked(null)} />
       )}
+    </div>
+  )
+}
+
+function ViewLabel({ icon: Icon, children }: { icon: typeof CalendarDays; children: ReactNode }) {
+  return (
+    <div className="hidden items-center gap-1.5 lg:flex">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</p>
     </div>
   )
 }
