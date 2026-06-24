@@ -124,7 +124,7 @@ export function DayOfGrid({ items, eventDate, timeZone = DEFAULT_EVENT_TZ, onPic
   const dayLabel = eventDay.date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 
   return (
-    <div className="flex flex-col gap-4 lg:flex-row">
+    <div className="flex flex-col gap-4 xl:flex-row">
       <div className="flex-1 rounded-lg border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-4">
         <h3 className="mb-3 text-sm font-semibold tracking-tight">
           Day of <span className="font-medium text-muted-foreground">· {dayLabel}</span>
@@ -168,7 +168,7 @@ export function DayOfGrid({ items, eventDate, timeZone = DEFAULT_EVENT_TZ, onPic
       </div>
 
       {notes.length > 0 && (
-        <div className="w-full lg:w-56 lg:shrink-0">
+        <div className="w-full xl:w-56 xl:shrink-0">
           <div className="rounded-lg border bg-card shadow-[0px_1px_3px_rgba(0,0,0,0.05)] p-3.5">
             <p className="mb-2.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Overlaps to watch</p>
             <ul className="space-y-2.5">
