@@ -721,6 +721,32 @@ export function buildReviewPackages(
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
+// ─── Per-component grouping (Review tiles) ───────────────────────────────────
+
+export const OTHER_GROUP_LABEL = 'General'
+
+export interface ComponentGroup {
+  label: string
+  updates: ProposedUpdate[]
+}
+
+// Buckets updates by their Glenn-assigned real-world component label, preserving
+// first-seen order. Untagged updates collect under one "General" bucket so
+// nothing is lost when a label is missing.
+export function groupByComponent(updates: ProposedUpdate[]): ComponentGroup[] {
+  const order: string[] = []
+  const map = new Map<string, ProposedUpdate[]>()
+  for (const update of updates) {
+    const label = update.group_label?.trim() || OTHER_GROUP_LABEL
+    if (!map.has(label)) {
+      map.set(label, [])
+      order.push(label)
+    }
+    map.get(label)!.push(update)
+  }
+  return order.map((label) => ({ label, updates: map.get(label)! }))
+}
+
 // ─── Review request helpers (client fetch) ───────────────────────────────────
 
 export type ReviewAction = 'approve' | 'reject'

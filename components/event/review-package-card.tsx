@@ -32,6 +32,7 @@ import {
   getUpdateDescription,
   getUpdateDetail,
   getUpdateName,
+  groupByComponent,
   isArchive,
   isCorrection,
   isStaleReviewError,
@@ -297,30 +298,6 @@ function CountChips({ counts }: { counts: ReviewPackage['counts'] }) {
       ))}
     </span>
   )
-}
-
-const OTHER_GROUP_LABEL = 'General'
-
-interface ComponentGroup {
-  label: string
-  updates: ProposedUpdate[]
-}
-
-// Buckets updates by their Glenn-assigned real-world component label, preserving
-// first-seen order. Untagged updates collect under one "Other updates" bucket so
-// nothing is lost when a label is missing.
-function groupByComponent(updates: ProposedUpdate[]): ComponentGroup[] {
-  const order: string[] = []
-  const map = new Map<string, ProposedUpdate[]>()
-  for (const update of updates) {
-    const label = update.group_label?.trim() || OTHER_GROUP_LABEL
-    if (!map.has(label)) {
-      map.set(label, [])
-      order.push(label)
-    }
-    map.get(label)!.push(update)
-  }
-  return order.map((label) => ({ label, updates: map.get(label)! }))
 }
 
 export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onClarify }: ReviewPackageCardProps) {
