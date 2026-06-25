@@ -9,6 +9,7 @@ import { useReviewDrawer } from './review-companion'
 import { activityDot, activityLabel, timeAgo } from '@/lib/activity'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatEventDateTime } from '@/lib/utils'
+import { parseTimelineDateValue } from '@/lib/timeline-format'
 import { toast } from 'sonner'
 import {
   Activity, AlertTriangle, CalendarDays, CheckCircle2,
@@ -53,8 +54,12 @@ interface ReadinessStatus {
   href: string | null
 }
 
-function shortDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+function shortDate(iso: string, timeZone?: string) {
+  // Resolve to the event-zone calendar day (date-only values pass through), so the
+  // displayed day never shifts with the viewer's browser timezone (D15).
+  const parsed = parseTimelineDateValue(iso, timeZone)
+  if (!parsed) return ''
+  return parsed.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function formatCurrency(n: number) {
@@ -168,6 +173,7 @@ function buildNextBestActions(
   openTasks: Task[],
   upcomingTimeline: TimelineItem[],
   pendingDecisions: Decision[],
+  timeZone?: string,
 ): NeedsAttentionItem[] {
   const items: NeedsAttentionItem[] = []
 
@@ -208,7 +214,7 @@ function buildNextBestActions(
       id: `task-${task.id}`,
       title: task.title,
       badge: isOverdue(task.due_date) ? 'Overdue task' : 'Confirm',
-      context: task.due_date ? `Due ${shortDate(task.due_date)}` : snippet(task.description),
+      context: task.due_date ? `Due ${shortDate(task.due_date, timeZone)}` : snippet(task.description),
       href: `/events/${eventId}/plan?tab=tasks&highlight=${task.id}`,
       tone: 'task',
     })
@@ -228,7 +234,7 @@ function buildNextBestActions(
       id: `timeline-${item.id}`,
       title: item.title,
       badge: item.type === 'deadline' ? 'Deadline' : 'Upcoming',
-      context: item.starts_at ? shortDate(item.starts_at) : snippet(item.description),
+      context: item.starts_at ? shortDate(item.starts_at, timeZone) : snippet(item.description),
       href: `/events/${eventId}/plan?tab=timeline&highlight=${item.id}`,
       tone: 'timeline',
     })
@@ -351,6 +357,7 @@ export function CommandCenter({
     openTasks,
     upcomingTimeline,
     pendingDecisions,
+    event.timezone ?? undefined,
   )
   const nextTimelineItem = upcomingTimeline[0]
   const eventDateLabel = formatEventDateTime(event.event_date, { year: false }, event.timezone ?? undefined)
@@ -375,7 +382,7 @@ export function CommandCenter({
   if (nextTimelineItem) {
     eventBriefRows.push({
       label: 'Next',
-      value: `${nextTimelineItem.title}${nextTimelineItem.starts_at ? ` · ${shortDate(nextTimelineItem.starts_at)}` : ''}`,
+      value: `${nextTimelineItem.title}${nextTimelineItem.starts_at ? ` · ${shortDate(nextTimelineItem.starts_at, event.timezone ?? undefined)}` : ''}`,
       href: `/events/${event.id}/plan?tab=timeline&highlight=${nextTimelineItem.id}`,
     })
   } else if (eventDateLabel) {
@@ -439,7 +446,7 @@ export function CommandCenter({
     })(),
     status: (() => {
       const parts = [
-        nextTimelineItem ? `Next: ${nextTimelineItem.title}${nextTimelineItem.starts_at ? ` (${shortDate(nextTimelineItem.starts_at)})` : ''}` : null,
+        nextTimelineItem ? `Next: ${nextTimelineItem.title}${nextTimelineItem.starts_at ? ` (${shortDate(nextTimelineItem.starts_at, event.timezone ?? undefined)})` : ''}` : null,
         vendors.length > 0 ? `${confirmedVendors.length}/${vendors.length} vendors confirmed` : null,
         budgetBriefValue ? `budget ${budgetBriefValue}` : null,
         openRisks.length > 0 ? `${openRisks.length} open risk${openRisks.length !== 1 ? 's' : ''}` : null,
@@ -453,8 +460,10 @@ export function CommandCenter({
 
   const countdown = (() => {
     if (!event.event_date) return null
-    const target = new Date(event.event_date)
-    if (Number.isNaN(target.getTime())) return null
+    // Resolve the event date to its event-zone calendar day (not the browser's), so
+    // the day count doesn't drift by one for viewers in other timezones (D15).
+    const target = parseTimelineDateValue(event.event_date, event.timezone ?? undefined)?.date
+    if (!target) return null
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const day = new Date(target); day.setHours(0, 0, 0, 0)
     const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000)
@@ -812,7 +821,7 @@ export function CommandCenter({
                           >
                             <p className="text-xs font-medium leading-snug text-foreground group-hover:text-primary">{item.title}</p>
                             <p className="mt-0.5 text-[11px] text-muted-foreground">
-                              {item.starts_at ? shortDate(item.starts_at) : snippet(item.description) ?? 'Timing TBD'}
+                              {item.starts_at ? shortDate(item.starts_at, event.timezone ?? undefined) : snippet(item.description) ?? 'Timing TBD'}
                             </p>
                           </Link>
                         </li>

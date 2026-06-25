@@ -102,6 +102,17 @@ export function zonedWallClockToUtc(
   return new Date(utcMs).toISOString()
 }
 
+// The calendar day a stored value falls on, in `timeZone`, as a "YYYY-MM-DD" key.
+// Buckets timeline items onto the right day regardless of the viewer's browser zone —
+// the lead-up calendar previously keyed by the UTC date (`.toISOString()`), so it
+// disagreed with the tz-aware Day-of grid about which day an item belonged to (D15).
+export function eventDayKey(value: string | null, timeZone: string = DEFAULT_EVENT_TZ): string | null {
+  const parsed = parseTimelineDateValue(value, timeZone)
+  if (!parsed) return null
+  const d = parsed.date
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function formatDate(value: TimelineDateValue, includeYear = true): string {
   return value.date.toLocaleDateString('en-US', {
     month: 'short',
