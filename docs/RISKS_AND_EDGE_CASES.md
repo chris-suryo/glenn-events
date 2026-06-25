@@ -93,6 +93,18 @@ dedup), `lib/ai/reconcile.ts` (explicit-link + fuzzy supersession, poorer-restat
 `lib/ai/run-extraction.ts` (correction-target resolution, archive/cleanup, event_detail routing),
 `lib/ai/complete-packages.ts` (package-completion floor — synth budget/timeline from in-note facts),
 `lib/ai/pricing.ts`, `lib/ai/debug-format.ts`, `lib/ai/compose-reply.ts`. **109 tests across 10 files.**
+
+**Coverage (`npm run test:coverage`, v8):** scoped to the unit-testable logic layer (`lib/**`;
+excludes the I/O modules — `lib/supabase/**`, `lib/events/**`, `lib/ai/llm-extract.ts`,
+`event-summary.ts`, `apply-proposed-update.ts`, `upload-file.ts` — which are covered by the real-LLM
+`test:extract` harness or a future component/E2E harness, not units). Baseline ≈ **44% lines / 43%
+statements**. The *targeted* pure logic is high (timeline-format ~95%, utils ~94%, pricing 100%,
+complete-packages ~88%, dedupe ~87%); the aggregate is pulled down by partially-covered orchestration
+(`run-extraction.ts` ~21% — most of its bulk is the LLM loop) and not-yet-tested pure modules that are
+fair future targets: `lib/activity.ts` (label/format helpers), `lib/ai/mock-extract.ts` (fallback
+extractor), `lib/validators/**` (Zod schemas). UI/route coverage is tracked separately (deferred
+harness), not in this number. No threshold gate yet — report first; revisit once the baseline is known.
+
 **Gaps (supervised / needs setup):**
 - **Component/interaction tests** for `ReviewPackageCard` (optimistic apply/dismiss, group collapse,
   event-detail solo approve) — needs jsdom + React Testing Library; deferred (heavier setup, and the

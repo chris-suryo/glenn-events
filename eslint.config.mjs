@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated v8 coverage report (gitignored; not source).
+    "coverage/**",
   ]),
 ]);
 
