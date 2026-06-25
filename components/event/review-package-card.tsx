@@ -1129,7 +1129,11 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
                 <span className="text-xs text-muted-foreground">{safe.length}</span>
               </div>
               {safeGroups.map((group) => {
-                const allDone = group.updates.every((u) => isActioned(u.id))
+                const allActioned = group.updates.every((u) => isActioned(u.id))
+                const anyApplied = group.updates.some((u) => appliedIds.has(u.id))
+                // A group whose rows were all dismissed (none applied) collapses away
+                // rather than lingering with an inaccurate "Applied" header.
+                if (allActioned && !anyApplied) return null
                 return (
                   <div
                     key={group.label}
@@ -1140,7 +1144,7 @@ export function ReviewPackageCard({ pkg, eventId, isLatest, defaultExpanded, onC
                         <span className="text-sm font-bold text-foreground">{group.label}</span>
                         <span className="text-xs text-muted-foreground">{group.updates.length}</span>
                       </span>
-                      {allDone ? (
+                      {allActioned ? (
                         <span className="inline-flex items-center gap-1 text-[13px] font-medium text-success">
                           <Check className="size-4" /> Applied
                         </span>
