@@ -188,7 +188,7 @@ function sharedVendorServiceEvidence(candidate: VendorPayload, target: VendorCor
   return serviceTerms.some((term) => haystack.includes(term))
 }
 
-function findVendorCorrectionTarget(
+export function findVendorCorrectionTarget(
   item: ExtractedItem,
   existingVendors: VendorCorrectionTarget[],
 ): VendorCorrectionTarget | null {
@@ -213,7 +213,7 @@ function findVendorCorrectionTarget(
   return null
 }
 
-function applyVendorCorrectionOperations(
+export function applyVendorCorrectionOperations(
   items: ExtractedItem[],
   existingVendors: VendorCorrectionTarget[],
 ): ExtractedItemWithOperation[] {
@@ -253,7 +253,7 @@ function vendorArchiveTargets(items: ExtractedItemWithOperation[]): VendorCorrec
   return targets
 }
 
-function buildRelatedCleanupProposals(
+export function buildRelatedCleanupProposals(
   vendorArchives: VendorCorrectionTarget[],
   existingBudgetItems: BudgetCorrectionTarget[],
   existingTimelineItems: TimelineCorrectionTarget[],
@@ -353,7 +353,7 @@ function payloadArchiveLabel(item: ExtractedItem): string {
   return typeof raw === 'string' ? raw : ''
 }
 
-function isCancellationTaskCleanup(item: ExtractedItem): boolean {
+export function isCancellationTaskCleanup(item: ExtractedItem): boolean {
   if (item.update_type !== 'task' || item.operation !== 'update') return false
   const payload = item.payload as unknown as Record<string, unknown>
   const status = typeof payload.status === 'string' ? payload.status : ''
@@ -366,7 +366,7 @@ function isCancellationTaskCleanup(item: ExtractedItem): boolean {
   )
 }
 
-function findArchiveTargetByLabel(
+export function findArchiveTargetByLabel(
   item: ExtractedItem,
   existingTasks: TaskCorrectionTarget[],
   existingVendors: VendorCorrectionTarget[],
@@ -413,7 +413,7 @@ function findArchiveTargetByLabel(
 
 // Validates LLM-proposed correction/archive targets against real event rows.
 // The snapshot is always rebuilt from the DB row — never trusted from the model.
-function resolveCorrectionTargets(
+export function resolveCorrectionTargets(
   items: ExtractedItem[],
   existingTasks: TaskCorrectionTarget[],
   existingVendors: VendorCorrectionTarget[],

@@ -149,7 +149,7 @@ function pendingKeyLabel(p: PendingProposalLite): string {
  *   supersedes only when it is at least as complete; a label-similar but
  *   strictly poorer item is a restatement that should be dropped instead.
  */
-function classifyPendingMatch(
+export function classifyPendingMatch(
   item: ExtractedItem,
   p: PendingProposalLite,
 ): 'supersede' | 'poorer_restatement' | 'none' {
