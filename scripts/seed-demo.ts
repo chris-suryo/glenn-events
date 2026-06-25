@@ -109,7 +109,7 @@ async function run() {
   }
 
   // ── 4. Find or create event (idempotent) ─────────────────────────────────
-  const eventDate = new Date('2025-09-27T18:00:00-04:00').toISOString()
+  const eventDate = new Date('2026-09-27T18:00:00-04:00').toISOString()
 
   // Check if already seeded
   const { data: existingEvent } = await supabase
@@ -144,10 +144,13 @@ async function run() {
         'Annual Q3 client appreciation dinner for top accounts. Focus on relationship-building, product previews, and celebrating the quarter.',
       event_type: 'Corporate Dinner',
       event_date: eventDate,
+      timezone: 'America/New_York',
       location: 'Boston / Cambridge, MA',
       attendee_target: 85,
       budget_target: 18000,
       status: 'planning',
+      ai_summary:
+        'Q3 Client Networking Dinner is on track for September 27 at The Charles Hotel. Venue and photography are committed; catering, AV, and printed materials are still estimated — about $18,900 against an $18,000 target. Two open risks stand out: the unsigned SoundWave AV contract (high) and a potential catering overage if headcount tops 90. Near-term priorities — confirm the AV package this week and lock the final headcount before the September 17 deadline.',
       created_by: userId,
     })
     .select()
@@ -272,7 +275,7 @@ async function run() {
       event_id: eid,
       title: 'Confirm AV package with SoundWave',
       description: 'Follow up with Priya Nair — package details and contract still outstanding.',
-      due_date: new Date('2025-08-01').toISOString(),
+      due_date: new Date('2026-08-01T12:00:00-04:00').toISOString(),
       status: 'todo',
       priority: 'high',
       owner_user_id: userId,
@@ -281,7 +284,7 @@ async function run() {
       event_id: eid,
       title: 'Send final headcount to caterer',
       description: 'Final number due 10 days before event. Coordinate with RSVP list.',
-      due_date: new Date('2025-09-17').toISOString(),
+      due_date: new Date('2026-09-17T12:00:00-04:00').toISOString(),
       status: 'todo',
       priority: 'high',
       owner_user_id: userId,
@@ -290,7 +293,7 @@ async function run() {
       event_id: eid,
       title: 'Finalize run of show',
       description: 'Confirm event flow: arrival, drinks, dinner, remarks, closing.',
-      due_date: new Date('2025-09-10').toISOString(),
+      due_date: new Date('2026-09-10T12:00:00-04:00').toISOString(),
       status: 'todo',
       priority: 'medium',
       owner_user_id: userId,
@@ -299,7 +302,7 @@ async function run() {
       event_id: eid,
       title: 'Send invitations',
       description: 'Email invitations to client list. Include parking details.',
-      due_date: new Date('2025-08-15').toISOString(),
+      due_date: new Date('2026-08-15T12:00:00-04:00').toISOString(),
       status: 'todo',
       priority: 'medium',
     },
@@ -307,7 +310,7 @@ async function run() {
       event_id: eid,
       title: 'Confirm parking arrangements with venue',
       description: 'Validate valet and self-park options at The Charles Hotel.',
-      due_date: new Date('2025-09-01').toISOString(),
+      due_date: new Date('2026-09-01T12:00:00-04:00').toISOString(),
       status: 'todo',
       priority: 'low',
     },
@@ -315,7 +318,7 @@ async function run() {
       event_id: eid,
       title: 'Order printed materials',
       description: 'Programs, name cards, table signage. Allow 2-week lead time.',
-      due_date: new Date('2025-09-10').toISOString(),
+      due_date: new Date('2026-09-10T12:00:00-04:00').toISOString(),
       status: 'todo',
       priority: 'low',
     },
@@ -328,41 +331,41 @@ async function run() {
       event_id: eid,
       title: 'Invitations sent',
       type: 'milestone',
-      starts_at: new Date('2025-08-15').toISOString(),
+      starts_at: new Date('2026-08-15T12:00:00-04:00').toISOString(),
     },
     {
       event_id: eid,
       title: 'AV contract deadline',
       description: 'Must have signed AV contract by this date.',
       type: 'deadline',
-      starts_at: new Date('2025-08-01').toISOString(),
+      starts_at: new Date('2026-08-01T12:00:00-04:00').toISOString(),
     },
     {
       event_id: eid,
       title: 'Final headcount to caterer',
       description: 'No changes accepted after this date.',
       type: 'deadline',
-      starts_at: new Date('2025-09-17').toISOString(),
+      starts_at: new Date('2026-09-17T12:00:00-04:00').toISOString(),
     },
     {
       event_id: eid,
       title: 'Run of show finalized',
       type: 'milestone',
-      starts_at: new Date('2025-09-10').toISOString(),
+      starts_at: new Date('2026-09-10T12:00:00-04:00').toISOString(),
     },
     {
       event_id: eid,
       title: 'Venue setup',
       type: 'planning',
-      starts_at: new Date('2025-09-27T15:00:00-04:00').toISOString(),
-      ends_at: new Date('2025-09-27T17:30:00-04:00').toISOString(),
+      starts_at: new Date('2026-09-27T15:00:00-04:00').toISOString(),
+      ends_at: new Date('2026-09-27T17:30:00-04:00').toISOString(),
     },
     {
       event_id: eid,
       title: 'Event — Q3 Client Networking Dinner',
       type: 'milestone',
-      starts_at: new Date('2025-09-27T18:00:00-04:00').toISOString(),
-      ends_at: new Date('2025-09-27T21:30:00-04:00').toISOString(),
+      starts_at: new Date('2026-09-27T18:00:00-04:00').toISOString(),
+      ends_at: new Date('2026-09-27T21:30:00-04:00').toISOString(),
     },
   ])
 
@@ -375,7 +378,7 @@ async function run() {
       description: 'Evaluated The Charles Hotel, Marriott Cambridge, and The Sinclair.',
       status: 'decided',
       decision: 'The Charles Hotel — best fit for atmosphere and capacity.',
-      decided_at: new Date('2025-07-10').toISOString(),
+      decided_at: new Date('2026-07-10').toISOString(),
       owner_user_id: userId,
     },
     {
@@ -384,7 +387,7 @@ async function run() {
       description: 'Choice between plated dinner, buffet, or heavy appetizers.',
       status: 'decided',
       decision: 'Plated dinner — more appropriate for client-facing event.',
-      decided_at: new Date('2025-07-15').toISOString(),
+      decided_at: new Date('2026-07-15').toISOString(),
       owner_user_id: userId,
     },
     {
