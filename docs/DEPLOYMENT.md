@@ -134,7 +134,20 @@ After deploying, run through the MVP demo:
 
 ---
 
-## 8. Staging vs. production
+## 8. Continuous integration
+
+`.github/workflows/ci.yml` runs the full validation gate — **typecheck → lint →
+test → build** — on every push to `main` and every pull request targeting `main`.
+It runs on Node 22 with `npm ci` against the committed `package-lock.json`, and
+needs **no secrets**: the offline vitest suite touches no network/DB/LLM, and the
+build uses placeholder Supabase env vars (the clients only instantiate at request
+time, never during the build). A red check means a commit broke one of the four
+steps — fix it before merging. To reproduce a CI failure locally, run the same
+chain: `npm run typecheck && npm run lint && npm test && npm run build`.
+
+---
+
+## 9. Staging vs. production
 
 For a proper staging setup:
 - Create a second Supabase project for staging
