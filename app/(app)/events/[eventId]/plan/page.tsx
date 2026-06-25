@@ -397,6 +397,7 @@ export default async function PlanPage({ params, searchParams }: PageProps) {
                             recordType="timeline_item"
                             recordId={item.id}
                             initial={{ title: item.title, description: item.description, starts_at: item.starts_at, ends_at: item.ends_at, type: item.type }}
+                            timeZone={ev.timezone ?? undefined}
                           />
                         </div>
                       </div>

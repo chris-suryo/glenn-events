@@ -113,6 +113,18 @@ export function eventDayKey(value: string | null, timeZone: string = DEFAULT_EVE
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Formats a stored value (UTC instant or date-only) as a `datetime-local` input value
+// ("YYYY-MM-DDTHH:mm") in the event timezone, so the Edit dialog shows the event-local
+// wall-clock the user expects — not the raw UTC instant. Pairs with the inverse on the
+// write side: the submitted naive wall-clock goes back through zonedWallClockToUtc.
+export function toDateTimeLocalValue(value: string | null, timeZone: string = DEFAULT_EVENT_TZ): string {
+  const parsed = parseTimelineDateValue(value, timeZone)
+  if (!parsed) return ''
+  const d = parsed.date
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(parsed.hour)}:${pad(parsed.minute)}`
+}
+
 function formatDate(value: TimelineDateValue, includeYear = true): string {
   return value.date.toLocaleDateString('en-US', {
     month: 'short',
