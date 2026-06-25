@@ -3,6 +3,12 @@ import type { ExtractedItem } from './mock-extract'
 import type { EventStateContext } from '@/lib/types'
 import { DEFAULT_EVENT_TZ } from '@/lib/utils'
 import { buildTodayDirective } from './date-context'
+import { composeProposalDigest, stripItemBullets } from './compose-reply'
+
+// Appended to the reply on the user's first note so the review gate is explicit.
+const REVIEW_REMINDER = "Review these in the Review panel — I won't touch the plan until you approve them."
+// Lead used when the model's conversational text is empty after stripping its bullets.
+const PROPOSAL_LEAD_FALLBACK = "Here's what I pulled from that — ready for your review:"
 
 const anthropic = new Anthropic()
 const DEFAULT_EXTRACT_MODEL = 'claude-haiku-4-5'
@@ -67,16 +73,10 @@ Intake vs extraction — decide this BEFORE extracting:
 - A time-only schedule fact can become a timeline item. If the event date or message makes the date clear, set starts_at to an ISO datetime on that date and set ends_at when the note gives a range. Only use null for starts_at/ends_at when no date can be inferred. Preserve the exact time or time range in the title or description when no full date is available.
 - Correction notes create reviewable suggestions that target the existing plan row (see CORRECTIONS, CANCELLATIONS, AND REPLACEMENTS below). Never silently ignore a corrected fact.
 
-How to write response_message — it is a short operational brief, never a paragraph wall:
-PART 1 — ONE short confirmation sentence covering what matters most. One sentence, not two or three.
-PART 2 — Short labeled bullets using plain event-ops labels, not arrows:
-  • "Budget: Catering $4,200 before staffing"
-  • "Task: Confirm all-in AV cost by Friday"
-  • "Timing: Photography load-in at 3:00 PM"
-  • "Question: Is staffing included in the quote?"
-  Allowed labels: Task, Timing, Budget, Vendor, Decision, Risk, Question.
-  HARD LIMIT: 6 bullets. If there are more changes, write the 5 most important and end with one bullet like "…plus 4 more smaller items".
-PART 3 — At most ONE brief heads-up line, only if something is genuinely time-sensitive or risky (e.g. "Heads up: that deposit deadline is 3 days out."). Omit it when nothing qualifies.
+How to write response_message — a short, natural confirmation, never a paragraph wall:
+PART 1 — ONE short confirmation sentence covering what matters most, in PROPOSAL terms (you have drafted suggestions for the user to review; nothing is applied yet). One sentence, not two or three.
+PART 2 — At most ONE brief heads-up line, only if something is genuinely time-sensitive or risky (e.g. "Heads up: that deposit deadline is 3 days out."). Omit it when nothing qualifies.
+Do NOT list, enumerate, or restate the individual updates in response_message — every proposed item is shown as a reviewable card directly beneath your reply. Repeating them here is redundant and risks describing something you did not actually create.
 
 INTAKE REPLY — use this format INSTEAD of the brief above when you extracted nothing because the note had no concrete facts:
 - One warm sentence acknowledging their event. No "Got it!".
@@ -90,6 +90,8 @@ INTAKE REPLY — use this format INSTEAD of the brief above when you extracted n
 - Skip the heads-up line and skip the review reminder; there is nothing to review yet.
 
 Tone rules for response_message:
+- Everything you produce is a PROPOSAL awaiting the user's approval — nothing is applied yet. NEVER use "Saved", "Added", "Done", "Updated", "I've set", "I've added", or any wording implying the plan already changed. Use "I've drafted", "ready for your review", or "I'm proposing".
+- Do NOT enumerate the individual updates as bullets — they appear as reviewable cards beneath your reply.
 - response_message is plain prose only. NEVER include JSON, braces, brackets, quoted field names, or machine formatting in it — all structured data belongs exclusively in the item arrays.
 - Never say "budget_item", "timeline_item", "open_question" or other raw database nouns.
 - Never use user-facing arrow labels like "Dessert → decision" or "Serving utensils → question"; use "Decision:" and "Question:" labels instead.
@@ -162,7 +164,7 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
     properties: {
       response_message: {
         type: 'string',
-        description: 'Glenn\'s natural reply as a seasoned event ops colleague — a short operational brief. Three parts: (1) ONE confirmation sentence; (2) short labeled bullets, max 6, using Task:, Timing:, Budget:, Vendor:, Decision:, Risk:, or Question:; (3) at most one heads-up line for anything time-sensitive, or omit. Never use arrows or database type names. Never say "on the right". Never start with "Got it!" or "Sure!". Sound like a real person.',
+        description: 'Glenn\'s natural reply as a seasoned event ops colleague: (1) ONE confirmation sentence in PROPOSAL terms (you have drafted suggestions for review; nothing is applied yet); (2) at most one heads-up line for anything time-sensitive, or omit. Do NOT list or enumerate the individual updates — they are shown as reviewable cards beneath your reply. NEVER imply the plan already changed ("Saved", "Added", "Done", "Updated"). Never use arrows or database type names. Never say "on the right". Never start with "Got it!" or "Sure!". Sound like a real person.',
       },
       understood_summary: {
         type: 'array',
@@ -614,14 +616,18 @@ function looksLikeJsonLeak(line: string): boolean {
 }
 
 export function sanitizeResponseMessage(text: string, understoodSummary: string[]): string {
-  const lines = text.split('\n')
+  // The model sometimes emits literal "\n" escape sequences (two chars) instead of
+  // real newlines; the chat renderer only splits on real newlines, so they'd show
+  // verbatim (smoke-test D11). Unescape before any line processing.
+  const unescaped = text.replace(/\\n/g, '\n').replace(/\\t/g, ' ')
+  const lines = unescaped.split('\n')
   const leakIndex = lines.findIndex(looksLikeJsonLeak)
-  const clean = (leakIndex === -1 ? text : lines.slice(0, leakIndex).join('\n')).trim()
+  const clean = (leakIndex === -1 ? unescaped : lines.slice(0, leakIndex).join('\n')).trim()
   if (clean.length >= 40) return clean
   if (understoodSummary.length > 0) {
     return `Here's what I took from that:\n${understoodSummary.map((line) => `• ${line}`).join('\n')}`
   }
-  return clean || 'Got it — I saved your note. Review the suggestions before they change the plan.'
+  return clean || 'Here\'s your note — review the suggestions before they change the plan.'
 }
 
 function normalizeSummary(value: unknown): string[] {
@@ -643,9 +649,6 @@ export async function llmExtract(
 ): Promise<LLMResult> {
   const attachment = options?.attachment ?? null
   const isFirstExtraction = !history.some((message) => message.role === 'assistant')
-  const reviewReminderRule = isFirstExtraction
-    ? '\n\nThis is the user\'s first note for this event. End response_message with one extra line: "Review these in the Review panel — I won\'t touch the plan until you approve them."'
-    : '\n\nThe user already knows the review flow. Do NOT add a review-reminder line to response_message.'
 
   // Anchor the model to today's date in the event's timezone — without it, dated
   // values default to a training-era year (smoke-test D4/D10). Falls back to the
@@ -655,7 +658,7 @@ export async function llmExtract(
 
   const systemPrompt = (eventStateContext
     ? SYSTEM_PROMPT + buildEventStateSection(eventStateContext)
-    : SYSTEM_PROMPT) + todayDirective + reviewReminderRule
+    : SYSTEM_PROMPT) + todayDirective
 
   // Attach the document/image as a native content block. Claude reads it
   // directly (handles scanned/image-only PDFs); no external OCR.
@@ -862,9 +865,23 @@ export async function llmExtract(
       }
     : undefined
 
+  // Build the reply from the model's prose for tone, but the item summary is
+  // composed from the ACTUAL emitted items[] — never the model's free text, which
+  // can claim updates it didn't produce (smoke-test D16). Strip the model's own
+  // bullets so they don't duplicate or contradict the authoritative digest.
+  const digest = composeProposalDigest(items)
+  const sanitized = sanitizeResponseMessage(raw.response_message ?? '', understoodSummary)
+  let responseMessage = sanitized
+  if (digest) {
+    const lead = stripItemBullets(sanitized) || PROPOSAL_LEAD_FALLBACK
+    responseMessage = isFirstExtraction
+      ? `${lead}\n\n${digest}\n\n${REVIEW_REMINDER}`
+      : `${lead}\n\n${digest}`
+  }
+
   return {
     items,
-    responseMessage: sanitizeResponseMessage(raw.response_message ?? '', understoodSummary),
+    responseMessage,
     understoodSummary,
     recommendedSummary: normalizeSummary(raw.recommended_summary),
     ...(fileMeta ? { fileMeta } : {}),
