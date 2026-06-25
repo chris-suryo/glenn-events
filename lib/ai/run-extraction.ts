@@ -589,7 +589,7 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
   // Event access — RLS-safe: only returns the row if the user is an event member
   const { data: event } = await supabase
     .from('events')
-    .select('id, name, event_type, event_date, location, description, attendee_target, budget_target')
+    .select('id, name, event_type, event_date, location, description, attendee_target, budget_target, timezone')
     .eq('id', eventId)
     .single()
   if (!event) {
@@ -728,6 +728,7 @@ export async function runExtraction(params: RunExtractionParams): Promise<RunExt
       description: (event.description as string | null) ?? null,
       attendee_target: (event.attendee_target as number | null) ?? null,
       budget_target: (event.budget_target as number | null) ?? null,
+      timezone: (event.timezone as string | null) ?? null,
     },
     existing_tasks: (existingTaskRows ?? []).map((t) => ({
       id: t.id as string,

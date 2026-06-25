@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { ExtractedItem } from './mock-extract'
 import type { EventStateContext } from '@/lib/types'
+import { DEFAULT_EVENT_TZ } from '@/lib/utils'
+import { buildTodayDirective } from './date-context'
 
 const anthropic = new Anthropic()
 const DEFAULT_EXTRACT_MODEL = 'claude-haiku-4-5'
@@ -645,9 +647,15 @@ export async function llmExtract(
     ? '\n\nThis is the user\'s first note for this event. End response_message with one extra line: "Review these in the Review panel — I won\'t touch the plan until you approve them."'
     : '\n\nThe user already knows the review flow. Do NOT add a review-reminder line to response_message.'
 
+  // Anchor the model to today's date in the event's timezone — without it, dated
+  // values default to a training-era year (smoke-test D4/D10). Falls back to the
+  // default zone when the event has none.
+  const timeZone = eventStateContext?.event.timezone ?? DEFAULT_EVENT_TZ
+  const todayDirective = `\n\n${buildTodayDirective(new Date(), timeZone)}`
+
   const systemPrompt = (eventStateContext
     ? SYSTEM_PROMPT + buildEventStateSection(eventStateContext)
-    : SYSTEM_PROMPT) + reviewReminderRule
+    : SYSTEM_PROMPT) + todayDirective + reviewReminderRule
 
   // Attach the document/image as a native content block. Claude reads it
   // directly (handles scanned/image-only PDFs); no external OCR.
