@@ -14,6 +14,7 @@
     "test:extract": "tsx scripts/test-extraction.ts",
     "test:dates": "tsx scripts/verify-dates.ts",
     "test:reply": "tsx scripts/verify-reply.ts",
+    "test:tz": "tsx scripts/verify-tz.ts",
     "preflight": "tsx scripts/preflight.ts",
     "seed": "tsx scripts/seed-demo.ts",
     "seed:reset": "SEED_RESET=true tsx scripts/seed-demo.ts"

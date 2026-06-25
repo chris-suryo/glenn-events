@@ -23,7 +23,8 @@ Builder↔verifier hardening loop. Status by batch:
 |---|---|---|---|
 | 1 — date injection | D4, D10 | ✅ verified | `0e06919` — `npm run test:dates`, haiku |
 | 2 — reply integrity | D16b, D3, D11 | ✅ verified | `9a82f3f` — `npm run test:reply`, haiku |
-| 3 — timezone write + display | D5, D15 | 🔨 active (3a write path first) | — |
+| 3a — timezone write path | D5 | ✅ conversion verified headless; DB round-trip pending app-on-`d2a4e8d` + migration 017 | `d2a4e8d` — `npm run test:tz` |
+| 3b — display consistency + Edit time field | D15 | ⏳ next (UI spot-check) | — |
 | 4 — manual CRUD + id-based archive | G1, D14 | ⏳ planned | — |
 | 5 — supersession + dedupe + open-Q reconcile | D8, D6, D9 | ⏳ planned | — |
 | 6 — partial-patch + budget cost-of-record + brief | D1, D2, D17, D12 | ⏳ planned | — |
