@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { ProposedUpdate, UpdatePayload } from '@/lib/types'
 import {
   formatMoney,
+  formatDate,
   formatTime,
   formatTimeWindow,
   getUpdateName,
@@ -57,6 +58,13 @@ describe('value formatters', () => {
     expect(formatTimeWindow('2026-06-10T18:30:00', '2026-06-10T20:00:00')).toBe('6:30–8:00 PM')
     expect(formatTimeWindow('2026-06-10T11:30:00', '2026-06-10T13:00:00')).toBe('11:30 AM–1:00 PM')
     expect(formatTimeWindow('2026-06-10T17:00:00', null)).toBe('5:00 PM')
+  })
+
+  it('formatDate keeps a date-only string on its own calendar day', () => {
+    // The exact day must survive regardless of host timezone (no UTC rollback).
+    expect(formatDate('2026-08-22')).toBe('Aug 22')
+    expect(formatDate('2026-01-01')).toBe('Jan 1')
+    expect(formatDate(null)).toBeNull()
   })
 })
 
