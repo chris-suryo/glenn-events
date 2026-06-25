@@ -274,12 +274,14 @@ export async function POST(
     }
     if (editedPayload) proposalUpdate.payload_json = editedPayload
 
-    const { error: statusErr } = await supabase
+    const { data: claimed, error: statusErr } = await supabase
       .from('proposed_updates')
       .update(proposalUpdate)
       .eq('id', id)
-      .eq('status', 'pending')
+      .eq('status', 'pending')   // optimistic lock — only the first approve claims it
+      .select('id')
     if (statusErr) console.error('approve event_detail: status update error:', statusErr)
+    else if (!claimed || claimed.length === 0) console.warn('approve event_detail: concurrent approve detected for update', id)
 
     await supabase.from('activity_log').insert({
       event_id:      updateForApply.event_id,
