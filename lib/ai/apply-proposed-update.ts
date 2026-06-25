@@ -1,15 +1,25 @@
 import type { ProposedUpdate } from '@/lib/types'
+import { DEFAULT_EVENT_TZ } from '@/lib/utils'
+import { zonedWallClockToUtc } from '@/lib/timeline-format'
 
 export interface ApplyResult {
   table: string
   row: Record<string, unknown>
 }
 
+// A calendar-date column (events.event_date, tasks.due_date) holds only the day —
+// strip any time the model may have appended so it is never tz-shifted.
+function calendarDate(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.slice(0, 10) : null
+}
+
 /**
  * Maps a proposed_update into the destination table name and insert row.
- * Pure function — no Supabase calls.
+ * Pure function — no Supabase calls. `timeZone` is the event's IANA zone, used to
+ * resolve naive wall-clock timeline times to a UTC instant before they hit a
+ * `timestamptz` column (smoke-test D5).
  */
-export function buildDestinationRow(update: ProposedUpdate): ApplyResult {
+export function buildDestinationRow(update: ProposedUpdate, timeZone: string = DEFAULT_EVENT_TZ): ApplyResult {
   // payload_json is a typed union — cast through unknown to access fields dynamically
   const p = update.payload_json as unknown as Record<string, unknown>
 
@@ -40,7 +50,7 @@ export function buildDestinationRow(update: ProposedUpdate): ApplyResult {
           description,
           status:      p.status ?? 'todo',
           priority:    p.priority ?? 'medium',
-          due_date:    p.due_date ?? null,
+          due_date:    calendarDate(p.due_date),
         },
       }
     }
@@ -90,8 +100,8 @@ export function buildDestinationRow(update: ProposedUpdate): ApplyResult {
           ...trace,
           title:       p.title,
           description: p.description ?? null,
-          starts_at:   p.starts_at ?? null,
-          ends_at:     p.ends_at ?? null,
+          starts_at:   zonedWallClockToUtc((p.starts_at as string | null) ?? null, timeZone),
+          ends_at:     zonedWallClockToUtc((p.ends_at as string | null) ?? null, timeZone),
           type:        p.type ?? 'planning',
         },
       }

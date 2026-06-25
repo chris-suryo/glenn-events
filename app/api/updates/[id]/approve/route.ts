@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildDestinationRow } from '@/lib/ai/apply-proposed-update'
+import { DEFAULT_EVENT_TZ } from '@/lib/utils'
 import type { ProposedUpdate, UpdatePayload, UpdateType } from '@/lib/types'
 import { z } from 'zod'
 
@@ -240,6 +241,8 @@ export async function POST(
     for (const field of ['event_date', 'attendee_target', 'budget_target', 'location'] as const) {
       if (p[field] !== null && p[field] !== undefined) patch[field] = p[field]
     }
+    // event_date is a calendar date — store only the day so it is never tz-shifted.
+    if (typeof patch.event_date === 'string') patch.event_date = patch.event_date.slice(0, 10)
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: 'No event details to update' }, { status: 400 })
     }
@@ -468,10 +471,18 @@ export async function POST(
     })
   }
 
-  // 4. Build destination row
+  // 4. Build destination row — resolve the event's timezone so naive wall-clock
+  // timeline times convert to the right UTC instant on write (smoke-test D5).
+  const { data: eventTzRow } = await supabase
+    .from('events')
+    .select('timezone')
+    .eq('id', updateForApply.event_id)
+    .single()
+  const eventTimeZone = (eventTzRow?.timezone as string | null) ?? DEFAULT_EVENT_TZ
+
   let applyResult: ReturnType<typeof buildDestinationRow>
   try {
-    applyResult = buildDestinationRow(updateForApply)
+    applyResult = buildDestinationRow(updateForApply, eventTimeZone)
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Unsupported update type' },
