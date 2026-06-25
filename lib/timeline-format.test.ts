@@ -6,6 +6,7 @@ import {
   sameCalendarDay,
   zonedWallClockToUtc,
   eventDayKey,
+  toDateTimeLocalValue,
 } from './timeline-format'
 
 const NY = 'America/New_York'
@@ -161,5 +162,25 @@ describe('eventDayKey', () => {
 
   it('returns null for null', () => {
     expect(eventDayKey(null, NY)).toBeNull()
+  })
+})
+
+describe('toDateTimeLocalValue', () => {
+  it('formats a UTC instant as the event-local wall-clock for a datetime-local input', () => {
+    // Noon EDT is stored as 16:00Z; the input should show 12:00 on Sep 18.
+    expect(toDateTimeLocalValue('2026-09-18T16:00:00Z', NY)).toBe('2026-09-18T12:00')
+  })
+
+  it('round-trips with zonedWallClockToUtc', () => {
+    const local = toDateTimeLocalValue('2026-09-18T16:00:00Z', NY)
+    expect(zonedWallClockToUtc(local, NY)).toBe('2026-09-18T16:00:00.000Z')
+  })
+
+  it('shows midnight for a date-only calendar value', () => {
+    expect(toDateTimeLocalValue('2026-09-18', NY)).toBe('2026-09-18T00:00')
+  })
+
+  it('returns empty string for null', () => {
+    expect(toDateTimeLocalValue(null, NY)).toBe('')
   })
 })

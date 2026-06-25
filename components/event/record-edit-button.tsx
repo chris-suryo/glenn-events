@@ -9,8 +9,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
+import { toDateTimeLocalValue } from '@/lib/timeline-format'
 
-type FieldKind = 'text' | 'textarea' | 'date' | 'number' | 'select'
+type FieldKind = 'text' | 'textarea' | 'date' | 'datetime' | 'number' | 'select'
 
 interface FieldConfig {
   key: string
@@ -45,8 +46,8 @@ const FORM_FIELDS: Record<EditableRecordType, FieldConfig[]> = {
   timeline_item: [
     { key: 'title', label: 'Title', kind: 'text', required: true },
     { key: 'description', label: 'Description', kind: 'textarea' },
-    { key: 'starts_at', label: 'Starts', kind: 'date' },
-    { key: 'ends_at', label: 'Ends', kind: 'date' },
+    { key: 'starts_at', label: 'Starts', kind: 'datetime' },
+    { key: 'ends_at', label: 'Ends', kind: 'datetime' },
     { key: 'type', label: 'Type', kind: 'select', options: ['milestone', 'task', 'deadline', 'planning'] },
   ],
   decision: [
@@ -80,9 +81,11 @@ interface RecordEditButtonProps {
   recordType: EditableRecordType
   recordId: string
   initial: Record<string, string | number | null>
+  /** Event timezone — used to show stored instants as local wall-clock in datetime fields. */
+  timeZone?: string
 }
 
-function initialFormValues(fields: FieldConfig[], initial: RecordEditButtonProps['initial']) {
+function initialFormValues(fields: FieldConfig[], initial: RecordEditButtonProps['initial'], timeZone?: string) {
   const values: Record<string, string> = {}
   for (const field of fields) {
     const raw = initial[field.key]
@@ -90,6 +93,8 @@ function initialFormValues(fields: FieldConfig[], initial: RecordEditButtonProps
       values[field.key] = ''
     } else if (field.kind === 'date') {
       values[field.key] = String(raw).slice(0, 10)
+    } else if (field.kind === 'datetime') {
+      values[field.key] = toDateTimeLocalValue(String(raw), timeZone)
     } else {
       values[field.key] = String(raw)
     }
@@ -97,15 +102,15 @@ function initialFormValues(fields: FieldConfig[], initial: RecordEditButtonProps
   return values
 }
 
-export function RecordEditButton({ eventId, recordType, recordId, initial }: RecordEditButtonProps) {
+export function RecordEditButton({ eventId, recordType, recordId, initial, timeZone }: RecordEditButtonProps) {
   const router = useRouter()
   const fields = FORM_FIELDS[recordType]
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [values, setValues] = useState<Record<string, string>>(() => initialFormValues(fields, initial))
+  const [values, setValues] = useState<Record<string, string>>(() => initialFormValues(fields, initial, timeZone))
 
   function openForm() {
-    setValues(initialFormValues(fields, initial))
+    setValues(initialFormValues(fields, initial, timeZone))
     setOpen(true)
   }
 
@@ -197,7 +202,7 @@ export function RecordEditButton({ eventId, recordType, recordId, initial }: Rec
                   ) : (
                     <Input
                       id={`${recordId}-${field.key}`}
-                      type={field.kind === 'number' ? 'number' : field.kind === 'date' ? 'date' : 'text'}
+                      type={field.kind === 'number' ? 'number' : field.kind === 'date' ? 'date' : field.kind === 'datetime' ? 'datetime-local' : 'text'}
                       value={values[field.key]}
                       onChange={(event) => setValue(field.key, event.target.value)}
                     />
