@@ -439,7 +439,7 @@ Use the existing stack unless there is a strong reason to change it:
 - Supabase Postgres
 - Supabase Realtime where useful
 - Supabase Storage later
-- Netlify deployment
+- Vercel deployment
 - Zod validation
 
 Technical rules:
