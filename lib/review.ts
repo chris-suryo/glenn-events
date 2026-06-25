@@ -208,6 +208,13 @@ export function formatMoney(value: unknown): string | null {
 
 export function formatDate(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0) return null
+  // A date-only string is a calendar date — build it from local components so it
+  // is never rolled back a day by a non-UTC host (new Date('YYYY-MM-DD') is UTC).
+  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dateOnly) {
+    const [, y, m, d] = dateOnly
+    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
