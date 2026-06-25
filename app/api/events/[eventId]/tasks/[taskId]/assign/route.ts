@@ -37,16 +37,31 @@ export async function PATCH(
     }
   }
 
-  // RLS on tasks ensures the acting user is an event member
-  const { error } = await supabase
+  // RLS on tasks scopes to event members; the event_id guard + 0-row check turn a
+  // non-existent/unauthorized id into a 404 instead of a false "ok".
+  const { data, error } = await supabase
     .from('tasks')
     .update({ owner_user_id: parsed.data.owner_user_id })
     .eq('id', taskId)
+    .eq('event_id', eventId)
+    .select('id')
 
   if (error) {
     console.error('task assign error:', error)
     return NextResponse.json({ error: 'Failed to assign task' }, { status: 500 })
   }
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+  }
+
+  await supabase.from('activity_log').insert({
+    event_id:      eventId,
+    actor_user_id: user.id,
+    action:        'task_assigned',
+    entity_type:   'task',
+    entity_id:     taskId,
+    metadata_json: { owner_user_id: parsed.data.owner_user_id },
+  })
 
   return NextResponse.json({ ok: true })
 }
