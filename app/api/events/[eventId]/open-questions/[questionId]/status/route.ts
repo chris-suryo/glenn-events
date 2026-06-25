@@ -2,13 +2,14 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
+// Note: marking a question "answered" with a blank answer is INTENTIONAL — the UI
+// (open-question-resolve-button.tsx) lets a user close a question without writing
+// formal answer text ("leave blank to just mark as answered"). So `answer` stays
+// optional; do not add a refine requiring it.
 const Schema = z.object({
   status: z.enum(['open', 'answered']),
   answer: z.string().trim().optional(),
-}).refine(
-  (data) => data.status !== 'answered' || (data.answer?.trim().length ?? 0) > 0,
-  { message: 'An answer is required when marking a question answered', path: ['answer'] },
-)
+})
 
 export async function PATCH(
   request: NextRequest,
