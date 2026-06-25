@@ -2,7 +2,7 @@
 
 > **Status: living backlog (June 2026).** Condensed from a holistic read-only pilot-readiness
 > audit. Companion to `PRODUCT_CHECKPOINT.md` (state), `M19_PRODUCT_DIRECTION.md` (IA/direction),
-> `FRONTEND_DIRECTION.md` (visual). The app **is deployed** (https://glenn-events.netlify.app), so
+> `FRONTEND_DIRECTION.md` (visual). The app **is deployed** (on Vercel), so
 > deployment-readiness is largely satisfied — verify env/migrations/bucket, don't rebuild.
 
 ## Verdict
@@ -18,7 +18,7 @@ fixes below before an unsupervised planner-friend session.**
 1. Empty Home/Command Center has **no composer** + hidden "Tell Glenn" — the planner lands with
    nowhere to start. `components/event/command-center.tsx`.
 2. **File extraction is synchronous, no `maxDuration`** — the upload "hero moment" can freeze on
-   "Reading…" / time out on Netlify. `app/api/events/[eventId]/files/route.ts`.
+   "Reading…" / time out on Vercel. `app/api/events/[eventId]/files/route.ts`.
 3. **Library "Review updates" opens the newest package, not the file's** — silent mis-apply /
    "my updates vanished." `components/event/file-library.tsx` → `chat-view.tsx`.
 4. **No per-route `error.tsx`** — one transient error blanks the whole shell (only `app/global-error.tsx`).

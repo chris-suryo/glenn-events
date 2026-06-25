@@ -88,14 +88,16 @@ build; product decision. Tracked in `FUTURE_STATE_PRODUCT_PLAN.md` territory.
 **Now covered (vitest, offline, `npm test`):** `lib/timeline-format.ts` (tz wall-clock, date-only,
 midnight, ranges), `lib/utils.ts` `formatEventDateTime`/`formatDistanceToNow`, `lib/review.ts`
 (formatters, `getUpdateName/Detail`, `getEventDetailChanges`, `getStructuredFields`, partitioning,
-predicates), `lib/ai/dedupe.ts` (intra-batch + against-plan dedup). 43 tests.
+predicates, `groupByComponent` per-component tiles), `lib/ai/dedupe.ts` (intra-batch + against-plan
+dedup), `lib/ai/reconcile.ts` (explicit-link + fuzzy supersession, poorer-restatement rules),
+`lib/ai/run-extraction.ts` (correction-target resolution, archive/cleanup, event_detail routing),
+`lib/ai/complete-packages.ts` (package-completion floor — synth budget/timeline from in-note facts),
+`lib/ai/pricing.ts`, `lib/ai/debug-format.ts`, `lib/ai/compose-reply.ts`. **109 tests across 10 files.**
 **Gaps (supervised / needs setup):**
 - **Component/interaction tests** for `ReviewPackageCard` (optimistic apply/dismiss, group collapse,
   event-detail solo approve) — needs jsdom + React Testing Library; deferred (heavier setup, and the
   logic is largely exercised through the live test scenarios).
 - **API route tests** for approve/reject (optimistic lock, event_detail patch, RLS) — needs a Supabase
   test harness/mocks; deferred.
-- **`groupByComponent`** lives in `components/event/review-package-card.tsx` (not exported); lifting it
-  to `lib/review.ts` would make it unit-testable — small, do alongside the next Review change.
-- **`lib/ai/run-extraction.ts` reconcile/correction-target** logic is only covered end-to-end via the
-  live scenarios; pure-extractable pieces could get unit tests.
+- **E2E smoke test** (log in → submit note → approve → see it in plan) — Playwright + Chromium are
+  available in the dev environment; deferred to a supervised session.

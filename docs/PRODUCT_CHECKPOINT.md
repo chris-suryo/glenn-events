@@ -38,6 +38,12 @@ and retired** through the same review gate, with provenance.
   approver, record history. Activity entries link back to records in Plan.
 - Stability: both known scroll-shell bugs fixed (chat thread, plan highlight);
   typecheck/lint/build clean.
+- Engineering hardening: **CI gate live** (`.github/workflows/ci.yml` runs
+  typecheck/lint/test/build on every push/PR to `main`) and **109 offline unit
+  tests across 10 files** covering the trust-critical logic (timezone, review
+  partitioning + per-component tiles, dedupe, reconcile/supersession,
+  correction-target resolution, package completion, cost telemetry). Component/
+  API/E2E tests remain deferred — see `docs/RISKS_AND_EDGE_CASES.md`.
 
 ## Demo Story (the 5-minute arc)
 
@@ -214,7 +220,7 @@ The Branch Closeout Checklist is in `CLAUDE.md`.
 
 ## Next Steps
 
-> **Updated June 2026.** The app is **deployed** (https://glenn-events.netlify.app), so
+> **Updated June 2026.** The app is **deployed** (on Vercel), so
 > `m19-deployment-readiness` is largely satisfied (verify env/migrations/bucket). Current locked
 > sequence (detail in `docs/PILOT_READINESS_AUDIT.md`):
 
