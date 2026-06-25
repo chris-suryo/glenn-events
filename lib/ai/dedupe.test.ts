@@ -20,6 +20,8 @@ function ctx(over: Partial<EventStateContext> = {}): EventStateContext {
     existing_timeline_items: [],
     existing_risks: [],
     existing_open_questions: [],
+    pending_proposed_updates: [],
+    recent_ai_run_summaries: [],
     ...over,
   }
 }
