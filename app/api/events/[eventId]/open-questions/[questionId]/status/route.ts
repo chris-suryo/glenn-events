@@ -5,13 +5,16 @@ import { z } from 'zod'
 const Schema = z.object({
   status: z.enum(['open', 'answered']),
   answer: z.string().trim().optional(),
-})
+}).refine(
+  (data) => data.status !== 'answered' || (data.answer?.trim().length ?? 0) > 0,
+  { message: 'An answer is required when marking a question answered', path: ['answer'] },
+)
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ eventId: string; questionId: string }> }
 ) {
-  const { questionId } = await params
+  const { eventId, questionId } = await params
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,19 +26,34 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
 
-  // RLS on open_questions ensures user is an event member
-  const { error } = await supabase
+  // RLS on open_questions scopes to event members; the event_id guard + 0-row check turn a
+  // non-existent/unauthorized id into a 404 instead of a false "ok".
+  const { data, error } = await supabase
     .from('open_questions')
     .update({
       status: parsed.data.status,
       ...(parsed.data.answer !== undefined ? { answer: parsed.data.answer || null } : {}),
     })
     .eq('id', questionId)
+    .eq('event_id', eventId)
+    .select('id')
 
   if (error) {
     console.error('open question status update error:', error)
     return NextResponse.json({ error: 'Failed to update question status' }, { status: 500 })
   }
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+  }
+
+  await supabase.from('activity_log').insert({
+    event_id:      eventId,
+    actor_user_id: user.id,
+    action:        'open_question_status_updated',
+    entity_type:   'open_question',
+    entity_id:     questionId,
+    metadata_json: { new_status: parsed.data.status },
+  })
 
   return NextResponse.json({ ok: true })
 }
