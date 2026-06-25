@@ -216,8 +216,8 @@ The always-present (populated-state) inline composer is deferred to `event-home-
 The degraded path is the most important trust property: **a missing key never produces invented data** —
 it produces an event with an empty, honest, ready-to-use workspace.
 
-In production (`glenn-events.netlify.app`, key set) the real loop runs and the draft is genuine.
-`maxDuration=60` already exists on the extract route (a123c78), so the draft step won't time out on Netlify.
+In production (Vercel, key set) the real loop runs and the draft is genuine.
+`maxDuration=60` already exists on the extract route (a123c78), so the draft step won't time out on Vercel.
 
 ---
 

@@ -15,7 +15,8 @@ and the Branch Closeout Checklist.
 | M21 | Done | Source-backed Review package cards + source preview drawer (`01d94fb`). |
 | m22-workspace-docs | Done | Workspace + AI cost audit + demo playbook docs (`9636b41`). Docs only. |
 | **M22** | **Done** | `m22-image-extraction-with-ai-debug` (pushed, head `96f38bc`): PNG/JPG screenshot extraction via Claude vision + lightweight AI run telemetry/debug line + composer attachment staging. Migration 011. See `docs/AI_COST_AUDIT.md`. |
-| Next | Planned | Frontend polish arc (see `docs/PRODUCT_CHECKPOINT.md` → Roadmap) + wedding scenario validation. |
+| Test/CI hardening | Done | `claude/vigilant-cori-xvt3o4` (on `main`): vitest net **43→109 tests / 10 files**, GitHub Actions **CI gate** (`.github/workflows/ci.yml`, typecheck/lint/test/build on push+PR), `groupByComponent` lifted to `lib/review.ts`, status-route 0-row/audit-log fix. **No product/behavior change.** |
+| Next | Planned | Live Wedding lifecycle validation (with user) + frontend polish arc (see `docs/PRODUCT_CHECKPOINT.md` → Roadmap). Then decide on component/E2E test harness. |
 
 The core loop is unchanged: **messy input or source file → Glenn proposes
 structured plan updates → user reviews (nothing applies silently) → plan updates
@@ -55,14 +56,15 @@ These are hard rules. Violating them has broken sessions before.
 
 Before live QA of file/extraction features, the target Supabase project needs:
 
-- **Migrations applied through the latest** (`supabase/migrations/`). As of M21
-  that means **009** (`event_library_files`) and **010** (`files_update_policy`).
-  M22 will add **011** (`ai_run_telemetry`).
+- **Migrations applied through the latest** (`supabase/migrations/`). Current head is
+  **016**: 011 `ai_run_telemetry`, 012 `profile_event_type_preference`, 013
+  `public_profiles_view`, 014 `event_ai_summary`, 015 `event_timezone`, 016
+  `proposed_update_group_label`. Full list + purpose in `docs/DEPLOYMENT.md §1`.
 - **`event-files` storage bucket** exists (private, RLS-enforced). Created/used by
   migration 009 + `lib/upload-file.ts`.
 - **`ANTHROPIC_API_KEY` set** for real extraction; without it the app falls back to
   deterministic mock extraction and images/PDFs stay source-only.
-- Migrations are sequential `NNN_description.sql`. The next one is **011**.
+- Migrations are sequential `NNN_description.sql`. The next one is **017**.
 
 ---
 
