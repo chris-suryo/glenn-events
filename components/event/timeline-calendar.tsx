@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays, CalendarClock, List } from 'lucide-react'
 import type { TimelineItem } from '@/lib/types'
+import { parseTimelineDateValue, eventDayKey } from '@/lib/timeline-format'
 import { DayOfGrid } from './day-of-grid'
 import { RecordDetailDrawer } from './record-detail-drawer'
 
@@ -33,14 +34,8 @@ const TYPE_LABEL: Record<TimelineItem['type'], string> = {
   deadline: 'Deadline', milestone: 'Milestone', planning: 'Planning', task: 'Task',
 }
 
-function isoDate(d: Date): string {
-  return d.toISOString().split('T')[0]
-}
-
-function parseDate(s: string | null): Date | null {
-  if (!s) return null
-  const d = new Date(s)
-  return isNaN(d.getTime()) ? null : d
+function localKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -51,27 +46,29 @@ export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultV
   const [view, setView] = useState<'lead-up' | 'day-of' | 'list'>(defaultView)
   const [picked, setPicked] = useState<TimelineItem | null>(null)
 
-  const eventDay = parseDate(eventDate)
-  const eventDayKey = eventDay ? isoDate(eventDay) : null
+  // All day math is resolved in the event's timezone so the lead-up calendar agrees
+  // with the Day-of grid about which day an item belongs to (D15).
+  const eventDay = parseTimelineDateValue(eventDate, timeZone)?.date ?? null
+  const eventKey = eventDayKey(eventDate, timeZone)
 
   // Open on the event's month; else the nearest future item; else this month.
   const firstFutureDate = items
-    .map((i) => parseDate(i.starts_at))
+    .map((i) => parseTimelineDateValue(i.starts_at, timeZone)?.date ?? null)
     .filter((d): d is Date => d !== null && d >= new Date())
     .sort((a, b) => a.getTime() - b.getTime())[0]
 
   const today = new Date()
+  const todayKey = localKey(today)
   const initDate = eventDay ?? firstFutureDate ?? today
   const [year, setYear] = useState(initDate.getFullYear())
   const [month, setMonth] = useState(initDate.getMonth())
 
-  // Group items by their starts_at date; track undated items so they aren't lost.
+  // Group items by their event-zone starts_at day; track undated items so none are lost.
   const byDate = new Map<string, TimelineItem[]>()
   let undatedCount = 0
   for (const item of items) {
-    const d = parseDate(item.starts_at)
-    if (!d) { undatedCount++; continue }
-    const key = isoDate(d)
+    const key = eventDayKey(item.starts_at, timeZone)
+    if (!key) { undatedCount++; continue }
     if (!byDate.has(key)) byDate.set(key, [])
     byDate.get(key)!.push(item)
   }
@@ -146,8 +143,8 @@ export function TimelineCalendar({ items, eventId, eventDate, timeZone, defaultV
             <div className="grid grid-cols-7">
               {cells.map((day, i) => {
                 const dateKey = day !== null ? `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : ''
-                const isToday = day !== null && dateKey === isoDate(today)
-                const isEventDay = dateKey !== '' && dateKey === eventDayKey
+                const isToday = day !== null && dateKey === todayKey
+                const isEventDay = dateKey !== '' && dateKey === eventKey
                 const dayItems = day !== null ? (byDate.get(dateKey) ?? []) : []
                 const isLastRow = i >= cells.length - 7
 

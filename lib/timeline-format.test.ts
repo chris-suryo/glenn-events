@@ -5,6 +5,7 @@ import {
   formatTimelineDateTime,
   sameCalendarDay,
   zonedWallClockToUtc,
+  eventDayKey,
 } from './timeline-format'
 
 const NY = 'America/New_York'
@@ -139,5 +140,26 @@ describe('zonedWallClockToUtc', () => {
 
   it('accepts a space-separated wall-clock too', () => {
     expect(zonedWallClockToUtc('2026-09-18 12:00:00', NY)).toBe('2026-09-18T16:00:00.000Z')
+  })
+})
+
+describe('eventDayKey', () => {
+  it('keys a late-evening instant on its event-zone day, not the UTC day', () => {
+    // 2026-09-19 02:00 UTC is still 2026-09-18 (22:00) in New York.
+    expect(eventDayKey('2026-09-19T02:00:00Z', NY)).toBe('2026-09-18')
+    // The same instant in Los Angeles is even earlier on the 18th.
+    expect(eventDayKey('2026-09-19T02:00:00Z', LA)).toBe('2026-09-18')
+  })
+
+  it('keys a noon-local instant on the expected day', () => {
+    expect(eventDayKey('2026-09-18T16:00:00Z', NY)).toBe('2026-09-18') // noon EDT
+  })
+
+  it('keys a date-only calendar value to itself', () => {
+    expect(eventDayKey('2026-09-18', NY)).toBe('2026-09-18')
+  })
+
+  it('returns null for null', () => {
+    expect(eventDayKey(null, NY)).toBeNull()
   })
 })
