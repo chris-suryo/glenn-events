@@ -4,6 +4,7 @@ import {
   formatTimeRange,
   formatTimelineDateTime,
   sameCalendarDay,
+  zonedWallClockToUtc,
 } from './timeline-format'
 
 const NY = 'America/New_York'
@@ -100,5 +101,43 @@ describe('formatTimelineDateTime', () => {
   it('returns the location alone when there is no parseable date', () => {
     expect(formatTimelineDateTime(null, null, 'Riverside Loft', NY)).toBe('Riverside Loft')
     expect(formatTimelineDateTime(null, null, null, NY)).toBeNull()
+  })
+})
+
+describe('zonedWallClockToUtc', () => {
+  it('interprets a naive wall-clock in the event zone during EDT (DST on)', () => {
+    // Noon on Sep 18 in New York is EDT (UTC-4) → 16:00 UTC.
+    expect(zonedWallClockToUtc('2026-09-18T12:00:00', NY)).toBe('2026-09-18T16:00:00.000Z')
+  })
+
+  it('interprets a naive wall-clock in the event zone during EST (DST off)', () => {
+    // Noon on Jan 15 in New York is EST (UTC-5) → 17:00 UTC.
+    expect(zonedWallClockToUtc('2026-01-15T12:00:00', NY)).toBe('2026-01-15T17:00:00.000Z')
+  })
+
+  it('round-trips back through parseTimelineDateValue to the same wall-clock', () => {
+    const utc = zonedWallClockToUtc('2026-09-18T12:00:00', NY)
+    const back = parseTimelineDateValue(utc, NY)
+    expect(back?.hour).toBe(12)
+    expect(back?.minute).toBe(0)
+  })
+
+  it('uses a fixed offset for a zone without DST (Phoenix control)', () => {
+    // America/Phoenix is UTC-7 year-round — summer and winter resolve identically.
+    expect(zonedWallClockToUtc('2026-07-01T12:00:00', 'America/Phoenix')).toBe('2026-07-01T19:00:00.000Z')
+    expect(zonedWallClockToUtc('2026-01-01T12:00:00', 'America/Phoenix')).toBe('2026-01-01T19:00:00.000Z')
+  })
+
+  it('leaves a date-only calendar value untouched (not an instant)', () => {
+    expect(zonedWallClockToUtc('2026-09-18', NY)).toBe('2026-09-18')
+  })
+
+  it('returns null for null and passes through unrecognized input', () => {
+    expect(zonedWallClockToUtc(null, NY)).toBeNull()
+    expect(zonedWallClockToUtc('sometime next week', NY)).toBe('sometime next week')
+  })
+
+  it('accepts a space-separated wall-clock too', () => {
+    expect(zonedWallClockToUtc('2026-09-18 12:00:00', NY)).toBe('2026-09-18T16:00:00.000Z')
   })
 })

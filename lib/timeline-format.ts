@@ -59,6 +59,49 @@ export function parseTimelineDateValue(
   }
 }
 
+// Offset (ms) of `timeZone` at a given UTC instant — how far local wall-clock leads
+// UTC at that moment (negative for the Americas). Handles DST by reading the actual
+// zone rendering of the instant.
+function tzOffsetMs(utcMs: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year:   'numeric',
+    month:  '2-digit',
+    day:    '2-digit',
+    hour:   '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(utcMs))
+  const get = (t: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === t)?.value ?? '0')
+  let hour = get('hour')
+  if (hour === 24) hour = 0
+  const asIfUtc = Date.UTC(get('year'), get('month') - 1, get('day'), hour, get('minute'), get('second'))
+  return asIfUtc - utcMs
+}
+
+// Inverse of parseTimelineDateValue. A naive wall-clock string ("2026-09-18T12:00:00",
+// no offset) is interpreted IN `timeZone` and converted to a UTC ISO instant before it
+// is written to a `timestamptz` column — otherwise Postgres treats the offsetless string
+// as UTC and the time renders hours off (smoke-test D5). A date-only calendar value is
+// left untouched (it is not an instant); unrecognized input passes through so a bad value
+// can never crash the write path. DST-aware via a two-pass offset correction.
+export function zonedWallClockToUtc(
+  value: string | null,
+  timeZone: string = DEFAULT_EVENT_TZ,
+): string | null {
+  if (!value) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (!m) return value
+  const [, y, mo, d, h, mi, s] = m
+  const guess = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s ?? '0'))
+  const off1 = tzOffsetMs(guess, timeZone)
+  const off2 = tzOffsetMs(guess - off1, timeZone)
+  const utcMs = off1 === off2 ? guess - off1 : guess - off2
+  return new Date(utcMs).toISOString()
+}
+
 function formatDate(value: TimelineDateValue, includeYear = true): string {
   return value.date.toLocaleDateString('en-US', {
     month: 'short',
