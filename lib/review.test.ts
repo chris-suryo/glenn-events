@@ -14,6 +14,8 @@ import {
   isEventDetail,
   isCorrection,
   buildReviewPackages,
+  groupByComponent,
+  OTHER_GROUP_LABEL,
 } from './review'
 
 function mkUpdate(over: Partial<ProposedUpdate> = {}): ProposedUpdate {
@@ -189,5 +191,71 @@ describe('buildReviewPackages partitioning', () => {
     ]
     const pkgs = buildReviewPackages(updates, [], [])
     expect(pkgs.map((p) => p.aiRunId)).toEqual(['r-new', 'r-old'])
+  })
+})
+
+describe('groupByComponent', () => {
+  it('returns an empty array for no updates', () => {
+    expect(groupByComponent([])).toEqual([])
+  })
+
+  it('buckets a single tagged component into one group', () => {
+    const updates = [
+      mkUpdate({ id: 'a', group_label: 'Cake' }),
+      mkUpdate({ id: 'b', group_label: 'Cake' }),
+    ]
+    const groups = groupByComponent(updates)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].label).toBe('Cake')
+    expect(groups[0].updates.map((u) => u.id)).toEqual(['a', 'b'])
+  })
+
+  it('groups multiple components and preserves first-seen order', () => {
+    const updates = [
+      mkUpdate({ id: 'a', group_label: 'DJ' }),
+      mkUpdate({ id: 'b', group_label: 'Cake' }),
+      mkUpdate({ id: 'c', group_label: 'DJ' }),
+      mkUpdate({ id: 'd', group_label: 'Venue' }),
+    ]
+    const groups = groupByComponent(updates)
+    expect(groups.map((g) => g.label)).toEqual(['DJ', 'Cake', 'Venue'])
+    expect(groups[0].updates.map((u) => u.id)).toEqual(['a', 'c'])
+    expect(groups[1].updates.map((u) => u.id)).toEqual(['b'])
+    expect(groups[2].updates.map((u) => u.id)).toEqual(['d'])
+  })
+
+  it('collects untagged updates under the General bucket', () => {
+    const updates = [
+      mkUpdate({ id: 'a', group_label: null }),
+      mkUpdate({ id: 'c', group_label: '' }),
+      mkUpdate({ id: 'd', group_label: '   ' }),
+    ]
+    const groups = groupByComponent(updates)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].label).toBe(OTHER_GROUP_LABEL)
+    expect(groups[0].updates.map((u) => u.id)).toEqual(['a', 'c', 'd'])
+  })
+
+  it('trims whitespace around labels and merges matching labels', () => {
+    const updates = [
+      mkUpdate({ id: 'a', group_label: '  Petal & Stem ' }),
+      mkUpdate({ id: 'b', group_label: 'Petal & Stem' }),
+    ]
+    const groups = groupByComponent(updates)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].label).toBe('Petal & Stem')
+    expect(groups[0].updates.map((u) => u.id)).toEqual(['a', 'b'])
+  })
+
+  it('keeps tagged and untagged updates in separate buckets, in first-seen order', () => {
+    const updates = [
+      mkUpdate({ id: 'a', group_label: 'Cake' }),
+      mkUpdate({ id: 'b', group_label: null }),
+      mkUpdate({ id: 'c', group_label: 'Cake' }),
+    ]
+    const groups = groupByComponent(updates)
+    expect(groups.map((g) => g.label)).toEqual(['Cake', OTHER_GROUP_LABEL])
+    expect(groups[0].updates.map((u) => u.id)).toEqual(['a', 'c'])
+    expect(groups[1].updates.map((u) => u.id)).toEqual(['b'])
   })
 })
