@@ -401,6 +401,7 @@ export interface EventStateContext {
     description: string | null
     attendee_target: number | null
     budget_target: number | null
+    timezone?: string | null
   }
   existing_tasks: Array<{
     id: string
